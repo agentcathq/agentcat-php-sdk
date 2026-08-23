@@ -1,0 +1,29 @@
+{
+    "name": "agentcat/sdk",
+    "description": "Analytics for MCP (Model Context Protocol) servers - placeholder for the official AgentCat PHP SDK, which is in active development.",
+    "type": "library",
+    "license": "MIT",
+    "homepage": "https://agentcat.com",
+    "keywords": ["mcp", "model-context-protocol", "analytics", "agentcat", "ai", "llm"],
+    "authors": [
+        {
+            "name": "AgentCat, Inc.",
+            "email": "support@agentcat.com",
+            "homepage": "https://agentcat.com"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/agentcathq/agentcat-php-sdk/issues",
+        "source": "https://github.com/agentcathq/agentcat-php-sdk",
+        "docs": "https://docs.agentcat.com"
+    },
+    "require": {
+        "php": "^8.1"
+    },
+    "autoload": {
+        "psr-4": {
+            "AgentCat\\": "src/"
+        }
+    },
+    "minimum-stability": "stable"
+}
