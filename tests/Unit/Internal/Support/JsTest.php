@@ -153,4 +153,49 @@ final class JsTest extends TestCase
     {
         $this->assertSame($expected, Js::string($value));
     }
+
+    /**
+     * @return iterable<string, array{string, int, string}>
+     */
+    public static function sliceEndProvider(): iterable
+    {
+        yield 'tail' => ['abcdef', 3, 'def'];
+        yield 'lone low surrogate dropped' => ['😀ab', 3, 'ab'];
+        yield 'whole pair kept' => ['a😀', 2, '😀'];
+        yield 'shorter than limit' => ['abc', 10, 'abc'];
+        yield 'zero' => ['abc', 0, ''];
+        yield 'negative' => ['abc', -1, ''];
+        yield 'exact length' => ['😀', 2, '😀'];
+        yield 'low surrogate DC00 dropped' => ["\u{10000}ab", 3, 'ab'];
+        yield 'low surrogate DFFF dropped' => ["\u{10FFFF}ab", 3, 'ab'];
+        yield 'empty' => ['', 3, ''];
+    }
+
+    #[DataProvider('sliceEndProvider')]
+    public function testUtf16SliceEnd(string $value, int $maxUnits, string $expected): void
+    {
+        $result = Js::utf16SliceEnd($value, $maxUnits);
+        $this->assertSame($expected, $result);
+        $this->assertTrue(mb_check_encoding($result, 'UTF-8'));
+    }
+
+    /**
+     * @return iterable<string, array{string, int, bool}>
+     */
+    public static function exceedsProvider(): iterable
+    {
+        yield 'ascii within' => ['abc', 3, false];
+        yield 'ascii over' => ['abcd', 3, true];
+        yield 'multibyte within in units' => ['ééé', 3, false];
+        yield 'multibyte over in units' => ['éééé', 3, true];
+        yield 'astral counts two units' => ['😀', 1, true];
+        yield 'astral within' => ['😀', 2, false];
+        yield 'empty' => ['', 0, false];
+    }
+
+    #[DataProvider('exceedsProvider')]
+    public function testExceedsUtf16(string $value, int $max, bool $expected): void
+    {
+        $this->assertSame($expected, Js::exceedsUtf16($value, $max));
+    }
 }

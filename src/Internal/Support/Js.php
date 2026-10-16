@@ -56,6 +56,29 @@ final class Js
         return mb_convert_encoding($cut, 'UTF-8', 'UTF-16LE');
     }
 
+    /** True when the string is longer than `$max` UTF-16 units. The byte length rules out most strings cheaply. */
+    public static function exceedsUtf16(string $value, int $max): bool
+    {
+        return strlen($value) > $max && self::utf16Length($value) > $max;
+    }
+
+    /** Last `$maxUnits` UTF-16 units; a leading lone low surrogate is dropped, so the result is valid UTF-8. */
+    public static function utf16SliceEnd(string $value, int $maxUnits): string
+    {
+        if ($maxUnits <= 0) {
+            return '';
+        }
+        // A negative start beyond the string returns the whole string; a whole string never starts with a low surrogate.
+        $utf16 = substr(mb_convert_encoding($value, 'UTF-16LE', 'UTF-8'), -$maxUnits * 2);
+        // Little endian: the second byte holds the high byte of the first code unit (0xDC..0xDF = low surrogate).
+        $highByte = ord($utf16[1] ?? "\0");
+        if ($highByte >= 0xDC && $highByte <= 0xDF) {
+            $utf16 = substr($utf16, 2);
+        }
+
+        return mb_convert_encoding($utf16, 'UTF-8', 'UTF-16LE');
+    }
+
     /** JS `String(value)` for JSON-shaped values: lists join with commas, other containers print `[object Object]`. */
     public static function string(mixed $value): string
     {

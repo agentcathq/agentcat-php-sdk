@@ -1,0 +1,369 @@
+<?php
+
+declare(strict_types=1);
+
+namespace AgentCat\Internal\Pipeline;
+
+use AgentCat\Event;
+use AgentCat\Internal\Events\EventFields;
+use AgentCat\Internal\Support\Js;
+use AgentCat\Internal\Support\Values;
+use AgentCat\Internal\Wire\WireEncoder;
+
+/**
+ * Caps field lengths, depth and breadth, and keeps the event body under the size budget (TS `truncation.ts`).
+ *
+ * @internal
+ */
+final class Truncator
+{
+    public const int MAX_DEPTH = 10;
+
+    public const int MAX_BREADTH = 100;
+
+    public const int MAX_STRING_LENGTH = 32_768;
+
+    public const int MAX_EVENT_BYTES = 102_400;
+
+    public const int MAX_USER_INTENT_LENGTH = 2_048;
+
+    public const int MAX_ERROR_MESSAGE_LENGTH = 2_048;
+
+    public const int MAX_RESOURCE_NAME_LENGTH = 256;
+
+    public const int MAX_METADATA_LENGTH = 256;
+
+    public const int MAX_STACK_FRAMES = 50;
+
+    public const int MAX_CONTENT_TEXT_LENGTH = 32_768;
+
+    public const string TRUNCATION_SUFFIX = '...';
+
+    private const int LAST_RESORT_ATTEMPTS = 10;
+
+    private const int LAST_RESORT_MIN_LENGTH = 100;
+
+    private const int LAST_RESORT_MARGIN = 200;
+
+    private const int LAST_RESORT_MIN_REDUCTION = 10;
+
+    /**
+     * Returns a new event; the input is not changed.
+     *
+     * @throws \JsonException when the size cannot be measured
+     * @throws \UnexpectedValueException when the size cannot be measured, `error.message` is not a string
+     *                                   or `error.frames` is neither a list nor a string
+     * @throws \RuntimeException when the last resort meets a closure
+     */
+    public static function truncate(Event $event): Event
+    {
+        $r = clone $event;
+
+        $r->userIntent = self::cut($r->userIntent, self::MAX_USER_INTENT_LENGTH);
+        $r->resourceName = self::cut($r->resourceName, self::MAX_RESOURCE_NAME_LENGTH);
+        $r->serverName = self::cut($r->serverName, self::MAX_METADATA_LENGTH);
+        $r->serverVersion = self::cut($r->serverVersion, self::MAX_METADATA_LENGTH);
+        $r->clientName = self::cut($r->clientName, self::MAX_METADATA_LENGTH);
+        $r->clientVersion = self::cut($r->clientVersion, self::MAX_METADATA_LENGTH);
+        if (Values::isObjectLike($r->error) && !$r->error instanceof \DateTimeInterface) {
+            $error = self::spread($r->error);
+            if (property_exists($error, 'message')) {
+                $error->message = self::cutMessage($error->message);
+            }
+            if (property_exists($error, 'frames')) {
+                $error->frames = self::cutFrames($error->frames);
+            }
+            $r->error = $error;
+        }
+        $r->response = self::cutResponseContent($r->response);
+
+        if ($r->parameters !== null) {
+            $r->parameters = Normalizer::normalize($r->parameters);
+        }
+        if ($r->response !== null) {
+            $r->response = Normalizer::normalize($r->response);
+        }
+        if ($r->identifyActorData !== null) {
+            $r->identifyActorData = Normalizer::normalize($r->identifyActorData);
+        }
+        if ($r->error !== null) {
+            $r->error = Normalizer::normalize($r->error);
+        }
+
+        return self::fitToSize($r);
+    }
+
+    private static function cut(?string $value, int $max): ?string
+    {
+        if ($value === null || !Js::exceedsUtf16($value, $max)) {
+            return $value;
+        }
+
+        return Js::utf16Slice($value, $max) . self::TRUNCATION_SUFFIX;
+    }
+
+    private static function cutMessage(mixed $message): mixed
+    {
+        if ($message === null) {
+            return null;
+        }
+        if (is_string($message)) {
+            return self::cut($message, self::MAX_ERROR_MESSAGE_LENGTH);
+        }
+        if (is_array($message) && array_is_list($message)) {
+            return count($message) <= self::MAX_ERROR_MESSAGE_LENGTH
+                ? $message
+                : Js::string(array_slice($message, 0, self::MAX_ERROR_MESSAGE_LENGTH)) . self::TRUNCATION_SUFFIX;
+        }
+
+        throw new \UnexpectedValueException(sprintf('error.message must be a string, got %s', get_debug_type($message)));
+    }
+
+    private static function cutFrames(mixed $frames): mixed
+    {
+        if (!Js::truthy($frames)) {
+            return $frames;
+        }
+        $half = intdiv(self::MAX_STACK_FRAMES, 2);
+        if (is_array($frames) && array_is_list($frames)) {
+            // The tail never overlaps the head, so a list of 50 or fewer frames comes back whole.
+            return array_merge(array_slice($frames, 0, $half), array_slice($frames, max($half, count($frames) - $half)));
+        }
+        if (is_string($frames)) {
+            return Js::utf16Length($frames) <= self::MAX_STACK_FRAMES
+                ? $frames
+                : array_merge(mb_str_split(Js::utf16Slice($frames, $half)), mb_str_split(Js::utf16SliceEnd($frames, $half)));
+        }
+
+        throw new \UnexpectedValueException(sprintf('error.frames must be a list or a string, got %s', get_debug_type($frames)));
+    }
+
+    /**
+     * The Normalizer applies the same cap afterwards, so this cut cannot change the result; it mirrors the TS order.
+     *
+     * @infection-ignore-all
+     */
+    private static function cutResponseContent(mixed $response): mixed
+    {
+        if (!Values::isObjectLike($response) || $response instanceof \DateTimeInterface) {
+            return $response;
+        }
+        $copy = self::spread($response);
+        if (!property_exists($copy, 'content') || !is_array($copy->content) || !array_is_list($copy->content)) {
+            return $response;
+        }
+        $copy->content = array_map(self::cutBlockText(...), $copy->content);
+
+        return $copy;
+    }
+
+    /** @infection-ignore-all */
+    private static function cutBlockText(mixed $block): mixed
+    {
+        if (!Values::isObjectLike($block) || Values::get($block, 'type') !== 'text') {
+            return $block;
+        }
+        $text = Values::get($block, 'text');
+        if (!is_string($text) || !Js::exceedsUtf16($text, self::MAX_CONTENT_TEXT_LENGTH)) {
+            return $block;
+        }
+        $cut = Js::utf16Slice($text, self::MAX_CONTENT_TEXT_LENGTH) . self::TRUNCATION_SUFFIX;
+        if (is_array($block)) {
+            $block['text'] = $cut;
+
+            return $block;
+        }
+        $copy = self::spread($block);
+        $copy->text = $cut;
+
+        return $copy;
+    }
+
+    /**
+     * TS `{ ...value }`: a new object with the entries of the value; lists get index keys.
+     *
+     * @param array<array-key, mixed>|object $value
+     */
+    private static function spread(array|object $value): \stdClass
+    {
+        if ($value instanceof \JsonSerializable) {
+            $value = $value->jsonSerialize();
+            if (!Values::isObjectLike($value)) {
+                return new \stdClass();
+            }
+        }
+
+        return (object) Values::entries($value);
+    }
+
+    private static function fitToSize(Event $event): Event
+    {
+        if (WireEncoder::byteSize($event) <= self::MAX_EVENT_BYTES) {
+            return $event;
+        }
+        $reduced = $event;
+        for ($depth = self::MAX_DEPTH - 1; $depth >= 1; --$depth) {
+            $reduced = self::renormalized($event, $depth);
+            if (WireEncoder::byteSize($reduced) <= self::MAX_EVENT_BYTES) {
+                return $reduced;
+            }
+        }
+
+        return self::cutLargestStrings($reduced);
+    }
+
+    private static function renormalized(Event $event, int $depth): Event
+    {
+        $r = clone $event;
+        if ($r->parameters !== null) {
+            $r->parameters = Normalizer::normalize($r->parameters, $depth);
+        }
+        if ($r->response !== null) {
+            $r->response = Normalizer::normalize($r->response, $depth);
+        }
+        if ($r->identifyActorData !== null) {
+            $r->identifyActorData = Normalizer::normalize($r->identifyActorData, $depth);
+        }
+        if ($r->error !== null) {
+            $r->error = Normalizer::normalize($r->error, $depth);
+        }
+
+        return $r;
+    }
+
+    private static function cutLargestStrings(Event $event): Event
+    {
+        $fields = [];
+        foreach (EventFields::toArray($event) as $name => $value) {
+            $fields[$name] = self::deepClone($value);
+        }
+        $result = clone $event;
+        for ($attempt = 0; $attempt < self::LAST_RESORT_ATTEMPTS; ++$attempt) {
+            EventFields::assign($result, $fields);
+            $size = WireEncoder::byteSize($result);
+            if ($size <= self::MAX_EVENT_BYTES) {
+                return $result;
+            }
+            $paths = self::stringPaths($fields, []);
+            usort($paths, static fn(array $a, array $b): int => $b['length'] <=> $a['length']);
+            $remaining = $size - self::MAX_EVENT_BYTES + self::LAST_RESORT_MARGIN;
+            $cut = false;
+            foreach ($paths as ['path' => $path, 'length' => $length]) {
+                if ($remaining <= 0) {
+                    break;
+                }
+                $reduction = min($remaining, intdiv($length, 2));
+                if ($reduction < self::LAST_RESORT_MIN_REDUCTION) {
+                    continue;
+                }
+                $fields = self::replaceInFields($fields, $path, Js::utf16Slice(self::valueAt($fields, $path), $length - $reduction) . self::TRUNCATION_SUFFIX);
+                $remaining -= $reduction;
+                $cut = true;
+            }
+            if (!$cut) {
+                break;
+            }
+        }
+        EventFields::assign($result, $fields);
+
+        return $result;
+    }
+
+    /**
+     * TS `structuredClone`: arrays and objects are copied, closures cannot be cloned.
+     *
+     * @throws \RuntimeException
+     */
+    private static function deepClone(mixed $value): mixed
+    {
+        if ($value instanceof \Closure) {
+            throw new \RuntimeException('Closure could not be cloned');
+        }
+        if (is_array($value)) {
+            return array_map(self::deepClone(...), $value);
+        }
+        if (!is_object($value) || $value instanceof \DateTimeInterface || $value instanceof \UnitEnum) {
+            return $value;
+        }
+        if ($value instanceof \JsonSerializable) {
+            return self::deepClone($value->jsonSerialize());
+        }
+        $copy = new \stdClass();
+        foreach (Values::entries($value) as $key => $item) {
+            $copy->{$key} = self::deepClone($item);
+        }
+
+        return $copy;
+    }
+
+    /**
+     * Strings longer than 100 units, depth first, in field and key order.
+     *
+     * @param list<array-key> $prefix
+     *
+     * @return list<array{path: list<array-key>, length: int}>
+     */
+    private static function stringPaths(mixed $value, array $prefix): array
+    {
+        if (is_string($value)) {
+            $length = Js::utf16Length($value);
+
+            return $length > self::LAST_RESORT_MIN_LENGTH ? [['path' => $prefix, 'length' => $length]] : [];
+        }
+        if (!is_array($value) && !$value instanceof \stdClass) {
+            return [];
+        }
+        $paths = [];
+        foreach (Values::entries($value) as $key => $item) {
+            $paths = array_merge($paths, self::stringPaths($item, [...$prefix, $key]));
+        }
+
+        return $paths;
+    }
+
+    /** @param list<array-key> $path */
+    private static function valueAt(mixed $node, array $path): string
+    {
+        foreach ($path as $step) {
+            if (is_array($node)) {
+                $node = $node[$step] ?? null;
+            } elseif ($node instanceof \stdClass) {
+                $node = $node->{$step} ?? null;
+            } else {
+                return '';
+            }
+        }
+
+        return is_string($node) ? $node : '';
+    }
+
+    /**
+     * @param array<string, mixed> $fields
+     * @param list<array-key> $path
+     *
+     * @return array<string, mixed>
+     */
+    private static function replaceInFields(array $fields, array $path, string $replacement): array
+    {
+        $name = (string) array_shift($path);
+        $fields[$name] = self::replaceAt($fields[$name] ?? null, $path, $replacement);
+
+        return $fields;
+    }
+
+    /** @param list<array-key> $path */
+    private static function replaceAt(mixed $node, array $path, string $replacement): mixed
+    {
+        if ($path === []) {
+            return $replacement;
+        }
+        $step = array_shift($path);
+        if (is_array($node)) {
+            $node[$step] = self::replaceAt($node[$step] ?? null, $path, $replacement);
+        } elseif ($node instanceof \stdClass) {
+            $node->{$step} = self::replaceAt($node->{$step} ?? null, $path, $replacement);
+        }
+
+        return $node;
+    }
+}
