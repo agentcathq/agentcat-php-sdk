@@ -38,7 +38,11 @@ final class Values
         return is_array($value) ? $value : get_object_vars($value);
     }
 
-    /** JS `typeof value === "object"` for values a walker can open: arrays and objects except closures and enums. */
+    /**
+     * JS `typeof value === "object"` for values a walker can open: arrays and objects except closures and enums.
+     *
+     * @phpstan-assert-if-true array<array-key, mixed>|object $value
+     */
     public static function isObjectLike(mixed $value): bool
     {
         return is_array($value) || (is_object($value) && !$value instanceof \Closure && !$value instanceof \UnitEnum);

@@ -55,4 +55,64 @@ final class Js
 
         return mb_convert_encoding($cut, 'UTF-8', 'UTF-16LE');
     }
+
+    /** JS `String(value)` for JSON-shaped values: lists join with commas, other containers print `[object Object]`. */
+    public static function string(mixed $value): string
+    {
+        return match (true) {
+            $value === null => 'null',
+            is_bool($value) => $value ? 'true' : 'false',
+            is_int($value) => (string) $value,
+            is_float($value) => self::number($value),
+            is_string($value) => $value,
+            is_array($value) && array_is_list($value) => implode(',', array_map(
+                static fn(mixed $item): string => $item === null ? '' : self::string($item),
+                $value,
+            )),
+            default => '[object Object]',
+        };
+    }
+
+    /** ECMAScript `Number::toString` (radix 10). */
+    private static function number(float $value): string
+    {
+        if (is_nan($value)) {
+            return 'NaN';
+        }
+        if (is_infinite($value)) {
+            return $value === INF ? 'Infinity' : '-Infinity';
+        }
+        if ($value < 0) {
+            return '-' . self::number(-$value);
+        }
+        if ($value === 0.0) {
+            return '0'; // also -0.0
+        }
+
+        // Shortest round trip digits (serialize_precision = -1), then lay them out like ECMAScript does.
+        $parts = explode('e', (string) json_encode($value));
+        $exponent = intval($parts[1] ?? 0);
+        $mantissa = explode('.', $parts[0]);
+        $whole = $mantissa[0];
+        $fraction = $mantissa[1] ?? '';
+        $all = $whole . $fraction;
+        $digits = ltrim($all, '0');
+        $point = strlen($whole) + $exponent - (strlen($all) - strlen($digits));
+        $digits = rtrim($digits, '0');
+        $count = strlen($digits);
+
+        return match (true) {
+            $point > 21 || $point <= -6 => self::exponential($digits, $point - 1),
+            $count <= $point => $digits . str_repeat('0', $point - $count),
+            0 < $point => substr($digits, 0, $point) . '.' . substr($digits, $point),
+            default => '0.' . str_repeat('0', -$point) . $digits,
+        };
+    }
+
+    private static function exponential(string $digits, int $exponent): string
+    {
+        $mantissa = strlen($digits) === 1 ? $digits : $digits[0] . '.' . substr($digits, 1);
+
+        return $mantissa . 'e' . sprintf('%+d', $exponent);
+    }
 }

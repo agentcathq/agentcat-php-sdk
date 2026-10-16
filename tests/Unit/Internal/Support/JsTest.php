@@ -111,4 +111,46 @@ final class JsTest extends TestCase
         $this->assertSame('😀😀', $result);
         $this->assertTrue(mb_check_encoding($result, 'UTF-8'));
     }
+
+    /**
+     * @return iterable<string, array{mixed, string}>
+     */
+    public static function stringProvider(): iterable
+    {
+        yield 'null' => [null, 'null'];
+        yield 'true' => [true, 'true'];
+        yield 'false' => [false, 'false'];
+        yield 'int' => [5, '5'];
+        yield 'whole float' => [5.0, '5'];
+        yield 'negative zero' => [-0.0, '0'];
+        yield 'zero' => [0.0, '0'];
+        yield 'fraction' => [1.5, '1.5'];
+        yield 'rounding' => [0.1 + 0.2, '0.30000000000000004'];
+        yield 'nan' => [NAN, 'NaN'];
+        yield 'infinity' => [INF, 'Infinity'];
+        yield 'negative infinity' => [-INF, '-Infinity'];
+        yield 'string' => ['x', 'x'];
+        yield 'list with null' => [[1, null, 'a'], '1,,a'];
+        yield 'nested list' => [[[1, 2], 3], '1,2,3'];
+        yield 'empty object' => [new \stdClass(), '[object Object]'];
+        yield 'map' => [['k' => 'v'], '[object Object]'];
+        yield 'large whole float' => [1e20, '100000000000000000000'];
+        yield 'huge float' => [1e21, '1e+21'];
+        yield 'half' => [0.5, '0.5'];
+        yield 'twentieth' => [0.05, '0.05'];
+        yield 'negative fraction' => [-0.25, '-0.25'];
+        yield 'huge fraction' => [1.5e300, '1.5e+300'];
+        yield 'small float' => [0.00001, '0.00001'];
+        yield 'smallest plain float' => [0.000001, '0.000001'];
+        yield 'tiny float' => [1e-7, '1e-7'];
+        yield 'tiny fraction' => [-1.5e-7, '-1.5e-7'];
+        yield 'fraction above one' => [123.456, '123.456'];
+        yield 'negative whole float' => [-3.0, '-3'];
+    }
+
+    #[DataProvider('stringProvider')]
+    public function testString(mixed $value, string $expected): void
+    {
+        $this->assertSame($expected, Js::string($value));
+    }
 }
