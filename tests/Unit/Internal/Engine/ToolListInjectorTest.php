@@ -27,12 +27,14 @@ final class ToolListInjectorTest extends TestCase
 
     private MemoryLogger $logger;
 
+    #[\Override]
     protected function setUp(): void
     {
         $this->logger = new MemoryLogger();
         Log::setLogger($this->logger);
     }
 
+    #[\Override]
     protected function tearDown(): void
     {
         Log::reset();

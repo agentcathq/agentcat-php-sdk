@@ -24,6 +24,7 @@ final class FileLogger extends AbstractLogger
         $this->path = $path;
     }
 
+    #[\Override]
     public function log($level, string|\Stringable $message, array $context = []): void
     {
         if ($this->path === null) {

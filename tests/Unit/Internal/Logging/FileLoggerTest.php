@@ -12,11 +12,13 @@ final class FileLoggerTest extends TestCase
 {
     private string $path = '';
 
+    #[\Override]
     protected function setUp(): void
     {
         $this->path = sys_get_temp_dir() . '/agentcat-test-' . bin2hex(random_bytes(6)) . '.log';
     }
 
+    #[\Override]
     protected function tearDown(): void
     {
         if (is_file($this->path)) {

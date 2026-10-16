@@ -23,11 +23,13 @@ use PHPUnit\Framework\TestCase;
 #[Group('ac-04-27')]
 final class ListingFixturesTest extends TestCase
 {
+    #[\Override]
     protected function setUp(): void
     {
         Log::setLogger(new MemoryLogger());
     }
 
+    #[\Override]
     protected function tearDown(): void
     {
         Log::reset();

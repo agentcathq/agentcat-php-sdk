@@ -6,6 +6,7 @@ parameters:
     tmpDir: .cache/phpstan
     checkMissingCallableSignature: true
     checkUninitializedProperties: true
+    checkMissingOverrideMethodAttribute: true
     checkBenevolentUnionTypes: true
     reportPossiblyNonexistentGeneralArrayOffset: true
     reportUnmatchedIgnoredErrors: true

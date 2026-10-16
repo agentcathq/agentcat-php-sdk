@@ -11,6 +11,7 @@ final class MemoryLogger extends AbstractLogger
     /** @var list<array{level: string, message: string}> */
     public array $records = [];
 
+    #[\Override]
     public function log($level, string|\Stringable $message, array $context = []): void
     {
         $this->records[] = ['level' => is_string($level) ? $level : get_debug_type($level), 'message' => (string) $message];
