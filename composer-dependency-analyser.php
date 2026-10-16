@@ -6,7 +6,8 @@ use ShipMonk\ComposerDependencyAnalyser\Config\Configuration;
 use ShipMonk\ComposerDependencyAnalyser\Config\ErrorType;
 
 // Runtime dependencies are declared before the code that uses them lands (later plans).
-// Remove these ignores once the code uses them.
+// Remove this ignore once the code uses ext-curl.
 return (new Configuration())
-    ->ignoreErrorsOnPackages(['psr/log'], [ErrorType::UNUSED_DEPENDENCY])
-    ->ignoreErrorsOnExtensions(['ext-curl', 'ext-mbstring'], [ErrorType::UNUSED_DEPENDENCY]);
+    ->ignoreErrorsOnExtensions(['ext-curl'], [ErrorType::UNUSED_DEPENDENCY])
+    // ext-posix is optional: FileLogger guards its use with function_exists().
+    ->ignoreErrorsOnExtensions(['ext-posix'], [ErrorType::SHADOW_DEPENDENCY]);
