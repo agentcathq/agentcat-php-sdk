@@ -92,6 +92,6 @@ final class Ksuid
             return implode('', array_map(static fn(int $d): string => self::ALPHABET[$d], array_reverse($out)));
         }
 
-        return implode('', array_map(chr(...), array_reverse($out)));
+        return pack('C*', ...array_reverse($out));
     }
 }

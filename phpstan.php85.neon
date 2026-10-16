@@ -1,0 +1,5 @@
+includes:
+    - phpstan.neon.dist
+parameters:
+    phpVersion: 80500
+    tmpDir: .cache/phpstan-php85

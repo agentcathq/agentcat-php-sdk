@@ -84,7 +84,10 @@
         "deps": "composer-dependency-analyser",
         "mutation": "infection --threads=max --show-mutations",
         "rector:check": "rector process --dry-run",
-        "stan": "phpstan analyse --no-progress --memory-limit=1G",
+        "stan": [
+            "phpstan analyse --no-progress --memory-limit=1G",
+            "phpstan analyse --no-progress --memory-limit=1G --configuration=phpstan.php85.neon"
+        ],
         "test": "phpunit"
     }
 }
