@@ -362,7 +362,7 @@ final class ToolListInjectorTest extends TestCase
     public static function nonObjectSchemas(): iterable
     {
         yield 'true' => ['true'];
-        yield 'empty list' => ['[]'];
+        yield 'non-empty list' => ['[1]'];
         yield 'list' => ['[{"type":"string"}]'];
         yield 'string' => ['"x"'];
         yield 'number' => ['5'];
@@ -391,7 +391,7 @@ final class ToolListInjectorTest extends TestCase
     public static function nonObjectProperties(): iterable
     {
         yield 'true' => ['true'];
-        yield 'empty list' => ['[]'];
+        yield 'non-empty list' => ['[1]'];
         yield 'string' => ['"abc"'];
     }
 
@@ -409,6 +409,69 @@ final class ToolListInjectorTest extends TestCase
             'WARN: Handle injection failed for tool "bad"; listing it unmodified - inputSchema.properties is not a JSON object',
             'WARN: Context injection failed for tool "bad"; listing it unmodified - inputSchema.properties is not a JSON object',
         ], $this->logger->messages());
+    }
+
+    /**
+     * @return iterable<string, array{string, string, list<string>, InjectionConfig}>
+     */
+    public static function emptyListSchemas(): iterable
+    {
+        $prompted = new InjectionConfig(enableReportMissing: false);
+        $contextOnly = new InjectionConfig(enableReportMissing: false, enableTracing: false);
+
+        yield 'inputSchema: [] gets no type' => [
+            '{"name":"t","inputSchema":[]}',
+            '{"name":"t","inputSchema":{"properties":{"session_id":"@SID","context":"@CTX"},"required":["session_id","context"]}}',
+            [],
+            $prompted,
+        ];
+        yield 'inputSchema: [], context only' => [
+            '{"name":"t","inputSchema":[]}',
+            '{"name":"t","inputSchema":{"properties":{"context":"@CTX"},"required":["context"]}}',
+            [],
+            $contextOnly,
+        ];
+        yield 'inputSchema.properties: [] keeps its key position' => [
+            '{"name":"t","inputSchema":{"properties":[],"type":"object","additionalProperties":false}}',
+            '{"name":"t","inputSchema":{"properties":{"session_id":"@SID","context":"@CTX"},"type":"object","required":["session_id","context"]}}',
+            [],
+            $prompted,
+        ];
+        yield 'inputSchema.properties: [], context only' => [
+            '{"name":"t","inputSchema":{"type":"object","properties":[]}}',
+            '{"name":"t","inputSchema":{"type":"object","properties":{"context":"@CTX"},"required":["context"]}}',
+            [],
+            $contextOnly,
+        ];
+        yield 'outputSchema: []' => [
+            '{"name":"t","inputSchema":{},"outputSchema":[],"title":"T"}',
+            '{"name":"t","inputSchema":{"properties":{"session_id":"@SID","context":"@CTX"},"required":["session_id","context"]},"outputSchema":{"properties":{"mcp_session":"@MCP"}},"title":"T"}',
+            ['t'],
+            $prompted,
+        ];
+        yield 'outputSchema.properties: []' => [
+            '{"name":"t","inputSchema":{},"outputSchema":{"type":"object","properties":[],"additionalProperties":false}}',
+            '{"name":"t","inputSchema":{"properties":{"session_id":"@SID","context":"@CTX"},"required":["session_id","context"]},"outputSchema":{"type":"object","properties":{"mcp_session":"@MCP"},"additionalProperties":false}}',
+            ['t'],
+            $prompted,
+        ];
+    }
+
+    /**
+     * PHP divergence from TS: PHP encodes an empty map as `[]`, so an empty list counts as an empty object.
+     *
+     * @param list<string> $outputRegistry
+     */
+    #[DataProvider('emptyListSchemas')]
+    #[Group('ac-04-19')]
+    #[Group('ac-04-26')]
+    public function testEmptyListSchemasCountAsEmptyObjects(string $input, string $expected, array $outputRegistry, InjectionConfig $config): void
+    {
+        $result = $this->inject([$this->decode($input)], $config);
+
+        $this->assertSame($this->expand($expected), $this->toolJson($result, 0));
+        $this->assertSame($outputRegistry, $result->outputRegistry);
+        $this->assertSame([], $this->logger->messages());
     }
 
     #[Group('ac-04-25')]
@@ -687,6 +750,8 @@ final class ToolListInjectorTest extends TestCase
         $tools[] = $this->decode('{"name":"falsy","inputSchema":{"properties":{"session_id":false,"agent_id":null,"context":0},"required":"x","additionalProperties":false}}');
         $tools[] = $this->decode('{"name":"get_more_tools","inputSchema":{"properties":{"q":{}},"required":["q"],"additionalProperties":false}}');
         $tools[] = $this->decode('{"name":"out","inputSchema":{},"outputSchema":{"type":"object","additionalProperties":false}}');
+        $tools[] = $this->decode('{"name":"lists","inputSchema":{"properties":[]},"outputSchema":[]}');
+        $tools[] = $this->decode('{"name":"list_schema","inputSchema":[],"outputSchema":{"properties":[]}}');
         $this->assertTrue(array_is_list($tools));
         $before = Json::encodeJs($tools);
         $this->assertNotNull($before);

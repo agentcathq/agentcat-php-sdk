@@ -176,7 +176,8 @@ final class ToolListInjector
         if (!Js::truthy($schema)) {
             return;
         }
-        $schema = $this->requireObject($schema, 'outputSchema');
+        $schema = $this->objectOrEmptyList($schema, 'outputSchema');
+        $tool->outputSchema = $schema;
         if ($this->isComposed($schema)) {
             Log::write(sprintf('WARN: Tool "%s" has complex outputSchema (oneOf/allOf/anyOf). Skipping mcp_session injection; mint-back stays content-only for this tool.', $name));
 
@@ -307,7 +308,7 @@ final class ToolListInjector
 
     /**
      * A falsy schema becomes `{"type":"object","properties":{},"required":[]}`, a falsy `properties` becomes `{}`,
-     * and `additionalProperties: false` is dropped. A list or scalar where TS needs an object throws.
+     * and `additionalProperties: false` is dropped. A non-empty list or a scalar where TS needs an object throws.
      *
      * @return array{\stdClass, \stdClass} the schema and its properties
      */
@@ -317,7 +318,7 @@ final class ToolListInjector
         if (!Js::truthy($schema)) {
             $schema = (object) ['type' => 'object', 'properties' => new \stdClass(), 'required' => []];
         }
-        $schema = $this->requireObject($schema, 'inputSchema');
+        $schema = $this->objectOrEmptyList($schema, 'inputSchema');
         $tool->inputSchema = $schema;
         $properties = $this->propertiesOf($schema, 'inputSchema.properties');
         if (($schema->additionalProperties ?? null) === false) {
@@ -329,11 +330,21 @@ final class ToolListInjector
 
     private function propertiesOf(\stdClass $schema, string $what): \stdClass
     {
-        if (!Js::truthy($schema->properties ?? null)) {
-            $schema->properties = new \stdClass();
-        }
+        $properties = $schema->properties ?? null;
+        $properties = Js::truthy($properties) ? $this->objectOrEmptyList($properties, $what) : new \stdClass();
+        $schema->properties = $properties;
 
-        return $this->requireObject($schema->properties, $what);
+        return $properties;
+    }
+
+    /**
+     * PHP divergence from TS: PHP encodes an empty map as `[]`, and PHP MCP libraries often send `"properties":[]`,
+     * so an empty list counts as an empty object here. TS sets the properties on the JS array instead, where the
+     * wire never shows them. A non-empty list or a scalar still throws.
+     */
+    private function objectOrEmptyList(mixed $value, string $what): \stdClass
+    {
+        return $this->requireObject($value === [] ? new \stdClass() : $value, $what);
     }
 
     /** Appends without duplicating; customer entries keep their order. A non-list `required` is replaced. */
