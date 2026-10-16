@@ -27,7 +27,10 @@ parameters:
     disallowedClasses:
         - class: ['ReflectionProperty', 'ReflectionMethod']
           message: 'Reflection is for contract tests only'
-          allowIn: [tests/Contract/*]
+          allowIn:
+            - tests/Contract/*
+            # builds a cyclic `previous` chain and a corrupt trace (05 E10)
+            - tests/Unit/Internal/Errors/ExceptionCaptureTest.php
 services:
     -
         class: AgentCat\Tests\Architecture\LayeringTest
