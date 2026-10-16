@@ -54,6 +54,7 @@ final class Truncator
      * @throws \UnexpectedValueException when the size cannot be measured, `error.message` is not a string
      *                                   or `error.frames` is neither a list nor a string
      * @throws \RuntimeException when the last resort meets a closure
+     * @throws \Error when an array key starts with a NUL byte (PHP rejects it as a property name)
      */
     public static function truncate(Event $event): Event
     {
@@ -75,7 +76,6 @@ final class Truncator
             }
             $r->error = $error;
         }
-        $r->response = self::cutResponseContent($r->response);
 
         if ($r->parameters !== null) {
             $r->parameters = Normalizer::normalize($r->parameters);
@@ -136,47 +136,6 @@ final class Truncator
         }
 
         throw new \UnexpectedValueException(sprintf('error.frames must be a list or a string, got %s', get_debug_type($frames)));
-    }
-
-    /**
-     * The Normalizer applies the same cap afterwards, so this cut cannot change the result; it mirrors the TS order.
-     *
-     * @infection-ignore-all
-     */
-    private static function cutResponseContent(mixed $response): mixed
-    {
-        if (!Values::isObjectLike($response) || $response instanceof \DateTimeInterface) {
-            return $response;
-        }
-        $copy = self::spread($response);
-        if (!property_exists($copy, 'content') || !is_array($copy->content) || !array_is_list($copy->content)) {
-            return $response;
-        }
-        $copy->content = array_map(self::cutBlockText(...), $copy->content);
-
-        return $copy;
-    }
-
-    /** @infection-ignore-all */
-    private static function cutBlockText(mixed $block): mixed
-    {
-        if (!Values::isObjectLike($block) || Values::get($block, 'type') !== 'text') {
-            return $block;
-        }
-        $text = Values::get($block, 'text');
-        if (!is_string($text) || !Js::exceedsUtf16($text, self::MAX_CONTENT_TEXT_LENGTH)) {
-            return $block;
-        }
-        $cut = Js::utf16Slice($text, self::MAX_CONTENT_TEXT_LENGTH) . self::TRUNCATION_SUFFIX;
-        if (is_array($block)) {
-            $block['text'] = $cut;
-
-            return $block;
-        }
-        $copy = self::spread($block);
-        $copy->text = $cut;
-
-        return $copy;
     }
 
     /**

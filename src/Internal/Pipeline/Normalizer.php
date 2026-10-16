@@ -22,6 +22,7 @@ final class Normalizer
 
     /**
      * @throws \Throwable whatever a `jsonSerialize()` method throws
+     * @throws \Error when an array key starts with a NUL byte (PHP rejects it as a property name)
      */
     public static function normalize(mixed $input, int $depth = 10, int $maxBreadth = 100, int $maxStringLength = 32_768): mixed
     {

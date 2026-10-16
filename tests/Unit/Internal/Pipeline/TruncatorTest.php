@@ -791,4 +791,20 @@ final class TruncatorTest extends TestCase
         $this->assertSame(120000, strlen(self::textAt($properties, 'blob')));
         $this->assertSame(500, strlen(self::textAt($properties, 'nested', 'inner')));
     }
+
+    #[Group('ac-05-T16')]
+    public function testContentTextCutThroughAnEmojiDropsHalfAndAddsOneMarker(): void
+    {
+        $text = str_repeat('x', 32767) . '😀' . 'tail';
+        $r = Truncator::truncate(new Event(response: $this->object(content: [$this->object(type: 'text', text: $text)])));
+        $this->assertSame(str_repeat('x', 32767) . '...', self::textAt($r->response, 'content', 0, 'text'));
+    }
+
+    #[Group('ac-05-T16')]
+    public function testContentTextCutBeforeAnEmojiKeepsItWhole(): void
+    {
+        $text = str_repeat('x', 32766) . '😀' . 'tail';
+        $r = Truncator::truncate(new Event(response: $this->object(content: [$this->object(type: 'text', text: $text)])));
+        $this->assertSame(str_repeat('x', 32766) . '😀...', self::textAt($r->response, 'content', 0, 'text'));
+    }
 }
