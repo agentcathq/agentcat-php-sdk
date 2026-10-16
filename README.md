@@ -2,9 +2,9 @@
 
 Analytics for MCP (Model Context Protocol) servers.
 
-> **Status: placeholder.** This package reserves the `agentcat/sdk` name for the
-> official AgentCat PHP SDK, which is in active development and will ship as
-> `1.0.0`. It has no functionality yet — do not depend on it in production.
+> **Status: in development.** This package is the official AgentCat PHP SDK
+> for MCP servers. The first release is not published yet, so do not depend on
+> it in production. A full README will ship with `1.0.0`.
 
 AgentCat captures how AI agents actually use your MCP server: which tools get
 called, how often, by whom, and — via intent capture — why.
