@@ -20,6 +20,7 @@ use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\AbstractLogger;
 
 final class CurlTransportTest extends TestCase
 {
@@ -464,11 +465,13 @@ final class CurlTransportTest extends TestCase
         for ($i = 0; $i < 8; ++$i) {
             $transport->start($this->delivery($base, $beforeAttempt, 'evt_' . $i));
         }
-        // Finished transfers are only collected by pump(): five started, three wait for a slot.
+        // No transfer can finish during the starts (300 ms): five started, three wait for a slot.
         $this->assertCount(5, $started);
         $this->assertSame(8, $transport->inFlight());
+        $cpu = $this->cpuSeconds();
         $this->assertTrue($transport->drain($this->deadline()));
 
+        $this->assertLessThan(0.15, $this->cpuSeconds() - $cpu, 'drain() spun while all slots were busy');
         $this->assertCount(8, $started);
         $requests = self::collector()->requests($base);
         $this->assertCount(8, $requests);
@@ -482,6 +485,155 @@ final class CurlTransportTest extends TestCase
             range(0, 7),
         );
         $this->assertSame($expected, $messages);
+    }
+
+    /**
+     * Fix round 1: a transfer that finished while a slow logger held the loop is collected at once, not after a
+     * 1 s wait on the socket of a slower transfer.
+     */
+    #[MaximumDuration(2000)]
+    public function testAFinishedTransferIsCollectedWithoutWaitingForOthers(): void
+    {
+        $collector = self::collector();
+        $slow = $collector->scenario([], ['status' => 202, 'delayMs' => 1200, 'body' => '']);
+        $fast = $collector->scenario([], ['status' => 202, 'delayMs' => 100, 'body' => '']);
+        $failing = $collector->scenario([], ['status' => 503, 'body' => '']);
+        $logger = new class extends AbstractLogger {
+            /** @var list<array{float, string}> */
+            public array $lines = [];
+
+            #[\Override]
+            public function log($level, string|\Stringable $message, array $context = []): void
+            {
+                $this->lines[] = [hrtime(true) / 1e9, (string) $message];
+                if (str_starts_with((string) $message, 'Failed to send event evt_b')) {
+                    usleep(300_000); // a slow customer PSR logger; evt_a's response arrives meanwhile
+                }
+            }
+        };
+        Log::setLogger($logger);
+        $transport = new CurlTransport(new RetryPolicy([10.0]));
+        $transport->start(new Delivery(ApiBaseUrl::endpoint($slow), '{}', 'evt_c', 'slow'));
+        $transport->start(new Delivery(ApiBaseUrl::endpoint($fast), '{}', 'evt_a', 'fast'));
+        $transport->start(new Delivery(ApiBaseUrl::endpoint($failing), '{}', 'evt_b', 'failing'));
+
+        $this->assertFalse($transport->drain($transport->now() + 1.0)); // evt_c runs 1.2 s, evt_b retries in 10 s
+
+        $failed = 'Failed to send event evt_b, retrying... [Error: HTTP 503]';
+        $sent = 'Successfully sent event evt_a | fast';
+        $times = array_column($logger->lines, 0, 1); // message => when it was logged
+        $this->assertSame([$failed, $sent], array_keys($times));
+        $this->assertLessThan(0.7, ($times[$sent] ?? INF) - ($times[$failed] ?? 0.0));
+    }
+
+    #[MaximumDuration(2000)]
+    public function testWaitForActivityReturnsAtOnceWhenAWaitingAttemptCanStart(): void
+    {
+        $collector = self::collector();
+        $fast = $collector->scenario([], ['status' => 202, 'delayMs' => 50, 'body' => '']);
+        $slow = $collector->scenario([], ['status' => 202, 'delayMs' => 500, 'body' => '']);
+        $started = new \ArrayObject();
+        $beforeAttempt = static function () use ($started): void {
+            $started[] = true;
+        };
+        $transport = $this->fast();
+        $transport->start($this->delivery($fast, $beforeAttempt, 'evt_0'));
+        for ($i = 1; $i <= 5; ++$i) {
+            $transport->start($this->delivery($slow, $beforeAttempt, 'evt_' . $i));
+        }
+        $this->assertCount(5, $started);
+        // pump() starts waiting attempts before it collects: evt_0's slot frees up after the launch.
+        $this->pumpUntil($transport, fn(): bool => $this->logger->messages() !== []);
+        $this->assertCount(5, $started);
+        $begin = hrtime(true);
+
+        $transport->waitForActivity(INF);
+
+        $this->assertLessThan(0.2, (hrtime(true) - $begin) / 1e9);
+        $transport->pump();
+        $this->assertCount(6, $started);
+        $this->assertTrue($transport->drain($this->deadline())); // leave no slow request behind in the collector
+    }
+
+    #[Group('ac-07-13')]
+    #[MaximumDuration(1000)]
+    public function testAFailedAddIsAFailedAttempt(): void
+    {
+        $base = self::collector()->scenario();
+        $transport = new CurlTransport(
+            new RetryPolicy([0.01, 0.02, 0.04]),
+            multiStatus: static fn(string $function, int $code): int => $function === 'curl_multi_add_handle' ? CURLM_INTERNAL_ERROR : $code,
+        );
+        $begin = hrtime(true);
+
+        $this->assertTrue($transport->send($this->delivery($base), $this->deadline()));
+
+        $this->assertLessThan(1.0, (hrtime(true) - $begin) / 1e9);
+        $failed = self::FAILED . 'cURL multi error 4: Internal error]';
+        $this->assertSame([$failed, $failed, $failed, $failed, self::GAVE_UP . 'cURL multi error 4: Internal error'], $this->logger->messages());
+        $this->assertSame(0, $transport->inFlight());
+        $this->assertSame([], self::collector()->requests($base), 'the handle was taken out of the multi handle again');
+    }
+
+    #[MaximumDuration(1000)]
+    public function testAnAddThatFailsOnceIsRetried(): void
+    {
+        $base = self::collector()->scenario();
+        $adds = new \ArrayObject();
+        $multiStatus = static function (string $function, int $code) use ($adds): int {
+            if ($function !== 'curl_multi_add_handle') {
+                return $code;
+            }
+            $adds[] = $code;
+
+            return count($adds) === 1 ? CURLM_INTERNAL_ERROR : $code;
+        };
+        $transport = new CurlTransport(new RetryPolicy([0.01, 0.02, 0.04]), multiStatus: $multiStatus);
+
+        $this->assertTrue($transport->send($this->delivery($base), $this->deadline()));
+
+        $this->assertSame([self::FAILED . 'cURL multi error 4: Internal error]', self::SUCCESS], $this->logger->messages());
+        $this->assertCount(1, self::collector()->requests($base));
+    }
+
+    #[Group('ac-07-13')]
+    #[MaximumDuration(1000)]
+    public function testAFailingExecFailsTheTransfersSoNothingWaitsForever(): void
+    {
+        $base = self::collector()->scenario();
+        $transport = new CurlTransport(
+            new RetryPolicy([0.01, 0.02, 0.04]),
+            multiStatus: static fn(string $function, int $code): int => $function === 'curl_multi_exec' ? CURLM_INTERNAL_ERROR : $code,
+        );
+        $begin = hrtime(true);
+
+        $this->assertTrue($transport->send($this->delivery($base), $this->deadline()));
+
+        $this->assertLessThan(1.0, (hrtime(true) - $begin) / 1e9);
+        $failed = self::FAILED . 'cURL multi error 4: Internal error]';
+        $this->assertSame([$failed, $failed, $failed, $failed, self::GAVE_UP . 'cURL multi error 4: Internal error'], $this->logger->messages());
+        $this->assertSame(0, $transport->inFlight());
+    }
+
+    #[MaximumDuration(1000)]
+    public function testAnExecThatFailsOnceIsRetried(): void
+    {
+        $base = self::collector()->scenario();
+        $execs = new \ArrayObject();
+        $multiStatus = static function (string $function, int $code) use ($execs): int {
+            if ($function !== 'curl_multi_exec') {
+                return $code;
+            }
+            $execs[] = $code;
+
+            return count($execs) === 1 ? CURLM_INTERNAL_ERROR : $code;
+        };
+        $transport = new CurlTransport(new RetryPolicy([0.01, 0.02, 0.04]), multiStatus: $multiStatus);
+
+        $this->assertTrue($transport->send($this->delivery($base), $this->deadline()));
+
+        $this->assertSame([self::FAILED . 'cURL multi error 4: Internal error]', self::SUCCESS], $this->logger->messages());
+        $this->assertSame(0, $transport->inFlight());
     }
 
     #[MaximumDuration(5000)]

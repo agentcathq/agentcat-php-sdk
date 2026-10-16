@@ -32,30 +32,33 @@ final class CurlTransport implements Transport
     /** @var \Closure(): float */
     private readonly \Closure $clock;
 
+    /** @var \Closure(string, int): int */
+    private readonly \Closure $multiStatus;
+
     /** @var list<array{delivery: Delivery, attempt: int}> attempts waiting for a free transfer slot */
     private array $ready = [];
 
     /** @var list<array{delivery: Delivery, attempt: int, due: float}> retries waiting for their time */
     private array $scheduled = [];
 
-    /**
-     * Transfers in `$multi`, keyed by `spl_object_id()` of their handle; `$multi` keeps each handle alive until removed.
-     *
-     * @var array<int, array{delivery: Delivery, attempt: int}>
-     */
+    /** @var array<int, array{handle: \CurlHandle, delivery: Delivery, attempt: int}> transfers in `$multi`, keyed by `spl_object_id($handle)` */
     private array $active = [];
 
     /**
-     * @param (\Closure(): float)|null $clock monotonic seconds (tests); must not throw. Default `hrtime(true) / 1e9`.
+     * @param (\Closure(): float)|null          $clock       monotonic seconds (tests); must not throw. Default `hrtime(true) / 1e9`.
+     * @param (\Closure(string, int): int)|null $multiStatus tests only: receives the function name and the CURLM code of each
+     *                                                       `curl_multi_add_handle()` and `curl_multi_exec()` call, returns the code to act on
      */
     public function __construct(
         private readonly RetryPolicy $retryPolicy = new RetryPolicy(),
         private readonly float $connectTimeoutSeconds = self::CONNECT_TIMEOUT_SECONDS,
         private readonly float $totalTimeoutSeconds = self::TOTAL_TIMEOUT_SECONDS,
         ?\Closure $clock = null,
+        ?\Closure $multiStatus = null,
     ) {
         $this->multi = curl_multi_init();
         $this->clock = $clock ?? static fn(): float => hrtime(true) / 1e9;
+        $this->multiStatus = $multiStatus ?? static fn(string $function, int $code): int => $code;
     }
 
     public static function userAgent(): string
@@ -69,14 +72,16 @@ final class CurlTransport implements Transport
         $this->guarded(function () use ($delivery): void {
             $this->ready[] = ['delivery' => $delivery, 'attempt' => 1];
             $this->launch();
+            $this->collect();
         });
     }
 
     #[\Override]
     public function pump(): void
     {
+        // Collecting comes last: every curl_multi_exec() is followed by a read of the transfers it finished, so
+        // a finished transfer never waits in libcurl while waitForActivity() blocks on other sockets.
         $this->guarded(function (): void {
-            $this->collect();
             $now = $this->now();
             $due = [];
             $waiting = [];
@@ -93,6 +98,7 @@ final class CurlTransport implements Transport
                 $this->ready[] = ['delivery' => $retry['delivery'], 'attempt' => $retry['attempt']];
             }
             $this->launch();
+            $this->collect();
         });
     }
 
@@ -100,6 +106,9 @@ final class CurlTransport implements Transport
     public function waitForActivity(float $deadline): void
     {
         $this->guarded(function () use ($deadline): void {
+            if ($this->ready !== [] && count($this->active) < self::MAX_CONCURRENT) {
+                return; // a waiting attempt can start now (a slot freed up after the last launch)
+            }
             $now = $this->now();
             $until = $deadline;
             foreach ($this->scheduled as $retry) {
@@ -198,6 +207,7 @@ final class CurlTransport implements Transport
         }
     }
 
+    /** Starts waiting attempts while slots are free; the next collect() runs their first curl_multi_exec(). */
     private function launch(): void
     {
         while (count($this->active) < self::MAX_CONCURRENT && $this->ready !== []) {
@@ -217,17 +227,31 @@ final class CurlTransport implements Transport
                 continue;
             }
             curl_setopt_array($handle, $this->curlOptions($next['delivery']));
-            curl_multi_add_handle($this->multi, $handle);
-            $this->active[spl_object_id($handle)] = $next;
-        }
-        if ($this->active !== []) {
-            curl_multi_exec($this->multi, $running);
+            $code = ($this->multiStatus)('curl_multi_add_handle', curl_multi_add_handle($this->multi, $handle));
+            if ($code !== CURLM_OK) {
+                // PHP keeps the handle in its list of the multi handle even when libcurl refused it.
+                curl_multi_remove_handle($this->multi, $handle);
+                $this->failed($next['delivery'], $next['attempt'], $this->multiError($code));
+
+                continue;
+            }
+            $this->active[spl_object_id($handle)] = ['handle' => $handle] + $next;
         }
     }
 
+    /** Runs the transfers, then reads every transfer that this run finished. */
     private function collect(): void
     {
-        curl_multi_exec($this->multi, $running);
+        $code = ($this->multiStatus)('curl_multi_exec', curl_multi_exec($this->multi, $running));
+        if ($code !== CURLM_OK) {
+            // The multi handle cannot run its transfers: fail them, so that nothing waits for them forever.
+            $active = $this->active;
+            $this->active = [];
+            foreach ($active as $entry) {
+                curl_multi_remove_handle($this->multi, $entry['handle']);
+                $this->failed($entry['delivery'], $entry['attempt'], $this->multiError($code));
+            }
+        }
         while (true) {
             /** @var array{msg: int, result: int, handle: \CurlHandle}|false $info the documented shape */
             $info = curl_multi_info_read($this->multi);
@@ -259,6 +283,11 @@ final class CurlTransport implements Transport
             return;
         }
         $this->failed($delivery, $attempt, 'HTTP ' . $status);
+    }
+
+    private function multiError(int $code): string
+    {
+        return sprintf('cURL multi error %d: %s', $code, curl_multi_strerror($code));
     }
 
     private function failed(Delivery $delivery, int $attempt, string $error): void
