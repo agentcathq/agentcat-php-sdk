@@ -17,6 +17,9 @@
         <testsuite name="Golden">
             <directory>tests/Golden</directory>
         </testsuite>
+        <testsuite name="Integration">
+            <directory>tests/Integration</directory>
+        </testsuite>
         <testsuite name="Architecture">
             <directory>tests/Architecture</directory>
             <!-- PHPat rules run inside PHPStan, not PHPUnit -->

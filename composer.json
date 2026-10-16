@@ -49,6 +49,7 @@
         "rector/rector": "2.7.0",
         "shipmonk/composer-dependency-analyser": "^1.8.4",
         "spaze/phpstan-disallowed-calls": "^4.15",
+        "symfony/process": "^7.4 || ^8.1",
         "tomasvotruba/type-coverage": "^2.5.1"
     },
     "minimum-stability": "stable",
