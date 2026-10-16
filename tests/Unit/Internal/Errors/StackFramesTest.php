@@ -198,6 +198,8 @@ final class StackFramesTest extends TestCase
         yield 'empty class' => [['class' => '', 'function' => 'App\helper'], 'App'];
         yield 'non-string class' => [['class' => 7, 'function' => 'strlen'], null];
         yield 'non-string function' => [['function' => ['App\helper']], null];
+        yield 'anonymous class' => [['class' => "class@anonymous\0/app/a.php:12\$0", 'type' => '->', 'function' => 'run'], 'class@anonymous'];
+        yield 'anonymous subclass' => [['class' => "App\\Base@anonymous\0/app/b.php:3\$1", 'type' => '::', 'function' => 'make'], 'App\Base@anonymous'];
     }
 
     /** @param array<string, mixed> $entry */
@@ -554,6 +556,28 @@ final class StackFramesTest extends TestCase
         } finally {
             ini_set('zend.exception_ignore_args', (string) $previousIgnore);
             ini_set('zend.exception_string_param_max_len', (string) $previousLength);
+        }
+    }
+
+    public function testStackStringCutsAnonymousClassNames(): void
+    {
+        $counter = new class implements \Countable {
+            #[\Override]
+            public function count(): int
+            {
+                throw new class ('anonymous boom') extends \RuntimeException {};
+            }
+        };
+
+        try {
+            $counter->count();
+        } catch (\RuntimeException $exception) {
+            $stack = StackFrames::stackString($exception);
+
+            $this->assertStringStartsWith('RuntimeException@anonymous: anonymous boom in ' . __FILE__ . ':', $stack);
+            $this->assertStringContainsString("\n#0 " . __FILE__ . '(', $stack);
+            $this->assertStringContainsString('): Countable@anonymous->count()' . "\n#1 ", $stack);
+            $this->assertStringNotContainsString("\0", $stack);
         }
     }
 

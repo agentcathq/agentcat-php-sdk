@@ -463,6 +463,76 @@ final class ExceptionCaptureTest extends TestCase
         $this->assertSame('{"message":"broken trace","type":"RuntimeException","platform":"php"}', Json::encodeJs($data));
     }
 
+    /** The encoded error holds no NUL byte, and no anonymous class name keeps its `\0/path:line$n` suffix. */
+    private function assertNoAnonymousSuffix(\stdClass $data): void
+    {
+        $json = WireEncoder::encode(new Event(projectId: 'proj_1', isError: true, error: $data));
+
+        $this->assertStringContainsString('@anonymous', $json);
+        $this->assertStringNotContainsString('\u0000', $json);
+        // Allowed after the name: end of a JSON string (type, module), `->`/`::` (stack line), `: ` (stack header).
+        $this->assertDoesNotMatchRegularExpression('/@anonymous(?!"|->|::|: )/', $json);
+    }
+
+    #[Group('ac-05-E2')]
+    #[Group('ac-05-C2')]
+    public function testAnonymousExceptionTypeIsCutAtTheNulByte(): void
+    {
+        $error = self::caught(static fn(): never => throw new class ('anonymous boom') extends \RuntimeException {});
+        $this->assertStringContainsString("\0", $error::class);
+
+        $data = ExceptionCapture::capture(new \LogicException('top', 0, $error));
+
+        $this->assertSame('LogicException', $data->type);
+        $chained = self::at(self::chained($data), 0);
+        $this->assertSame('RuntimeException@anonymous', $chained->type);
+        $this->assertStringStartsWith('RuntimeException@anonymous: anonymous boom in ', self::str($chained->stack));
+        $this->assertNoAnonymousSuffix($data);
+
+        $top = ExceptionCapture::capture($error);
+        $this->assertSame('RuntimeException@anonymous', $top->type);
+        $this->assertStringStartsWith('RuntimeException@anonymous: anonymous boom in ', self::str($top->stack));
+        $this->assertNoAnonymousSuffix($top);
+    }
+
+    #[Group('ac-05-C2')]
+    public function testAnonymousClassFrameModuleIsCutAtTheNulByte(): void
+    {
+        $counter = new class implements \Countable {
+            #[\Override]
+            public function count(): int
+            {
+                throw new \LengthException('cannot count');
+            }
+        };
+        $plain = new class {
+            public function run(): never
+            {
+                throw new \DomainException('cannot run');
+            }
+        };
+
+        $counted = ExceptionCapture::capture(self::caught(static fn(): int => $counter->count()));
+        $ran = ExceptionCapture::capture(self::caught(static fn(): never => $plain->run()));
+
+        $this->assertSame('count', self::at(self::frames($counted), 0)->function);
+        $this->assertSame('Countable@anonymous', self::at(self::frames($counted), 0)->module);
+        $this->assertSame('run', self::at(self::frames($ran), 0)->function);
+        $this->assertSame('class@anonymous', self::at(self::frames($ran), 0)->module);
+        $this->assertNoAnonymousSuffix($counted);
+        $this->assertNoAnonymousSuffix($ran);
+    }
+
+    public function testCaptureFailureFallbackCutsAnonymousType(): void
+    {
+        $error = new class ('broken anonymous') extends \RuntimeException {};
+        (new \ReflectionProperty(\Exception::class, 'trace'))->setValue($error, ['not a trace entry']);
+
+        $data = ExceptionCapture::fromThrowable($error);
+
+        $this->assertSame('{"message":"broken anonymous","type":"RuntimeException@anonymous","platform":"php"}', Json::encodeJs($data));
+    }
+
     #[Group('review-focus-1')]
     public function testInvalidUtf8MessageIsKeptRawAndEncodesWithReplacementCharacters(): void
     {

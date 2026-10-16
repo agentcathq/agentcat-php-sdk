@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AgentCat\Internal\Errors;
 
+use AgentCat\Internal\Support\ClassName;
 use Composer\Autoload\ClassLoader;
 
 /**
@@ -102,7 +103,8 @@ final readonly class StackFrames
     }
 
     /**
-     * The class of a method frame, else the namespace of a function or closure; null for global functions.
+     * The class of a method frame (an anonymous class cut at its NUL byte), else the namespace of a function or
+     * closure; null for global functions.
      *
      * @param array<string, mixed> $entry
      */
@@ -110,7 +112,7 @@ final readonly class StackFrames
     {
         $class = $entry['class'] ?? null;
         if (is_string($class) && $class !== '') {
-            return $class;
+            return ClassName::of($class);
         }
         $namespace = self::splitFunction($entry)[0];
 
@@ -126,11 +128,11 @@ final readonly class StackFrames
         $lines = [];
         foreach ($error->getTrace() as $index => $entry) {
             $location = isset($entry['file'], $entry['line']) ? $entry['file'] . '(' . $entry['line'] . ')' : '[internal function]';
-            $lines[] = '#' . $index . ' ' . $location . ': ' . ($entry['class'] ?? '') . ($entry['type'] ?? '') . $entry['function'] . '()';
+            $lines[] = '#' . $index . ' ' . $location . ': ' . ClassName::of($entry['class'] ?? '') . ($entry['type'] ?? '') . $entry['function'] . '()';
         }
         $lines[] = '#' . count($lines) . ' ' . self::MAIN_FUNCTION;
 
-        return sprintf("%s: %s in %s:%d\nStack trace:\n", $error::class, $error->getMessage(), $error->getFile(), $error->getLine())
+        return sprintf("%s: %s in %s:%d\nStack trace:\n", ClassName::of($error::class), $error->getMessage(), $error->getFile(), $error->getLine())
             . implode("\n", $lines);
     }
 

@@ -18,4 +18,9 @@ final class ErrorTextTest extends TestCase
     {
         $this->assertSame('Random\RandomException: boom', ErrorText::of(new \Random\RandomException('boom')));
     }
+
+    public function testCutsAnonymousClassNamesAtTheNulByte(): void
+    {
+        $this->assertSame('RuntimeException@anonymous: boom', ErrorText::of(new class ('boom') extends \RuntimeException {}));
+    }
 }

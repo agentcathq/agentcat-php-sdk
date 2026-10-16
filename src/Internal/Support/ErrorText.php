@@ -13,6 +13,6 @@ final class ErrorText
 {
     public static function of(\Throwable $error): string
     {
-        return $error::class . ': ' . $error->getMessage();
+        return ClassName::of($error::class) . ': ' . $error->getMessage();
     }
 }

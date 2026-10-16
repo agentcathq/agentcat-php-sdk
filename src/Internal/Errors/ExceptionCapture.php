@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AgentCat\Internal\Errors;
 
 use AgentCat\Internal\Json\Json;
+use AgentCat\Internal\Support\ClassName;
 use AgentCat\Internal\Support\Js;
 use AgentCat\Internal\Support\Values;
 
@@ -49,7 +50,7 @@ final class ExceptionCapture
             $frames ??= StackFrames::default();
             $data = new \stdClass();
             $data->message = $error->getMessage();
-            $data->type = $error::class;
+            $data->type = ClassName::of($error::class);
             $data->platform = self::PLATFORM;
             $data->stack = StackFrames::stackString($error);
             $data->frames = $frames->build($error);
@@ -62,7 +63,7 @@ final class ExceptionCapture
         } catch (\Throwable) {
             $fallback = new \stdClass();
             $fallback->message = $error->getMessage();
-            $fallback->type = $error::class;
+            $fallback->type = ClassName::of($error::class);
             $fallback->platform = self::PLATFORM;
 
             return $fallback;
@@ -120,7 +121,7 @@ final class ExceptionCapture
             $seen[$current] = true;
             $entry = new \stdClass();
             $entry->message = $current->getMessage();
-            $entry->type = $current::class;
+            $entry->type = ClassName::of($current::class);
             $entry->stack = StackFrames::stackString($current);
             $entry->frames = $frames->build($current);
             $chained[] = $entry;
