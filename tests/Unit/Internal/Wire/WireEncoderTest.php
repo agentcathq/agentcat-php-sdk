@@ -60,7 +60,13 @@ final class WireEncoderTest extends TestCase
 
     public function testLineTerminatorsAndZeroFractionsStayRaw(): void
     {
-        $body = WireEncoder::encode(new Event(projectId: 'p', userIntent: "a\u{2028}b", properties: ['n' => 2.0]));
+        // A fixed timestamp: a current one like `…:22.089Z` contains `2.0` itself.
+        $body = WireEncoder::encode(new Event(
+            projectId: 'p',
+            timestamp: new \DateTimeImmutable('2026-10-16T12:00:00.000Z'),
+            userIntent: "a\u{2028}b",
+            properties: ['n' => 2.0],
+        ));
 
         $this->assertStringContainsString("a\u{2028}b", $body);
         $this->assertStringContainsString('"n":2', $body);
