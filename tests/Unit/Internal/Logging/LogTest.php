@@ -62,15 +62,24 @@ final class LogTest extends TestCase
         $this->assertSame(1, $logger->calls);
     }
 
-    public function testResetRemovesCustomLogger(): void
+    public function testResetFallsBackToFileLoggerInHome(): void
     {
+        $home = sys_get_temp_dir() . '/agentcat-logtest-' . bin2hex(random_bytes(6));
+        mkdir($home);
+        $previous = getenv('HOME');
+        putenv('HOME=' . $home);
         $logger = new MemoryLogger();
         Log::setLogger($logger);
         Log::reset();
-        Log::setLogger(null);
 
-        Log::write('Initializing');
-
-        $this->assertSame([], $logger->records);
+        try {
+            Log::write('Initializing');
+            $this->assertSame([], $logger->records);
+            $this->assertStringEndsWith('] Initializing' . "\n", (string) file_get_contents($home . '/agentcat.log'));
+        } finally {
+            $previous === false ? putenv('HOME') : putenv('HOME=' . $previous);
+            @unlink($home . '/agentcat.log');
+            rmdir($home);
+        }
     }
 }
