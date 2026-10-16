@@ -14,6 +14,7 @@ use PHPUnit\Framework\TestCase;
 
 final class GetMoreToolsTest extends TestCase
 {
+    #[\Override]
     protected function tearDown(): void
     {
         Log::reset();
@@ -79,6 +80,7 @@ final class GetMoreToolsTest extends TestCase
         GetMoreTools::result(Json::decode('{"context":"abc😀"}'));
 
         $this->assertSame(['Missing tool reported (context length: 5)'], $logger->messages());
+        $this->assertSame(['info'], array_column($logger->records, 'level'));
     }
 
     #[Group('ac-04-47')]

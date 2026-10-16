@@ -49,7 +49,7 @@ final class TagValidator
 
         $excess = count($valid) - self::MAX_TAGS;
         if ($excess > 0) {
-            Log::write(sprintf('Dropping %d tag(s) — exceeds maximum of %d entries per event', $excess, self::MAX_TAGS));
+            Log::warning(sprintf('Dropping %d tag(s) — exceeds maximum of %d entries per event', $excess, self::MAX_TAGS));
             $valid = array_slice($valid, 0, self::MAX_TAGS, true);
         }
 
@@ -102,7 +102,7 @@ final class TagValidator
         if ($reason === null) {
             return true;
         }
-        Log::write(sprintf('Dropping invalid tag: "%s" — %s', $key, $reason));
+        Log::warning(sprintf('Dropping invalid tag: "%s" — %s', $key, $reason));
 
         return false;
     }

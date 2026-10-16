@@ -12,6 +12,7 @@ use Psr\Log\AbstractLogger;
 
 final class LogTest extends TestCase
 {
+    #[\Override]
     protected function tearDown(): void
     {
         Log::reset();
@@ -23,11 +24,17 @@ final class LogTest extends TestCase
     public static function levelProvider(): iterable
     {
         yield 'error prefix' => ['ERROR: Tool "x" broke', 'error'];
-        yield 'fail lower' => ['it did fail here', 'error'];
-        yield 'fail upper' => ['FAILED', 'error'];
+        yield 'Error prefix' => ['Error: Tool "x" broke', 'error'];
+        yield 'fail word is not an error' => ['it did fail here', 'info'];
+        yield 'FAILED is not an error' => ['FAILED', 'info'];
         yield 'warn prefix' => ['WARN: careful', 'warning'];
         yield 'warning substring' => ['Note Warning: careful', 'warning'];
-        yield 'warning and failed' => ['Warning: it failed', 'error'];
+        yield 'warning and failed' => ['Warning: it failed', 'warning'];
+        yield 'handle injection failed' => ['WARN: Handle injection failed for tool "x"; listing it unmodified - boom', 'warning'];
+        yield 'context injection failed' => ['WARN: Context injection failed for tool "x"; listing it unmodified - boom', 'warning'];
+        yield 'tool-list injection failed' => ['Warning: AgentCat tool-list injection failed; serving the original tool list unmodified - boom', 'warning'];
+        yield 'warn about get_errors tool' => ['WARN: Tool "get_errors" has complex schema (oneOf/allOf/anyOf). Skipping handle injection.', 'warning'];
+        yield 'invalid tag error_code' => ['Dropping invalid tag: "error_code" — reason', 'info'];
         yield 'warn not at start' => ['x WARN: careful', 'info'];
         yield 'plain' => ['Initializing', 'info'];
     }
@@ -43,11 +50,50 @@ final class LogTest extends TestCase
         $this->assertSame([['level' => $level, 'message' => $message]], $logger->records);
     }
 
+    public function testExplicitMethodsUseTheirLevelRegardlessOfText(): void
+    {
+        $logger = new MemoryLogger();
+        Log::setLogger($logger);
+
+        Log::error('plain text');
+        Log::warning('ERROR: looks like an error');
+        Log::info('WARN: looks like a warning');
+
+        $this->assertSame([
+            ['level' => 'error', 'message' => 'plain text'],
+            ['level' => 'warning', 'message' => 'ERROR: looks like an error'],
+            ['level' => 'info', 'message' => 'WARN: looks like a warning'],
+        ], $logger->records);
+    }
+
+    public function testExplicitMethodsSwallowLoggerExceptions(): void
+    {
+        $logger = new class extends AbstractLogger {
+            public int $calls = 0;
+
+            #[\Override]
+            public function log($level, string|\Stringable $message, array $context = []): void
+            {
+                ++$this->calls;
+
+                throw new \RuntimeException('boom');
+            }
+        };
+        Log::setLogger($logger);
+
+        Log::error('a');
+        Log::warning('b');
+        Log::info('c');
+
+        $this->assertSame(3, $logger->calls);
+    }
+
     public function testWriteSwallowsLoggerExceptions(): void
     {
         $logger = new class extends AbstractLogger {
             public int $calls = 0;
 
+            #[\Override]
             public function log($level, string|\Stringable $message, array $context = []): void
             {
                 ++$this->calls;

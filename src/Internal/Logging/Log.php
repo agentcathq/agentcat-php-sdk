@@ -23,17 +23,39 @@ final class Log
         self::$logger = null;
     }
 
-    /** Never throws. */
+    /** Never throws. The level comes from the line prefix only. */
     public static function write(string $message): void
     {
+        if (str_starts_with($message, 'ERROR:') || str_starts_with($message, 'Error:')) {
+            self::emit(LogLevel::ERROR, $message);
+        } elseif (str_starts_with($message, 'WARN:') || str_contains($message, 'Warning:')) {
+            self::emit(LogLevel::WARNING, $message);
+        } else {
+            self::emit(LogLevel::INFO, $message);
+        }
+    }
+
+    /** Never throws. */
+    public static function error(string $message): void
+    {
+        self::emit(LogLevel::ERROR, $message);
+    }
+
+    /** Never throws. */
+    public static function warning(string $message): void
+    {
+        self::emit(LogLevel::WARNING, $message);
+    }
+
+    /** Never throws. */
+    public static function info(string $message): void
+    {
+        self::emit(LogLevel::INFO, $message);
+    }
+
+    private static function emit(string $level, string $message): void
+    {
         try {
-            if (preg_match('/fail|error/i', $message) === 1) {
-                $level = LogLevel::ERROR;
-            } elseif (str_starts_with($message, 'WARN:') || str_contains($message, 'Warning:')) {
-                $level = LogLevel::WARNING;
-            } else {
-                $level = LogLevel::INFO;
-            }
             self::$logger ??= new FileLogger();
             self::$logger->log($level, $message);
         } catch (\Throwable) {

@@ -16,12 +16,14 @@ final class TagValidatorTest extends TestCase
 {
     private MemoryLogger $logger;
 
+    #[\Override]
     protected function setUp(): void
     {
         $this->logger = new MemoryLogger();
         Log::setLogger($this->logger);
     }
 
+    #[\Override]
     protected function tearDown(): void
     {
         Log::reset();
@@ -125,6 +127,14 @@ final class TagValidatorTest extends TestCase
             'Dropping invalid tag: "bad!" — key contains invalid characters or is empty',
             'Dropping invalid tag: "k" — value exceeds max length of 200',
         ], $this->logger->messages());
+    }
+
+    public function testDropLinesAreLoggedAsWarnings(): void
+    {
+        TagValidator::validate(['error_code' => 1]);
+        TagValidator::validate(array_fill_keys(array_map(strval(...), range(1, 51)), 'v'));
+
+        $this->assertSame(['warning', 'warning'], array_column($this->logger->records, 'level'));
     }
 
     #[Group('ac-01-44')]

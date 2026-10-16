@@ -48,7 +48,7 @@ final class GetMoreTools
     {
         $context = $arguments instanceof \stdClass ? ($arguments->context ?? null) : null;
         $length = is_string($context) ? Js::utf16Length($context) : 0;
-        Log::write('Missing tool reported (context length: ' . $length . ')');
+        Log::info('Missing tool reported (context length: ' . $length . ')');
 
         return (object) [
             'content' => [
