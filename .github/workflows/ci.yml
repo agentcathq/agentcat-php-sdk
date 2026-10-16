@@ -120,9 +120,11 @@ jobs:
           dependency-versions: highest
       - name: Mutation tests on changed lines
         if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: >-
           vendor/bin/infection --threads=max --git-diff-lines
-          --git-diff-base=origin/${{ github.base_ref }}
+          --git-diff-base=origin/"$BASE_REF"
           --min-covered-msi=95 --logger-github --ignore-msi-with-no-mutations
       - name: Mutation tests (full)
         if: github.event_name != 'pull_request'

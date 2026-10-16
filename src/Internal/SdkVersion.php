@@ -9,20 +9,26 @@ use Composer\InstalledVersions;
 /** @internal */
 final class SdkVersion
 {
-    private static ?string $version = null;
-
     public static function get(): string
     {
-        if (self::$version !== null) {
-            return self::$version;
-        }
+        return self::resolve(
+            static fn(): ?string => InstalledVersions::getPrettyVersion('agentcat/sdk'),
+        );
+    }
 
+    /**
+     * Turns a version lookup into a non-empty string. Never throws.
+     *
+     * @param \Closure(): ?string $lookup
+     */
+    public static function resolve(\Closure $lookup): string
+    {
         try {
-            $pretty = InstalledVersions::getPrettyVersion('agentcat/sdk');
+            $pretty = $lookup();
         } catch (\Throwable) {
-            $pretty = null;
+            return 'dev';
         }
 
-        return self::$version = ($pretty === null || $pretty === '') ? 'dev' : $pretty;
+        return ($pretty === null || $pretty === '') ? 'dev' : $pretty;
     }
 }
