@@ -7,6 +7,7 @@ namespace AgentCat\Tests\Unit\Internal\Errors;
 use AgentCat\Event;
 use AgentCat\Internal\Errors\PathNormalizer;
 use AgentCat\Internal\Errors\StackFrames;
+use AgentCat\Tests\Fixtures\Errors\LegacyMessageException;
 use AgentCat\Tests\Fixtures\Errors\Thrower;
 use Composer\Autoload\ClassLoader;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -160,11 +161,12 @@ final class StackFramesTest extends TestCase
         yield 'global function' => [['function' => 'strlen'], 'strlen'];
         yield 'namespaced function' => [['function' => 'App\helper'], 'helper'];
         yield 'closure' => [['function' => '{closure}'], '{closure}'];
-        yield 'namespaced closure' => [['function' => 'App\{closure}'], '{closure}'];
+        yield 'php 8.3 namespaced closure' => [['function' => 'App\{closure}'], '{closure}'];
         yield 'php 8.4 closure' => [['function' => '{closure:/app/src/Tools.php:12}'], '{closure}'];
-        yield 'php 8.4 closure in method' => [['class' => 'App\Tools', 'type' => '->', 'function' => '{closure:/app/src/Tools.php:12}'], '{closure}'];
-        yield 'php 8.4 nested closure' => [['function' => 'App\{closure:{closure:/a.php:3}:4}'], '{closure}'];
-        yield 'php 8.4 closure naming a method' => [['function' => 'App\{closure:App\Tools::weather():12}'], '{closure}'];
+        yield 'php 8.4 closure in method' => [['class' => 'App\Tools', 'type' => '->', 'function' => '{closure:App\Tools::weather():12}'], '{closure}'];
+        yield 'php 8.4 nested closure' => [['function' => '{closure:{closure:/a.php:3}:4}'], '{closure}'];
+        yield 'php 8.4 closure in a namespaced function' => [['function' => '{closure:App\helper():12}'], '{closure}'];
+        yield 'php 8.4 closure in an anonymous class' => [['class' => "class@anonymous\0/app/a.php:12\$0", 'type' => '->', 'function' => "{closure:class@anonymous\0/app/a.php:12\$0::run():13}"], '{closure}'];
         yield 'php 8.4 closure with windows path' => [['function' => '{closure:C:\app\a.php:3}'], '{closure}'];
         yield 'empty' => [[], '<anonymous>'];
         yield 'empty name' => [['function' => ''], '<anonymous>'];
@@ -188,9 +190,11 @@ final class StackFramesTest extends TestCase
         yield 'php 8.4 closure in method' => [['class' => 'App\Tools', 'type' => '->', 'function' => '{closure:App\Tools::weather():12}'], 'App\Tools'];
         yield 'namespaced function' => [['function' => 'App\helper'], 'App'];
         yield 'deep namespace function' => [['function' => 'App\Support\helper'], 'App\Support'];
-        yield 'namespaced closure' => [['function' => 'App\{closure}'], 'App'];
-        yield 'php 8.4 namespaced closure' => [['function' => 'App\{closure:{closure:/a.php:3}:4}'], 'App'];
-        yield 'php 8.4 closure naming a method' => [['function' => 'App\{closure:App\Tools::weather():12}'], 'App'];
+        // Closures without a class never get a module: PHP 8.3 prefixes the namespace, PHP 8.4+ does not.
+        yield 'php 8.3 namespaced closure' => [['function' => 'App\{closure}'], null];
+        yield 'php 8.4 file-scope closure' => [['function' => '{closure:/app/src/tools.php:3}'], null];
+        yield 'php 8.4 nested closure' => [['function' => '{closure:{closure:/a.php:3}:4}'], null];
+        yield 'php 8.4 closure in a namespaced function' => [['function' => '{closure:App\helper():12}'], null];
         yield 'global function' => [['function' => 'strlen'], null];
         yield 'global closure' => [['function' => '{closure}'], null];
         yield 'php 8.4 global closure with windows path' => [['function' => '{closure:C:\app\a.php:3}'], null];
@@ -200,6 +204,7 @@ final class StackFramesTest extends TestCase
         yield 'non-string function' => [['function' => ['App\helper']], null];
         yield 'anonymous class' => [['class' => "class@anonymous\0/app/a.php:12\$0", 'type' => '->', 'function' => 'run'], 'class@anonymous'];
         yield 'anonymous subclass' => [['class' => "App\\Base@anonymous\0/app/b.php:3\$1", 'type' => '::', 'function' => 'make'], 'App\Base@anonymous'];
+        yield 'php 8.4 closure in an anonymous class' => [['class' => "class@anonymous\0/app/a.php:12\$0", 'type' => '->', 'function' => "{closure:class@anonymous\0/app/a.php:12\$0::run():13}"], 'class@anonymous'];
     }
 
     /** @param array<string, mixed> $entry */
@@ -579,6 +584,32 @@ final class StackFramesTest extends TestCase
             $this->assertStringContainsString('): Countable@anonymous->count()' . "\n#1 ", $stack);
             $this->assertStringNotContainsString("\0", $stack);
         }
+    }
+
+    /** @return iterable<string, array{mixed, string}> */
+    public static function legacyMessageProvider(): iterable
+    {
+        yield 'object' => [new \stdClass(), ''];
+        yield 'array' => [['a'], 'Array'];
+        yield 'int' => [42, '42'];
+    }
+
+    #[DataProvider('legacyMessageProvider')]
+    #[Group('review-focus-2')]
+    public function testStackStringReadsANonStringMessageWithoutThrowingOrWarning(mixed $message, string $expected): void
+    {
+        $exception = new LegacyMessageException($message);
+        error_clear_last();
+        set_error_handler(static fn(int $no, string $str): never => throw new \ErrorException($str, 0, $no));
+
+        try {
+            $stack = StackFrames::stackString($exception);
+        } finally {
+            restore_error_handler();
+        }
+
+        $this->assertStringStartsWith(LegacyMessageException::class . ': ' . $expected . ' in ' . __FILE__ . ':', $stack);
+        $this->assertNull(error_get_last());
     }
 
     public function testStackStringMarksInternalFunctions(): void

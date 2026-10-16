@@ -10,6 +10,7 @@ use AgentCat\Internal\Errors\PathNormalizer;
 use AgentCat\Internal\Errors\StackFrames;
 use AgentCat\Internal\Json\Json;
 use AgentCat\Internal\Wire\WireEncoder;
+use AgentCat\Tests\Fixtures\Errors\LegacyMessageException;
 use AgentCat\Tests\Fixtures\Errors\Thrower;
 use AgentCat\Tests\Support\JsonAssert;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -531,6 +532,140 @@ final class ExceptionCaptureTest extends TestCase
         $data = ExceptionCapture::fromThrowable($error);
 
         $this->assertSame('{"message":"broken anonymous","type":"RuntimeException@anonymous","platform":"php"}', Json::encodeJs($data));
+    }
+
+    private static function firstFrame(\Throwable $error): \stdClass
+    {
+        return self::at(self::frames(ExceptionCapture::capture($error)), 0);
+    }
+
+    #[Group('ac-05-C2')]
+    public function testFileScopeClosureHasNoModuleOnAnyPhpVersion(): void
+    {
+        require_once __DIR__ . '/../../../Fixtures/Errors/functions.php';
+        $throws = \AgentCat\Tests\Fixtures\Errors\fileScopeClosure();
+
+        $error = self::caught(static fn(): mixed => $throws('file scope'));
+        $this->assertArrayNotHasKey('class', $error->getTrace()[0] ?? ['class' => 'missing trace']);
+
+        $frame = self::firstFrame($error);
+
+        $this->assertSame('{closure}', $frame->function);
+        $this->assertObjectNotHasProperty('module', $frame);
+        $this->assertSame('file-scope-closure.php', basename(self::str($frame->filename)));
+    }
+
+    #[Group('ac-05-C2')]
+    public function testClosureInAMethodHasTheClassAsModule(): void
+    {
+        $throws = static fn(): never => throw new \RuntimeException('in method');
+
+        $frame = self::firstFrame(self::caught($throws));
+
+        $this->assertSame('{closure}', $frame->function);
+        $this->assertSame(self::class, $frame->module);
+    }
+
+    #[Group('ac-05-C2')]
+    public function testNamedNamespacedFunctionHasTheNamespaceAsModule(): void
+    {
+        require_once __DIR__ . '/../../../Fixtures/Errors/functions.php';
+
+        $frame = self::firstFrame(self::caught(static fn(): never => \AgentCat\Tests\Fixtures\Errors\failInFunction('in function')));
+
+        $this->assertSame('failInFunction', $frame->function);
+        $this->assertSame('AgentCat\Tests\Fixtures\Errors', $frame->module);
+    }
+
+    #[Group('ac-05-C2')]
+    public function testClosureInAnAnonymousClassMethodLeavesNoNulByte(): void
+    {
+        // PHP 8.4+ names this closure `{closure:class@anonymous\0<file>:<line>$<n>::run():<line>}`.
+        $runner = new class {
+            public function run(): never
+            {
+                $fail = static fn(): never => throw new \RuntimeException('closure in anonymous class');
+                $fail();
+            }
+        };
+
+        $data = ExceptionCapture::capture(self::caught(static fn(): never => $runner->run()));
+
+        $frames = self::frames($data);
+        $this->assertSame('{closure}', self::at($frames, 0)->function);
+        $this->assertSame('class@anonymous', self::at($frames, 0)->module);
+        $this->assertSame('run', self::at($frames, 1)->function);
+        $this->assertSame('class@anonymous', self::at($frames, 1)->module);
+        $this->assertStringNotContainsString("\0", self::str($data->stack));
+        $this->assertNoAnonymousSuffix($data);
+    }
+
+    /** @return iterable<string, array{mixed, string}> */
+    public static function legacyMessageProvider(): iterable
+    {
+        yield 'object' => [new \stdClass(), ''];
+        yield 'array' => [['a'], 'Array'];
+        yield 'int' => [42, '42'];
+    }
+
+    private static function legacyError(mixed $message): \Throwable
+    {
+        return self::caught(static fn(): never => throw new LegacyMessageException($message, new LegacyMessageException($message)));
+    }
+
+    private function assertLegacyMessageData(\stdClass $data, string $expected): void
+    {
+        $this->assertSame($expected, $data->message);
+        $this->assertSame(LegacyMessageException::class, $data->type);
+        $this->assertStringStartsWith(LegacyMessageException::class . ': ' . $expected . ' in ', self::str($data->stack));
+        $this->assertNotSame([], self::frames($data));
+        $chained = self::at(self::chained($data), 0);
+        $this->assertSame($expected, $chained->message);
+        $this->assertStringStartsWith(LegacyMessageException::class . ': ' . $expected . ' in ', self::str($chained->stack));
+    }
+
+    #[DataProvider('legacyMessageProvider')]
+    public function testNonStringMessageNeitherThrowsNorWarns(mixed $message, string $expected): void
+    {
+        $error = self::legacyError($message);
+        error_clear_last();
+
+        $data = ExceptionCapture::capture($error);
+
+        $this->assertLegacyMessageData($data, $expected);
+        $this->assertNull(error_get_last());
+    }
+
+    #[DataProvider('legacyMessageProvider')]
+    #[Group('review-focus-2')]
+    public function testNonStringMessageUnderAThrowingErrorHandler(mixed $message, string $expected): void
+    {
+        $error = self::legacyError($message);
+        set_error_handler(static fn(int $no, string $str): never => throw new \ErrorException($str, 0, $no));
+
+        try {
+            $data = ExceptionCapture::capture($error);
+        } finally {
+            restore_error_handler();
+        }
+
+        $this->assertLegacyMessageData($data, $expected);
+    }
+
+    #[DataProvider('legacyMessageProvider')]
+    public function testCaptureFailureFallbackReadsANonStringMessage(mixed $message, string $expected): void
+    {
+        $error = new LegacyMessageException($message);
+        (new \ReflectionProperty(\Exception::class, 'trace'))->setValue($error, ['not a trace entry']);
+        set_error_handler(static fn(int $no, string $str): never => throw new \ErrorException($str, 0, $no));
+
+        try {
+            $data = ExceptionCapture::fromThrowable($error);
+        } finally {
+            restore_error_handler();
+        }
+
+        $this->assertSame(['message' => $expected, 'type' => LegacyMessageException::class, 'platform' => 'php'], get_object_vars($data));
     }
 
     #[Group('review-focus-1')]

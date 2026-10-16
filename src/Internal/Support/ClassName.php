@@ -21,4 +21,13 @@ final class ClassName
 
         return $name === false ? $class : $name;
     }
+
+    /**
+     * Cuts the anonymous class names a function name embeds (PHP 8.4+ closure names):
+     * `{closure:class@anonymous\0/app/a.php:12$0::run():13}` → `{closure:class@anonymous::run():13}`.
+     */
+    public static function inFunction(string $function): string
+    {
+        return preg_replace('/@anonymous\x00.*?:\d+\$[0-9a-f]+/s', '@anonymous', $function) ?? $function;
+    }
 }

@@ -10,4 +10,6 @@ use ShipMonk\ComposerDependencyAnalyser\Config\ErrorType;
 return (new Configuration())
     ->ignoreErrorsOnExtensions(['ext-curl'], [ErrorType::UNUSED_DEPENDENCY])
     // ext-posix is optional: FileLogger guards its use with function_exists().
-    ->ignoreErrorsOnExtensions(['ext-posix'], [ErrorType::SHADOW_DEPENDENCY]);
+    ->ignoreErrorsOnExtensions(['ext-posix'], [ErrorType::SHADOW_DEPENDENCY])
+    // Test fixture functions, loaded with require_once by ExceptionCaptureTest (not autoloadable).
+    ->ignoreUnknownFunctionsRegex('~^AgentCat\\\\Tests\\\\Fixtures\\\\Errors\\\\~');

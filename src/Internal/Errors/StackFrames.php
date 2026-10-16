@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AgentCat\Internal\Errors;
 
 use AgentCat\Internal\Support\ClassName;
+use AgentCat\Internal\Support\ErrorText;
 use Composer\Autoload\ClassLoader;
 
 /**
@@ -24,6 +25,8 @@ final readonly class StackFrames
     public const string MAIN_FUNCTION = '{main}';
     public const string ANONYMOUS_FUNCTION = '<anonymous>';
     public const int MAX_SOURCE_BYTES = 1_048_576;
+
+    private const string CLOSURE = '{closure}';
 
     private ?string $vendorDir;
 
@@ -103,8 +106,9 @@ final readonly class StackFrames
     }
 
     /**
-     * The class of a method frame (an anonymous class cut at its NUL byte), else the namespace of a function or
-     * closure; null for global functions.
+     * The class of a method or closure frame (an anonymous class cut at its NUL byte), else the namespace of a named
+     * function. Null for global functions and for closures without a class: PHP 8.3 prefixes a closure name with its
+     * namespace and PHP 8.4+ does not, so a namespace module would split one throw site across PHP versions.
      *
      * @param array<string, mixed> $entry
      */
@@ -114,9 +118,9 @@ final readonly class StackFrames
         if (is_string($class) && $class !== '') {
             return ClassName::of($class);
         }
-        $namespace = self::splitFunction($entry)[0];
+        [$namespace, $name] = self::splitFunction($entry);
 
-        return $namespace === '' ? null : $namespace;
+        return $namespace === '' || $name === self::CLOSURE ? null : $namespace;
     }
 
     /**
@@ -128,11 +132,11 @@ final readonly class StackFrames
         $lines = [];
         foreach ($error->getTrace() as $index => $entry) {
             $location = isset($entry['file'], $entry['line']) ? $entry['file'] . '(' . $entry['line'] . ')' : '[internal function]';
-            $lines[] = '#' . $index . ' ' . $location . ': ' . ClassName::of($entry['class'] ?? '') . ($entry['type'] ?? '') . $entry['function'] . '()';
+            $lines[] = '#' . $index . ' ' . $location . ': ' . ClassName::of($entry['class'] ?? '') . ($entry['type'] ?? '') . ClassName::inFunction($entry['function']) . '()';
         }
         $lines[] = '#' . count($lines) . ' ' . self::MAIN_FUNCTION;
 
-        return sprintf("%s: %s in %s:%d\nStack trace:\n", ClassName::of($error::class), $error->getMessage(), $error->getFile(), $error->getLine())
+        return sprintf("%s: %s in %s:%d\nStack trace:\n", ClassName::of($error::class), ErrorText::message($error), $error->getFile(), $error->getLine())
             . implode("\n", $lines);
     }
 
@@ -169,7 +173,7 @@ final readonly class StackFrames
     {
         $function = $entry['function'] ?? null;
         // PHP 8.4 closure names embed the defining file or function and line: `{closure:/app/src/Tools.php:12}`.
-        $name = is_string($function) ? preg_replace('/\{closure:.*\}/s', '{closure}', $function) ?? $function : '';
+        $name = is_string($function) ? preg_replace('/\{closure:.*\}/s', self::CLOSURE, $function) ?? $function : '';
         $separator = strrpos($name, '\\');
 
         return $separator === false ? ['', $name] : [substr($name, 0, $separator), substr($name, $separator + 1)];
