@@ -1,0 +1,24 @@
+{
+  "id": "evt_2nH0cX1kY7d8Zq3W5r6T9u0V1aB",
+  "project_id": "proj_2mZ9yX8wV7uT6sR5qP4oN3mL2kJ",
+  "session_id": "ses_2nH0cWzQ4m8LkP1sD7fG3hJ9kL0",
+  "event_type": "mcp:tools/call",
+  "timestamp": "2026-10-16T12:00:00.123Z",
+  "duration": 42,
+  "input_tokens": 6,
+  "output_tokens": 4,
+  "resource_name": "get_weather",
+  "parameters": {
+    "request": {"method": "tools/call", "params": {"name": "get_weather", "arguments": {"city": "Paris"}}},
+    "extra": {}
+  },
+  "response": {"content": [{"type": "text", "text": "Sunny, 21C"}]},
+  "identify_data": {},
+  "tags": {"agentcat_task_id_source": "minted"},
+  "sdk_language": "PHP",
+  "agentcat_version": "0.1.0",
+  "server_name": "weather-server",
+  "server_version": "1.2.0",
+  "client_name": "claude-code",
+  "client_version": "2.1.220"
+}

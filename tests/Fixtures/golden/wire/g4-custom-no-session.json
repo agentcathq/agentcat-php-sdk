@@ -1,0 +1,12 @@
+{
+  "id": "evt_2nH0cX1kY7d8Zq3W5r6T9u0V1aB",
+  "project_id": "proj_2mZ9yX8wV7uT6sR5qP4oN3mL2kJ",
+  "session_id": null,
+  "event_type": "agentcat:custom",
+  "timestamp": "2026-10-16T12:05:00.000Z",
+  "resource_name": "checkout",
+  "user_intent": "Checkout completed",
+  "parameters": {"cart_id": "c_42"},
+  "tags": {"env": "prod"},
+  "properties": {"cart_size": 3, "items": ["a", "b"]}
+}
