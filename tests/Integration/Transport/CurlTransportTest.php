@@ -30,6 +30,8 @@ final class CurlTransportTest extends TestCase
 
     private const string GAVE_UP = 'Failed to deliver AgentCat event after retries: ';
 
+    private const string NO_CURL = 'WARN: AgentCat cannot send events: ext-curl functions are missing or disabled (';
+
     /** Seconds; every blocking call in these tests has a deadline. */
     private const float DEADLINE = 5.0;
 
@@ -830,6 +832,86 @@ final class CurlTransportTest extends TestCase
         } finally {
             restore_error_handler();
         }
+    }
+
+    /**
+     * D32: a PHP whose ext-curl lacks a function this transport calls (disabled with `disable_functions`, say) drops
+     * every delivery and logs one line; nothing throws. tests/Integration/Delivery/MissingCurlTest runs it for real.
+     */
+    public function testWithoutACurlFunctionEveryDeliveryIsDroppedWithOneLine(): void
+    {
+        $attempts = new \ArrayObject();
+        $beforeAttempt = static function () use ($attempts): void {
+            $attempts[] = true;
+        };
+        $execs = new \ArrayObject();
+        $transport = new CurlTransport(
+            multiStatus: static function (string $function, int $code) use ($execs): int {
+                $execs[] = $function;
+
+                return $code;
+            },
+            functionExists: static fn(string $function): bool => $function !== 'curl_multi_init',
+        );
+
+        $transport->start($this->delivery('http://127.0.0.1:9', $beforeAttempt));
+        $transport->pump();
+        $drained = $transport->drain($this->deadline());
+        $sent = $transport->send($this->delivery('http://127.0.0.1:9', $beforeAttempt, 'evt_y'), $this->deadline());
+
+        $this->assertTrue($drained);
+        $this->assertTrue($sent);
+        $this->assertSame(0, $transport->inFlight());
+        $this->assertCount(0, $attempts);
+        $this->assertCount(0, $execs, 'no curl_multi call ran');
+        $this->assertSame([self::NO_CURL . 'curl_multi_init)'], $this->logger->messages());
+    }
+
+    public function testTheLineNamesEveryMissingFunction(): void
+    {
+        $transport = new CurlTransport(functionExists: static fn(string $function): bool => !in_array($function, ['curl_multi_select', 'curl_init'], true));
+
+        $transport->start($this->delivery('http://127.0.0.1:9'));
+
+        $this->assertSame([self::NO_CURL . 'curl_init, curl_multi_select)'], $this->logger->messages());
+    }
+
+    #[MaximumDuration(1000)]
+    public function testTheFunctionsAreCheckedOnceAtTheFirstDelivery(): void
+    {
+        $base = self::collector()->scenario();
+        $checked = new \ArrayObject();
+        $transport = new CurlTransport(new RetryPolicy([0.01]), functionExists: static function (string $function) use ($checked): bool {
+            $checked[] = $function;
+
+            return function_exists($function);
+        });
+        $this->assertCount(0, $checked);
+
+        $this->assertTrue($transport->send($this->delivery($base), $this->deadline()));
+        $this->assertTrue($transport->send($this->delivery($base, null, 'evt_y'), $this->deadline()));
+
+        $this->assertSame(
+            ['curl_init', 'curl_setopt_array', 'curl_error', 'curl_strerror', 'curl_getinfo', 'curl_multi_init', 'curl_multi_add_handle', 'curl_multi_remove_handle', 'curl_multi_exec', 'curl_multi_info_read', 'curl_multi_select', 'curl_multi_strerror'],
+            $checked->getArrayCopy(),
+        );
+        $this->assertCount(2, self::collector()->requests($base));
+    }
+
+    public function testPumpBeforeTheFirstDeliveryRunsNoCurl(): void
+    {
+        $execs = new \ArrayObject();
+        $transport = new CurlTransport(multiStatus: static function (string $function, int $code) use ($execs): int {
+            $execs[] = $function;
+
+            return $code;
+        });
+
+        $transport->pump();
+        $this->assertTrue($transport->drain($this->deadline()));
+
+        $this->assertCount(0, $execs);
+        $this->assertSame([], $this->logger->messages());
     }
 
     private static function collector(): MockCollector
