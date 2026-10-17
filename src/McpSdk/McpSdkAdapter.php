@@ -46,7 +46,11 @@ final class McpSdkAdapter
         return $server instanceof Builder;
     }
 
-    /** @return list<string> */
+    /**
+     * The shape of a server, for the setup and compatibility lines. Never warns or throws.
+     *
+     * @return list<string>
+     */
     public static function signals(object $server): array
     {
         $signals = [];
@@ -57,7 +61,7 @@ final class McpSdkAdapter
             $signals[] = 'mcpSdkServer';
         }
         try {
-            if ($server instanceof Builder && BuilderAccess::isBuilt($server)) {
+            if ($server instanceof Builder && StrictErrors::run(static fn(): bool => BuilderAccess::isBuilt($server))) {
                 $signals[] = 'built';
             }
         } catch (\Throwable) {

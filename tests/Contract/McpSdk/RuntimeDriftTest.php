@@ -28,6 +28,7 @@ use Mcp\Server\Builder;
 use Mcp\Server\Handler\Request\ListToolsHandler;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\RequiresPhp;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
@@ -83,6 +84,36 @@ final class RuntimeDriftTest extends TestCase
         BuilderMembers::remove('parts')($builder);
 
         $this->assertSame(['mcpSdkBuilder'], McpSdkAdapter::signals($builder));
+    }
+
+    /**
+     * A read of `$parts` that warns, as a read of a member that a new mcp/sdk removed does, must not reach PHP's
+     * error handler: it prints to STDOUT, which is the protocol stream of a stdio server. PHP cannot remove a declared
+     * property, so a PHP 8.4 lazy object stands in for that read: reading `$parts` runs its initializer, which warns.
+     */
+    #[RequiresPhp('>= 8.4.0')]
+    public function testSignalsLetNoWarningOut(): void
+    {
+        // ReflectionClass::newLazyGhost() is PHP 8.4+, and PHPStan checks this file against PHP 8.3 too.
+        $builder = (new \ReflectionMethod(\ReflectionClass::class, 'newLazyGhost'))->invoke(new \ReflectionClass(Builder::class), static function (): void {
+            trigger_error('Undefined property: Mcp\Server\Builder::$parts', E_USER_WARNING);
+        });
+        $this->assertInstanceOf(Builder::class, $builder);
+        $warnings = [];
+        set_error_handler(static function (int $severity, string $message) use (&$warnings): bool {
+            $warnings[] = $message;
+
+            return true;
+        });
+
+        try {
+            $signals = McpSdkAdapter::signals($builder);
+        } finally {
+            restore_error_handler();
+        }
+
+        $this->assertSame(['mcpSdkBuilder'], $signals);
+        $this->assertSame([], $warnings);
     }
 
     public function testTheLoggerIsUnknownWhenItsMemberIsGone(): void
