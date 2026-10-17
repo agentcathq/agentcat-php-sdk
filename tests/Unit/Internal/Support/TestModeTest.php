@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace AgentCat\Tests\Unit\Internal\Support;
 
+use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Support\TestMode;
 use AgentCat\Tests\Support\Environment;
+use AgentCat\Tests\Support\MemoryLogger;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -13,15 +15,21 @@ final class TestModeTest extends TestCase
 {
     private Environment $environment;
 
+    private MemoryLogger $logger;
+
     #[\Override]
     protected function setUp(): void
     {
         $this->environment = Environment::clear('APP_ENV', 'AGENTCAT_ENABLED');
+        $this->logger = new MemoryLogger();
+        Log::setLogger($this->logger);
     }
 
     #[\Override]
     protected function tearDown(): void
     {
+        TestMode::reset();
+        Log::reset();
         $this->environment->restore();
     }
 
@@ -101,33 +109,84 @@ final class TestModeTest extends TestCase
         $this->assertSame([], $requested, 'an installed but unused PHPUnit must not count');
     }
 
-    /** @return iterable<string, array{string, bool}> */
-    public static function enabledValues(): iterable
+    /** @return iterable<string, array{string}> */
+    public static function trueValues(): iterable
     {
-        yield 'true' => ['true', true];
-        yield 'TRUE, padded' => [' TRUE ', true];
-        yield '1' => ['1', true];
-        yield 'yes' => ['yes', true];
-        yield 'on' => ['on', true];
-        yield 'false' => ['false', false];
-        yield '0' => ['0', false];
-        yield 'empty' => ['', false];
-        yield 'enabled' => ['enabled', false];
+        yield 'true' => ['true'];
+        yield 'TRUE, padded' => [' TRUE '];
+        yield '1' => ['1'];
+        yield 'yes' => ['yes'];
+        yield 'on' => ['on'];
     }
 
-    #[DataProvider('enabledValues')]
-    public function testAgentCatEnabledTurnsTheSdkOnUnderPhpUnit(string $value, bool $enabled): void
+    #[DataProvider('trueValues')]
+    public function testATrueValueTurnsTheSdkOnUnderPhpUnit(string $value): void
     {
         putenv('AGENTCAT_ENABLED=' . $value);
 
-        $this->assertSame($enabled, TestMode::sdkEnabled());
+        $this->assertTrue(TestMode::sdkEnabled());
         $this->assertTrue(TestMode::inTestEnvironment(), 'AGENTCAT_ENABLED does not change the detection');
+        $this->assertSame([], $this->logger->messages());
     }
 
-    public function testOutsideATestEnvironmentTheSdkIsOnWhateverAgentCatEnabledSays(): void
+    /** @return iterable<string, array{string}> */
+    public static function falseValues(): iterable
     {
-        putenv('AGENTCAT_ENABLED=false');
+        yield 'false' => ['false'];
+        yield 'FALSE, padded' => [' FALSE '];
+        yield '0' => ['0'];
+        yield 'no' => ['no'];
+        yield 'off' => ['off'];
+    }
+
+    #[DataProvider('falseValues')]
+    public function testAFalseValueTurnsTheSdkOffEverywhere(string $value): void
+    {
+        putenv('AGENTCAT_ENABLED=' . $value);
+
+        $this->assertFalse(TestMode::sdkEnabled(static fn(string $class): bool => false), 'D44: outside test environments too');
+        $this->assertFalse(TestMode::sdkEnabled());
+        $this->assertSame([], $this->logger->messages());
+    }
+
+    public function testAnEmptyValueCountsAsUnset(): void
+    {
+        putenv('AGENTCAT_ENABLED=');
 
         $this->assertTrue(TestMode::sdkEnabled(static fn(string $class): bool => false));
+        $this->assertFalse(TestMode::sdkEnabled());
+        $this->assertSame([], $this->logger->messages());
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function otherValues(): iterable
+    {
+        yield 'enabled' => ['enabled'];
+        yield 'a typo of false' => ['flase'];
+        yield '2' => ['2'];
+    }
+
+    #[DataProvider('otherValues')]
+    public function testAnyOtherValueKeepsTheDefaultAndIsReportedOnce(string $value): void
+    {
+        putenv('AGENTCAT_ENABLED=' . $value);
+
+        $this->assertTrue(TestMode::sdkEnabled(static fn(string $class): bool => false), 'on outside test environments');
+        $this->assertFalse(TestMode::sdkEnabled(), 'off in test environments');
+
+        $this->assertSame([
+            sprintf('WARN: AGENTCAT_ENABLED "%s" is not one of true, 1, yes, on, false, 0, no, off; the default is used', $value),
+        ], $this->logger->messages(), 'once per process');
+    }
+
+    public function testResetReportsAnOtherValueAgain(): void
+    {
+        putenv('AGENTCAT_ENABLED=maybe');
+        TestMode::sdkEnabled();
+
+        TestMode::reset();
+        TestMode::sdkEnabled();
+
+        $this->assertCount(2, $this->logger->messages());
     }
 }

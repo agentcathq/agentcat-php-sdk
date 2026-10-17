@@ -7,6 +7,7 @@ namespace AgentCat\Tests\Unit;
 use AgentCat\AgentCat;
 use AgentCat\Client;
 use AgentCat\Event;
+use AgentCat\Internal\ClientSeams;
 use AgentCat\Internal\Delivery\EventQueue;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Pipeline\QueuedEvent;
@@ -37,7 +38,7 @@ final class AgentCatTest extends TestCase
         Log::setLogger($this->logger);
         $this->transport = new RecordingTransport();
         $this->queue = new EventQueue(transport: $this->transport);
-        $this->client = new Client($this->queue, static fn(): bool => true);
+        $this->client = new Client(ClientSeams::of($this->queue, static fn(): bool => true));
     }
 
     #[\Override]
@@ -47,6 +48,11 @@ final class AgentCatTest extends TestCase
         EventQueue::setGlobal(null); // N9: the default client of setClient(null) builds the global queue
         Log::reset();
         $this->environment->restore();
+    }
+
+    public function testTheStaticClassCannotBeInstantiated(): void
+    {
+        $this->assertFalse((new \ReflectionClass(AgentCat::class))->isInstantiable());
     }
 
     public function testSetClientReplacesTheClient(): void

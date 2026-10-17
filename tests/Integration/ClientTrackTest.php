@@ -7,6 +7,7 @@ namespace AgentCat\Tests\Integration;
 use AgentCat\Client;
 use AgentCat\Event;
 use AgentCat\Identity;
+use AgentCat\Internal\ClientSeams;
 use AgentCat\Internal\Constants;
 use AgentCat\Internal\Delivery\EventQueue;
 use AgentCat\Internal\Json\Json;
@@ -70,7 +71,7 @@ final class ClientTrackTest extends TestCase
         $this->transport = new RecordingTransport();
         $this->exporter = new RecordingExporter();
         $this->queue = new EventQueue(transport: $this->transport, exporters: $this->exporter);
-        $this->client = new Client($this->queue, static fn(): bool => true);
+        $this->client = new Client(ClientSeams::of($this->queue, static fn(): bool => true));
     }
 
     #[\Override]
@@ -153,7 +154,7 @@ final class ClientTrackTest extends TestCase
     #[Group('ac-01-3')]
     public function testAnInternalFailureReturnsTheServerAndLogsIt(): void
     {
-        $client = new Client($this->queue, static fn(): bool => throw new \RuntimeException('boom'));
+        $client = new Client(ClientSeams::of($this->queue, static fn(): bool => throw new \RuntimeException('boom')));
         $builder = TrackingFixture::builder();
 
         $this->assertSame($builder, $client->track($builder, self::PROJECT));
@@ -317,6 +318,50 @@ final class ClientTrackTest extends TestCase
         $this->assertSame('first', $this->event()->identifyActorGivenId);
     }
 
+    #[Group('ac-01-7')]
+    public function testABuilderIsTrackedOnceWhicheverClientTracksItAgain(): void
+    {
+        $otherTransport = new RecordingTransport();
+        $otherExporter = new RecordingExporter();
+        $other = new Client(ClientSeams::of(new EventQueue(transport: $otherTransport, exporters: $otherExporter), static fn(): bool => true));
+        $builder = TrackingFixture::builder();
+        Tools::echo($builder);
+        $this->client->track($builder, self::PROJECT, new Options(identify: static fn(ToolCall $call): Identity => new Identity('first')));
+
+        $this->assertSame($builder, $other->track($builder, self::PROJECT, new Options(identify: static fn(ToolCall $call): Identity => new Identity('second'))));
+
+        $started = 'AgentCat setup started | project ' . self::PROJECT . ' | sdk mcp-sdk/builder | signals mcpSdkBuilder';
+        $this->assertSame([$started, 'AgentCat setup complete | project ' . self::PROJECT . ' | tracing=true context=true reportMissing=true exporters=0', $started, self::ALREADY_TRACKED], $this->logger->messages());
+        $harness = $this->harness($builder);
+        $this->assertSame(['echo', GetMoreTools::NAME], $this->names($harness->listTools()));
+        $texts = $this->texts(HttpHarness::result($harness->callTool('echo', ['msg' => 'hi'])));
+        $this->assertCount(1, array_filter($texts, static fn(mixed $text): bool => is_string($text) && str_starts_with($text, Constants::MINT_BACK_HEADER_ISSUED)));
+        $this->assertSame('echo: hi', $texts[1] ?? null);
+        $this->assertSame('first', $this->event()->identifyActorGivenId, 'the first client owns the Builder');
+        $this->assertTrue($other->flush());
+        $this->assertSame([], $otherExporter->events);
+        $this->assertSame([], $otherTransport->deliveries);
+    }
+
+    #[Group('ac-01-7')]
+    public function testTrackingATrackedBuilderAfterItWasBuiltChangesNothing(): void
+    {
+        $builder = TrackingFixture::builder();
+        Tools::echo($builder);
+        $this->client->track($builder, self::PROJECT);
+        $harness = $this->harness($builder);
+
+        $this->assertSame($builder, $this->client->track($builder, self::PROJECT));
+
+        $this->assertSame([
+            'AgentCat setup started | project ' . self::PROJECT . ' | sdk mcp-sdk/builder | signals mcpSdkBuilder',
+            'AgentCat setup complete | project ' . self::PROJECT . ' | tracing=true context=true reportMissing=true exporters=0',
+            'AgentCat setup started | project ' . self::PROJECT . ' | sdk mcp-sdk/builder | signals mcpSdkBuilder,built',
+            self::ALREADY_TRACKED,
+        ], $this->logger->messages());
+        $this->assertSame(['echo', GetMoreTools::NAME], $this->names($harness->listTools()));
+    }
+
     #[Group('ac-01-9')]
     #[Group('ac-02-5')]
     public function testSeveralBuildersKeepTheirOwnStateAndShareOneQueue(): void
@@ -389,7 +434,7 @@ final class ClientTrackTest extends TestCase
 
     public function testUnderPhpUnitTheDefaultClientLeavesTheBuilderAlone(): void
     {
-        $client = new Client($this->queue);
+        $client = new Client(ClientSeams::of($this->queue));
         $builder = TrackingFixture::builder();
         Tools::echo($builder);
 
@@ -402,7 +447,7 @@ final class ClientTrackTest extends TestCase
     public function testAgentCatEnabledTurnsTheDefaultClientOn(): void
     {
         putenv('AGENTCAT_ENABLED=true');
-        $client = new Client($this->queue);
+        $client = new Client(ClientSeams::of($this->queue));
         $builder = TrackingFixture::builder();
         Tools::echo($builder);
 
@@ -448,7 +493,7 @@ final class ClientTrackTest extends TestCase
 
         try {
             $base = $collector->scenario();
-            $client = new Client(new EventQueue(transport: new CurlTransport(new RetryPolicy([0.01, 0.02, 0.04]))), static fn(): bool => true);
+            $client = new Client(ClientSeams::of(new EventQueue(transport: new CurlTransport(new RetryPolicy([0.01, 0.02, 0.04]))), static fn(): bool => true));
             $builder = TrackingFixture::builder();
             Tools::echo($builder);
             $client->track($builder, self::PROJECT, new Options(apiBaseUrl: $base));

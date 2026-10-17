@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace AgentCat;
 
+use AgentCat\Internal\ClientSeams;
 use AgentCat\Internal\Delivery\EventQueue;
 use AgentCat\Internal\Engine\CallInterceptor;
 use AgentCat\Internal\Engine\Publisher;
 use AgentCat\Internal\Engine\TrackedServer;
+use AgentCat\Internal\Engine\TrackedServers;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Support\Env;
 use AgentCat\Internal\Support\ErrorText;
@@ -19,14 +21,12 @@ use Psr\Log\LoggerInterface;
  * Tracks MCP servers and delivers their events to AgentCat.
  *
  * The static `AgentCat` class uses one shared client. Inject a `Client` instead when your application gets its
- * services from a dependency-injection container. Every client sends through the same process-wide event queue.
+ * services from a dependency-injection container. Every client sends through the same process-wide event queue, and
+ * a server is tracked once per process, whichever client tracks it.
  */
 final readonly class Client
 {
     private const string PROJECT_ID_PATTERN = '/\Aproj_[0-9A-Za-z]{27}\z/';
-
-    /** @var \WeakMap<object, TrackedServer> the tracked servers; an entry goes away with its server */
-    private \WeakMap $tracked;
 
     private Publisher $publisher;
 
@@ -36,18 +36,16 @@ final readonly class Client
     private \Closure $enabled;
 
     /**
-     * Creates a client that sends through the process-wide event queue. Call it without arguments.
+     * Creates a client that sends through the process-wide event queue. Call it without arguments. A
+     * dependency-injection container that autowires it gets the same client.
      *
-     * @param EventQueue|null $queue internal: the queue for tests and `AgentCat::fake()`; default the process-wide queue
-     * @param (\Closure(): bool)|null $enabled internal: whether `track()` instruments; default off in test environments
-     *                                         unless `AGENTCAT_ENABLED` is `true`
+     * @param ClientSeams|null $seams Internal: tests and `AgentCat::fake()` replace the queue and the enabled gate.
      */
-    public function __construct(?EventQueue $queue = null, ?\Closure $enabled = null)
+    public function __construct(?ClientSeams $seams = null)
     {
-        $this->tracked = new \WeakMap();
-        $this->publisher = new Publisher($queue ?? EventQueue::global());
+        $this->publisher = new Publisher($seams->queue ?? EventQueue::global());
         $this->interceptor = new CallInterceptor($this->publisher);
-        $this->enabled = $enabled ?? TestMode::sdkEnabled(...);
+        $this->enabled = $seams->enabled ?? TestMode::sdkEnabled(...);
     }
 
     /**
@@ -55,23 +53,26 @@ final readonly class Client
      * `Mcp\Server\Builder` before `build()`.
      *
      * It never throws. When the server cannot be tracked, it logs why and returns the server unchanged. Tracking
-     * the same server again changes nothing. In test environments (PHPUnit, Pest, `APP_ENV` `testing` or `test`)
-     * it does nothing unless `AGENTCAT_ENABLED` is `true`.
+     * the same server again, from any client, changes nothing.
+     *
+     * `AGENTCAT_ENABLED` turns AgentCat off everywhere with `false`, `0`, `no` or `off`, and on everywhere with
+     * `true`, `1`, `yes` or `on`. Otherwise AgentCat does nothing in test environments (PHPUnit, Pest, `APP_ENV`
+     * `testing` or `test`).
      *
      * @template T of object
      *
-     * @param T $server the server to track
-     * @param string|null $projectId your AgentCat project ID (`proj_…`); null reads `AGENTCAT_PROJECT_ID`; `''`
-     *                               sends events to no AgentCat project (telemetry only)
-     * @param Options|null $options the tracking options; null uses the defaults
+     * @param T $server The server to track.
+     * @param string|null $projectId Your AgentCat project ID (`proj_…`). Null reads `AGENTCAT_PROJECT_ID`; `''` sends
+     *                               the events to no AgentCat project (telemetry only).
+     * @param Options|null $options The tracking options; null uses the defaults.
      *
-     * @return T the same server
+     * @return T The same server.
      */
     public function track(object $server, ?string $projectId = null, ?Options $options = null): object
     {
         try {
             if (!($this->enabled)()) {
-                return $server; // D31: no instrumentation in test environments unless fake() or AGENTCAT_ENABLED
+                return $server; // D44 AGENTCAT_ENABLED, else D31: nothing in test environments unless fake()
             }
             $options ??= new Options();
             $projectId ??= Env::get('AGENTCAT_PROJECT_ID') ?? ''; // D36: '' means telemetry only
@@ -85,13 +86,16 @@ final readonly class Client
             if ($logger instanceof LoggerInterface) {
                 Log::adopt($logger); // D30, D38
             }
-            McpSdkAdapter::inspect($server);
+            $tracked = TrackedServers::get($server) instanceof TrackedServer;
+            if (!$tracked) {
+                McpSdkAdapter::inspect($server); // a tracked Builder can be built by now: tracking it again changes nothing
+            }
             if (($options->apiBaseUrl ?? '') !== '' || Env::get('AGENTCAT_API_URL') !== null || Env::get('MCPCAT_API_URL') !== null) {
                 $this->publisher->queue()->configure($options->apiBaseUrl); // before the already-tracked check; the last call wins
             }
             $project = $projectId !== '' ? $projectId : '(telemetry-only)';
             Log::write(sprintf('AgentCat setup started | project %s | sdk mcp-sdk/builder | signals %s', $project, McpSdkAdapter::fingerprint($server)));
-            if (isset($this->tracked[$server])) {
+            if ($tracked) {
                 Log::write('[SESSION DEBUG] track() - Server already being tracked, skipping initialization');
 
                 return $server;
@@ -103,7 +107,7 @@ final readonly class Client
             }
             $state = new TrackedServer($projectId, $options, McpSdkAdapter::serverInfo($server));
             McpSdkAdapter::install($server, $state, $this->publisher, $this->interceptor);
-            $this->tracked[$server] = $state;
+            TrackedServers::add($server, $state);
             Log::write(sprintf(
                 'AgentCat setup complete | project %s | tracing=%s context=%s reportMissing=%s exporters=0',
                 $project,
@@ -124,9 +128,10 @@ final readonly class Client
      * Sends the queued events now and waits for them. Rarely needed: AgentCat delivers on its own, between requests
      * and when the process ends.
      *
-     * @param float|null $timeoutSeconds the longest wait in seconds; null waits until every event is sent
+     * @param float|null $timeoutSeconds The longest wait in seconds; null waits until nothing is left to send.
      *
-     * @return bool true when every queued event was sent, false when the timeout ended first
+     * @return bool True when nothing is left to send (every event delivered, or given up after its retries); false
+     *              when the timeout ended first.
      */
     public function flush(?float $timeoutSeconds = null): bool
     {
