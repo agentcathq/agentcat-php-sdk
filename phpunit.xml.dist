@@ -23,6 +23,9 @@
         <testsuite name="Contract">
             <directory>tests/Contract</directory>
         </testsuite>
+        <testsuite name="E2E">
+            <directory>tests/E2E</directory>
+        </testsuite>
         <testsuite name="Architecture">
             <directory>tests/Architecture</directory>
             <!-- PHPat rules run inside PHPStan, not PHPUnit -->

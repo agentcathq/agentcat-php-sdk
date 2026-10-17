@@ -17,4 +17,6 @@ return (new Configuration())
     // Psr\Container\ContainerInterface arrives with mcp/sdk; the adapter only passes it through.
     ->ignoreErrorsOnPackageAndPath('psr/container', __DIR__ . '/src/McpSdk', [ErrorType::SHADOW_DEPENDENCY])
     // Psr\EventDispatcher\EventDispatcherInterface arrives with mcp/sdk; the test double stands in for a customer's dispatcher.
-    ->ignoreErrorsOnPackageAndPath('psr/event-dispatcher', __DIR__ . '/tests/Support/McpSdk/RecordingDispatcher.php', [ErrorType::SHADOW_DEPENDENCY]);
+    ->ignoreErrorsOnPackageAndPath('psr/event-dispatcher', __DIR__ . '/tests/Support/McpSdk/RecordingDispatcher.php', [ErrorType::SHADOW_DEPENDENCY])
+    // Http\Discovery\Psr17Factory arrives with mcp/sdk; the HTTP fixture builds its request from the globals with it, like a customer.
+    ->ignoreErrorsOnPackageAndPath('php-http/discovery', __DIR__ . '/tests/E2E/Fixtures', [ErrorType::SHADOW_DEPENDENCY]);

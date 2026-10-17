@@ -19,4 +19,4 @@ if [ -n "${MCP_SDK_REPO:-}" ]; then
 fi
 composer require --dev --no-interaction --update-with-all-dependencies "mcp/sdk:dev-main#82e19d114e95671e05e7df7909195f7ace03d90e as 0.9.0"
 vendor/bin/phpstan analyse --no-progress --memory-limit=1G
-vendor/bin/phpunit --testsuite "${SUITES:-Contract,Integration}"
+vendor/bin/phpunit --testsuite "${SUITES:-Contract,Integration,E2E}"
