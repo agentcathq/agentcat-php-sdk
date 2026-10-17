@@ -406,7 +406,12 @@ final class PublishCustomEventTest extends TestCase
         $intent = JsonAssert::at($body, 'user_intent');
         $this->assertIsString($intent);
         $this->assertStringContainsString("\u{FFFD}", $intent);
-        $this->assertSame('[Resource: stream]', JsonAssert::at($body, 'parameters', 'r'));
+        $this->assertEquals((object) ['f' => '[Function: <anonymous>]', 'r' => '[Resource: stream]'], JsonAssert::at($body, 'parameters'));
+        $this->assertCount(1, $this->exporter->events);
+        $event = $this->exporter->events[0];
+        $this->assertSame('[NaN]', $event->response, 'the pipeline replaces NAN');
+        $this->assertObjectNotHasProperty('response', $body, 'a string response is not sent');
+        $this->assertContains(sprintf('WARN: Event %s: response is not a JSON object or array and was not sent', $event->id), $this->logger->messages());
     }
 
     public function testAFailureAfterValidationIsLoggedAndSwallowed(): void
