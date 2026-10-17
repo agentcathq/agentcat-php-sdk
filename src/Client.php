@@ -78,7 +78,7 @@ final readonly class Client
             $projectId ??= Env::get('AGENTCAT_PROJECT_ID') ?? ''; // D36: '' means telemetry only
             if (!McpSdkAdapter::supports($server)) {
                 $signals = McpSdkAdapter::fingerprint($server);
-                Log::write(sprintf('AgentCat SDK Compatibility: unrecognized server shape | signals %s. %s', $signals === '' ? '(none)' : $signals, McpSdkAdapter::SUPPORT_MATRIX));
+                Log::warning(sprintf('AgentCat SDK Compatibility: unrecognized server shape | signals %s. %s', $signals === '' ? '(none)' : $signals, McpSdkAdapter::SUPPORT_MATRIX));
 
                 throw new \UnexpectedValueException('AgentCat SDK compatibility error: server object does not match any supported MCP SDK shape. ' . McpSdkAdapter::SUPPORT_MATRIX);
             }

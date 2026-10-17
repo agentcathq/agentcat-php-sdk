@@ -26,6 +26,6 @@ final class Drift
             return;
         }
         self::$reported[$builder] = true;
-        Log::write(McpSdkAdapter::COMPATIBILITY_LINE);
+        Log::warning(McpSdkAdapter::COMPATIBILITY_LINE);
     }
 }

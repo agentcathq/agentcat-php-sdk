@@ -12,6 +12,7 @@ use AgentCat\Tests\Support\Thrown;
 use Mcp\Server;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LogLevel;
 use Psr\Log\NullLogger;
 
 final class McpSdkAdapterTest extends TestCase
@@ -96,7 +97,7 @@ final class McpSdkAdapterTest extends TestCase
 
         $this->assertSame('AgentCat SDK compatibility error: the mcp/sdk Builder was already built. ' . self::MATRIX, $error->getMessage());
         $this->assertNull($error->getPrevious());
-        $this->assertSame(['AgentCat SDK Compatibility: ' . self::MATRIX], $this->logger->messages());
+        $this->assertSame([['level' => LogLevel::WARNING, 'message' => 'AgentCat SDK Compatibility: ' . self::MATRIX]], $this->logger->records);
     }
 
     public function testTheLoggerIsTheBuildersOwn(): void

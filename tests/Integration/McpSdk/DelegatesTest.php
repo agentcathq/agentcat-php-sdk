@@ -27,6 +27,7 @@ use Mcp\Server\Handler\Request\ListToolsHandler;
 use Mcp\Server\Session\InMemorySessionStore;
 use Mcp\Server\Session\Session;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LogLevel;
 
 final class DelegatesTest extends TestCase
 {
@@ -72,7 +73,7 @@ final class DelegatesTest extends TestCase
 
         $this->assertNull($delegates->after($this->lister(), new ListToolsRequest()));
         $this->assertNull($delegates->after($this->lister(), new ListToolsRequest()));
-        $this->assertSame([self::COMPATIBILITY], $this->logger->messages());
+        $this->assertSame([['level' => LogLevel::WARNING, 'message' => self::COMPATIBILITY]], $this->logger->records);
     }
 
     public function testNotFoundIsTheLibrarysAnswerWhenNoHandlerSupportsTheRequest(): void

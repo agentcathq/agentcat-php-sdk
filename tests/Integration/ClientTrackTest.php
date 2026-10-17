@@ -36,6 +36,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\AbstractLogger;
+use Psr\Log\LogLevel;
 
 /** `Client::track()` on real mcp/sdk Builders, end to end through the adapter. */
 final class ClientTrackTest extends TestCase
@@ -129,9 +130,9 @@ final class ClientTrackTest extends TestCase
         $this->assertSame($server, $this->client->track($server, self::PROJECT));
 
         $this->assertSame([
-            'AgentCat SDK Compatibility: unrecognized server shape | signals ' . $signals . '. ' . self::MATRIX,
-            'Warning: Failed to track server - UnexpectedValueException: AgentCat SDK compatibility error: server object does not match any supported MCP SDK shape. ' . self::MATRIX,
-        ], $this->logger->messages());
+            ['level' => LogLevel::WARNING, 'message' => 'AgentCat SDK Compatibility: unrecognized server shape | signals ' . $signals . '. ' . self::MATRIX],
+            ['level' => LogLevel::WARNING, 'message' => 'Warning: Failed to track server - UnexpectedValueException: AgentCat SDK compatibility error: server object does not match any supported MCP SDK shape. ' . self::MATRIX],
+        ], $this->logger->records);
     }
 
     #[Group('ac-01-2')]

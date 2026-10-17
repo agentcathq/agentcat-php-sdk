@@ -37,7 +37,7 @@ final class McpSdkAdapter
 {
     public const string SUPPORT_MATRIX = 'AgentCat supports mcp/sdk 0.8.1+ (pass the Mcp\Server\Builder to AgentCat::track() before build()).';
 
-    /** The line logged when mcp/sdk internals are not what AgentCat expects. */
+    /** The line logged, as a warning, when mcp/sdk internals are not what AgentCat expects: AgentCat is off then. */
     public const string COMPATIBILITY_LINE = 'AgentCat SDK Compatibility: ' . self::SUPPORT_MATRIX;
 
     /** @phpstan-assert-if-true Builder $server */
@@ -173,7 +173,7 @@ final class McpSdkAdapter
 
     private static function incompatible(string $reason, ?\Throwable $previous = null): \UnexpectedValueException
     {
-        Log::write(self::COMPATIBILITY_LINE);
+        Log::warning(self::COMPATIBILITY_LINE);
 
         return new \UnexpectedValueException('AgentCat SDK compatibility error: ' . $reason . ' ' . self::SUPPORT_MATRIX, previous: $previous);
     }
