@@ -10,6 +10,9 @@ use AgentCat\Event;
 /** @internal */
 final class WireMapper
 {
+    /** 2^63, the first float past `PHP_INT_MAX`; `-2^63` is `PHP_INT_MIN` itself. */
+    private const float INT_RANGE_END = 9.223372036854775808E18;
+
     /**
      * @throws \UnexpectedValueException when a free-form field is circular or nested too deeply
      */
@@ -83,12 +86,17 @@ final class WireMapper
         return is_array($wire) ? (object) $wire : null;
     }
 
+    /**
+     * A float duration is rounded. NaN, an infinity or a float outside the int range has no duration: casting it
+     * gives a meaningless int, and PHP 8.5 also prints a warning (on STDOUT in a CLI server).
+     */
     private static function duration(int|float|null $duration): ?int
     {
-        if (is_float($duration)) {
-            return is_finite($duration) ? (int) round($duration) : null;
+        if (!is_float($duration)) {
+            return $duration;
         }
+        $rounded = round($duration);
 
-        return $duration;
+        return $rounded >= -self::INT_RANGE_END && $rounded < self::INT_RANGE_END ? (int) $rounded : null; // false for NaN
     }
 }
