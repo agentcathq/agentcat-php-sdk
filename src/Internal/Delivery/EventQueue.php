@@ -66,12 +66,19 @@ final class EventQueue
         $this->endpoint = ApiBaseUrl::endpoint(ApiBaseUrl::resolve()); // environment or default, until configure()
     }
 
-    /** The queue of this process; on first use it registers the shutdown delivery for the first event. */
+    /**
+     * The queue of this process; its first event registers the shutdown delivery and installs the signal drain
+     * (CLI servers with ext-pcntl).
+     */
     public static function global(): self
     {
         if (!self::$global instanceof self) {
             $flusher = new ShutdownFlusher(static fn(): self => self::global(), null, FinishRequest::detect());
-            self::$global = new self(onEnqueue: $flusher->ensureRegistered(...));
+            $signals = new SignalDrain(static fn(): self => self::global());
+            self::$global = new self(onEnqueue: static function () use ($flusher, $signals): void {
+                $flusher->ensureRegistered();
+                $signals->install();
+            });
         }
 
         return self::$global;

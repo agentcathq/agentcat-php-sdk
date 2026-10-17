@@ -6,8 +6,8 @@ use ShipMonk\ComposerDependencyAnalyser\Config\Configuration;
 use ShipMonk\ComposerDependencyAnalyser\Config\ErrorType;
 
 return (new Configuration())
-    // ext-posix is optional: FileLogger guards its use with function_exists().
-    ->ignoreErrorsOnExtensions(['ext-posix'], [ErrorType::SHADOW_DEPENDENCY])
+    // ext-pcntl and ext-posix are optional: FileLogger and SignalDrain guard their use with function_exists().
+    ->ignoreErrorsOnExtensions(['ext-pcntl', 'ext-posix'], [ErrorType::SHADOW_DEPENDENCY])
     // Test fixture functions, loaded with require_once by ExceptionCaptureTest (not autoloadable).
     ->ignoreUnknownFunctionsRegex('~^AgentCat\\\\Tests\\\\Fixtures\\\\Errors\\\\~')
     // mcp/sdk is optional (01 AC-90): a dev dependency and a suggestion, used only by the adapter.

@@ -1,0 +1,260 @@
+<?php
+
+declare(strict_types=1);
+
+namespace AgentCat\Tests\Unit\Internal\Delivery;
+
+use AgentCat\Event;
+use AgentCat\Internal\Delivery\EventQueue;
+use AgentCat\Internal\Delivery\SignalDrain;
+use AgentCat\Internal\Logging\Log;
+use AgentCat\Internal\Pipeline\QueuedEvent;
+use AgentCat\Tests\Support\MemoryLogger;
+use AgentCat\Tests\Support\RecordingTransport;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
+use PHPUnit\Framework\TestCase;
+
+/**
+ * The real drain (`EventQueue::global()`'s) never runs here: each test builds its own `SignalDrain` with its own
+ * queue and `raise`. Tests that install handlers get the earlier handlers and the async-signal mode back in
+ * `tearDown()`.
+ */
+final class SignalDrainTest extends TestCase
+{
+    /** Literals, not the ext-pcntl constants: the `onSignal()` tests also run without ext-pcntl. */
+    private const int SIGTERM = 15;
+
+    private const int SIG_DFL = 0;
+
+    private MemoryLogger $logger;
+
+    private RecordingTransport $transport;
+
+    private EventQueue $queue;
+
+    /** @var list<array{signal: int, delivered: int}> each `raise` call, with the deliveries made before it */
+    private array $raised = [];
+
+    /** @var array<int, (callable(int, mixed): mixed)|int> the handlers before the test */
+    private array $savedHandlers = [];
+
+    private ?bool $savedAsyncSignals = null;
+
+    #[\Override]
+    protected function setUp(): void
+    {
+        $this->logger = new MemoryLogger();
+        Log::setLogger($this->logger);
+        $this->transport = new RecordingTransport();
+        $this->queue = new EventQueue(transport: $this->transport);
+        if (function_exists('pcntl_signal_get_handler')) {
+            foreach ([\SIGTERM, \SIGINT, \SIGWINCH] as $signal) {
+                $this->savedHandlers[$signal] = pcntl_signal_get_handler($signal);
+            }
+            $this->savedAsyncSignals = pcntl_async_signals();
+        }
+    }
+
+    #[\Override]
+    protected function tearDown(): void
+    {
+        foreach ($this->savedHandlers as $signal => $handler) {
+            pcntl_signal($signal, $handler);
+        }
+        if ($this->savedAsyncSignals !== null) {
+            pcntl_async_signals($this->savedAsyncSignals);
+        }
+        Log::reset();
+    }
+
+    #[Group('ac-03-10')]
+    public function testWithoutAnEarlierHandlerTheQueueDrainsThenTheSignalIsRaised(): void
+    {
+        $this->queue->add($this->queued('waiting'));
+
+        $this->drain()->onSignal(self::SIGTERM, self::SIG_DFL);
+
+        $this->assertCount(1, $this->transport->deliveries, 'the waiting event was delivered');
+        $this->assertSame([['signal' => self::SIGTERM, 'delivered' => 1]], $this->raised, 'raised once, after the drain');
+        $this->queue->add($this->queued('late'));
+        $this->assertSame(['Queue is shutting down, event dropped'], $this->logger->messages());
+    }
+
+    #[Group('ac-03-11')]
+    public function testAnEarlierHandlerIsCalledAfterTheDrainAndNothingIsRaised(): void
+    {
+        $this->queue->add($this->queued('waiting'));
+        $calls = [];
+        $customer = function (mixed ...$arguments) use (&$calls): void {
+            $calls[] = ['arguments' => $arguments, 'delivered' => count($this->transport->deliveries)];
+        };
+
+        $this->drain()->onSignal(self::SIGTERM, $customer);
+
+        $this->assertSame([['arguments' => [self::SIGTERM, null], 'delivered' => 1]], $calls, 'called once, after the drain');
+        $this->assertSame([], $this->raised, 'the earlier handler owns termination');
+    }
+
+    public function testASignalHandlerNeverThrows(): void
+    {
+        $drain = new SignalDrain(
+            static fn(): EventQueue => throw new \RuntimeException('no queue'),
+            $this->raise(...),
+            static fn(string $function): bool => true,
+        );
+
+        $drain->onSignal(self::SIGTERM, self::SIG_DFL);
+
+        $this->assertSame([['signal' => self::SIGTERM, 'delivered' => 0]], $this->raised);
+    }
+
+    #[RequiresPhpExtension('pcntl')]
+    public function testOutsideTheCliSapiNothingIsInstalled(): void
+    {
+        $this->resetHandlers();
+
+        $this->drain(sapi: 'fpm-fcgi')->install();
+
+        $this->assertSame(\SIG_DFL, pcntl_signal_get_handler(\SIGTERM));
+        $this->assertSame(\SIG_DFL, pcntl_signal_get_handler(\SIGINT));
+        $this->assertFalse(pcntl_async_signals());
+    }
+
+    #[RequiresPhpExtension('pcntl')]
+    #[DataProvider('pcntlFunctions')]
+    public function testWithoutAPcntlFunctionNothingIsInstalled(string $missing): void
+    {
+        $this->resetHandlers();
+
+        $this->drain(static fn(string $function): bool => $function !== $missing)->install();
+
+        $this->assertSame(\SIG_DFL, pcntl_signal_get_handler(\SIGTERM));
+        $this->assertSame(\SIG_DFL, pcntl_signal_get_handler(\SIGINT));
+        $this->assertFalse(pcntl_async_signals());
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function pcntlFunctions(): iterable
+    {
+        yield 'pcntl_signal' => ['pcntl_signal'];
+        yield 'pcntl_signal_get_handler' => ['pcntl_signal_get_handler'];
+        yield 'pcntl_async_signals' => ['pcntl_async_signals'];
+    }
+
+    #[Group('ac-03-10')]
+    #[Group('ac-03-11')]
+    #[RequiresPhpExtension('pcntl')]
+    public function testInstallChainsEachSignalToItsEarlierHandlerAndTurnsOnAsyncSignals(): void
+    {
+        $this->resetHandlers();
+        $calls = [];
+        $customer = static function (mixed ...$arguments) use (&$calls): void {
+            $calls[] = $arguments;
+        };
+        pcntl_signal(\SIGTERM, $customer);
+
+        $this->drain()->install();
+
+        $this->assertTrue(pcntl_async_signals(), 'the stdio loop sleeps: handlers must run without pcntl_signal_dispatch()');
+        $onTerm = pcntl_signal_get_handler(\SIGTERM);
+        $onInt = pcntl_signal_get_handler(\SIGINT);
+        $this->assertInstanceOf(\Closure::class, $onTerm);
+        $this->assertInstanceOf(\Closure::class, $onInt);
+        $this->assertNotSame($customer, $onTerm);
+        $onTerm(\SIGTERM, null);
+        $raisedOnTerm = $this->raised;
+        $onInt(\SIGINT, null);
+        $this->assertSame([[\SIGTERM, null]], $calls, 'only SIGTERM had an earlier handler');
+        $this->assertSame([], $raisedOnTerm, 'the earlier SIGTERM handler owns termination');
+        $this->assertSame([['signal' => \SIGINT, 'delivered' => 0]], $this->raised);
+    }
+
+    #[RequiresPhpExtension('pcntl')]
+    public function testInstallTwiceInstallsOnce(): void
+    {
+        $this->resetHandlers();
+        $drain = $this->drain();
+        $drain->install();
+        $later = static function (): void {};
+        pcntl_signal(\SIGTERM, $later);
+
+        $drain->install();
+
+        $this->assertSame($later, pcntl_signal_get_handler(\SIGTERM), 'the second install() changed nothing');
+    }
+
+    /** Review Focus 2: the application chose to ignore the signal, so AgentCat leaves it alone. */
+    #[RequiresPhpExtension('pcntl')]
+    public function testAnIgnoredSignalStaysIgnored(): void
+    {
+        $this->resetHandlers();
+        pcntl_signal(\SIGTERM, \SIG_IGN);
+
+        $this->drain()->install();
+
+        $this->assertSame(\SIG_IGN, pcntl_signal_get_handler(\SIGTERM));
+        $this->assertInstanceOf(\Closure::class, pcntl_signal_get_handler(\SIGINT));
+    }
+
+    /**
+     * The default `raise`, twice. A forked copy of this process gets SIGTERM and must end by it. This process gets
+     * SIGWINCH, whose default disposition is "ignore": it shows the handler reset to `SIG_DFL` and survives.
+     */
+    #[Group('ac-03-10')]
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
+    public function testTheDefaultRaiseEndsTheProcessWithTheDefaultDisposition(): void
+    {
+        $drain = new SignalDrain(fn(): EventQueue => $this->queue, null, static fn(string $function): bool => true);
+        pcntl_signal(\SIGWINCH, static function (): void {});
+
+        $child = pcntl_fork();
+        if ($child === 0) {
+            try {
+                $drain->onSignal(\SIGTERM, \SIG_DFL);
+            } finally {
+                posix_kill(posix_getpid(), \SIGKILL); // never run the rest of the test suite in the child
+            }
+        }
+        $this->assertGreaterThan(0, $child, 'fork failed');
+        $status = 0;
+        pcntl_waitpid($child, $status);
+        $drain->onSignal(\SIGWINCH, \SIG_DFL);
+
+        $this->assertIsInt($status);
+        $this->assertTrue(pcntl_wifsignaled($status), 'the child ended by a signal');
+        $this->assertSame(\SIGTERM, pcntl_wtermsig($status));
+        $this->assertSame(\SIG_DFL, pcntl_signal_get_handler(\SIGWINCH));
+    }
+
+    /** SIG_DFL on both signals and synchronous dispatch, so that a test sees exactly what `install()` changed. */
+    private function resetHandlers(): void
+    {
+        pcntl_signal(\SIGTERM, \SIG_DFL);
+        pcntl_signal(\SIGINT, \SIG_DFL);
+        pcntl_async_signals(false);
+    }
+
+    /** @param (\Closure(string): bool)|null $functionExists */
+    private function drain(?\Closure $functionExists = null, string $sapi = 'cli'): SignalDrain
+    {
+        return new SignalDrain(
+            fn(): EventQueue => $this->queue,
+            $this->raise(...),
+            $functionExists ?? static fn(string $function): bool => true,
+            $sapi,
+        );
+    }
+
+    private function raise(int $signal): void
+    {
+        $this->raised[] = ['signal' => $signal, 'delivered' => count($this->transport->deliveries)];
+    }
+
+    private function queued(string $name): QueuedEvent
+    {
+        return new QueuedEvent(new Event(projectId: 'proj_test', eventType: 'mcp:tools/call', resourceName: $name));
+    }
+}
