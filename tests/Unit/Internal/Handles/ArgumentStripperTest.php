@@ -101,4 +101,20 @@ final class ArgumentStripperTest extends TestCase
         $this->assertNull(ArgumentStripper::strip(null, 'echo', null));
         $this->assertSame('x', ArgumentStripper::strip('x', 'echo', null));
     }
+
+    public function testNamesFromTheRegistry(): void
+    {
+        $this->assertSame(['session_id'], ArgumentStripper::names('echo', ['echo' => ['session_id']]));
+    }
+
+    public function testNamesFallBackToTheHeuristic(): void
+    {
+        $this->assertSame(['session_id', 'agent_id', 'context'], ArgumentStripper::names('echo', null));
+        $this->assertSame(['session_id', 'agent_id'], ArgumentStripper::names('get_more_tools', null));
+    }
+
+    public function testNamesFindIntegerKeysOfNumericToolNames(): void
+    {
+        $this->assertSame(['context'], ArgumentStripper::names('123', [123 => ['context']]));
+    }
 }

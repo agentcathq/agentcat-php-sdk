@@ -48,6 +48,13 @@ final class ToolListInjectorTest extends TestCase
         $this->assertSame('5970b84f5767f0d68536e20b1f96b84abd476ea53e9085b024233269b3cc1ced', hash('sha256', ToolListInjector::NO_TOOLS_WARNING));
     }
 
+    public function testSuccessfulInjectionIsNotDegraded(): void
+    {
+        $result = ToolListInjector::inject([$this->decode('{"name":"a"}')], new InjectionConfig(), new InjectionState());
+
+        $this->assertFalse($result->degraded);
+    }
+
     public function testConfigDefaults(): void
     {
         $config = new InjectionConfig();
@@ -797,6 +804,7 @@ final class ToolListInjectorTest extends TestCase
         $this->assertSame($tools, $result->tools);
         $this->assertSame([], $result->registry);
         $this->assertSame([], $result->outputRegistry);
+        $this->assertTrue($result->degraded);
         $this->assertSame(
             ['Warning: AgentCat tool-list injection failed; serving the original tool list unmodified - boom'],
             $this->logger->messages(),
