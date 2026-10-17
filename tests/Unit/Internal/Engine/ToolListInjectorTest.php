@@ -11,6 +11,7 @@ use AgentCat\Internal\Engine\InjectionState;
 use AgentCat\Internal\Engine\ToolListInjector;
 use AgentCat\Internal\Json\Json;
 use AgentCat\Internal\Logging\Log;
+use AgentCat\Tests\Fixtures\Errors\LegacyMessageException;
 use AgentCat\Tests\Support\Golden;
 use AgentCat\Tests\Support\MemoryLogger;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -800,6 +801,64 @@ final class ToolListInjectorTest extends TestCase
             ['Warning: AgentCat tool-list injection failed; serving the original tool list unmodified - boom'],
             $this->logger->messages(),
         );
+    }
+
+    /** @return iterable<string, array{mixed, string}> a legacy non-string `$message`, and the text the log shows */
+    public static function legacyMessageProvider(): iterable
+    {
+        yield 'object' => [new \stdClass(), ''];
+        yield 'array' => [['a'], 'Array'];
+    }
+
+    /** A legacy exception message is logged without a warning or a throw, also under a throwing error handler. */
+    #[Group('review-focus-2')]
+    #[DataProvider('legacyMessageProvider')]
+    public function testLegacyExceptionMessagesAreLoggedSafely(mixed $message, string $text): void
+    {
+        $tool = new class ($message) extends \stdClass {
+            public string $name = 'bad';
+
+            public function __construct(private readonly mixed $legacyMessage) {}
+
+            public function __isset(string $name): bool
+            {
+                return true;
+            }
+
+            public function __get(string $name): never
+            {
+                throw new LegacyMessageException($this->legacyMessage);
+            }
+        };
+        $hostile = new class ($message) extends \stdClass {
+            public function __construct(private readonly mixed $legacyMessage) {}
+
+            public function __isset(string $name): bool
+            {
+                return true;
+            }
+
+            public function __get(string $name): never
+            {
+                throw new LegacyMessageException($this->legacyMessage);
+            }
+        };
+
+        set_error_handler(static fn(int $no, string $str): never => throw new \ErrorException($str, 0, $no));
+        try {
+            $perTool = $this->inject([$tool]);
+            $whole = ToolListInjector::inject([$hostile], new InjectionConfig(), new InjectionState());
+        } finally {
+            restore_error_handler();
+        }
+
+        $this->assertSame([$tool], $perTool->tools);
+        $this->assertSame([$hostile], $whole->tools);
+        $this->assertSame([
+            'WARN: Handle injection failed for tool "bad"; listing it unmodified - ' . $text,
+            'WARN: Context injection failed for tool "bad"; listing it unmodified - ' . $text,
+            'Warning: AgentCat tool-list injection failed; serving the original tool list unmodified - ' . $text,
+        ], $this->logger->messages());
     }
 
     /**

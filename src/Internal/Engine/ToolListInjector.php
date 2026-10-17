@@ -7,6 +7,7 @@ namespace AgentCat\Internal\Engine;
 use AgentCat\Internal\Constants;
 use AgentCat\Internal\Json\Json;
 use AgentCat\Internal\Logging\Log;
+use AgentCat\Internal\Support\ErrorText;
 use AgentCat\Internal\Support\Js;
 use AgentCat\Internal\Tools\GetMoreTools;
 
@@ -47,7 +48,7 @@ final class ToolListInjector
         try {
             return (new self($config, $state))->build($tools);
         } catch (\Throwable $throwable) {
-            Log::write('Warning: AgentCat tool-list injection failed; serving the original tool list unmodified - ' . $throwable->getMessage());
+            Log::write('Warning: AgentCat tool-list injection failed; serving the original tool list unmodified - ' . ErrorText::message($throwable));
 
             return new InjectedList($tools, [], []);
         }
@@ -111,7 +112,7 @@ final class ToolListInjector
             // One tool must never break the listing: list it as is and drop what was recorded for it.
             unset($this->registry[$name]);
             $this->outputRegistry = array_values(array_diff($this->outputRegistry, [$name]));
-            Log::write(sprintf('WARN: Handle injection failed for tool "%s"; listing it unmodified - %s', $name, $throwable->getMessage()));
+            Log::write(sprintf('WARN: Handle injection failed for tool "%s"; listing it unmodified - %s', $name, ErrorText::message($throwable)));
 
             return $tool;
         }
@@ -241,7 +242,7 @@ final class ToolListInjector
             if (isset($this->registry[$name])) {
                 $this->registry[$name] = array_values(array_diff($this->registry[$name], [Constants::PARAM_CONTEXT]));
             }
-            Log::write(sprintf('WARN: Context injection failed for tool "%s"; listing it unmodified - %s', $name, $throwable->getMessage()));
+            Log::write(sprintf('WARN: Context injection failed for tool "%s"; listing it unmodified - %s', $name, ErrorText::message($throwable)));
 
             return $tool;
         }
