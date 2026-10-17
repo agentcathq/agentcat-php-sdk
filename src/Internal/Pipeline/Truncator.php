@@ -47,6 +47,8 @@ final class Truncator
 
     private const int LAST_RESORT_MIN_REDUCTION = 10;
 
+    private const int MAX_CLONE_NESTING = 512;
+
     /**
      * Returns a new event; the input is not changed.
      *
@@ -194,7 +196,7 @@ final class Truncator
     {
         $fields = [];
         foreach (EventFields::toArray($event) as $name => $value) {
-            $fields[$name] = self::deepClone($value);
+            $fields[$name] = self::deepClone($value, 0);
         }
         $result = clone $event;
         for ($attempt = 0; $attempt < self::LAST_RESORT_ATTEMPTS; ++$attempt) {
@@ -231,25 +233,29 @@ final class Truncator
     /**
      * TS `structuredClone`: arrays and objects are copied, closures cannot be cloned.
      *
-     * @throws \RuntimeException
+     * @throws \RuntimeException when the value holds a closure
+     * @throws \RangeException   when the value nests deeper than 512 levels (JS `Maximum call stack size exceeded`)
      */
-    private static function deepClone(mixed $value): mixed
+    private static function deepClone(mixed $value, int $nesting): mixed
     {
+        if ($nesting > self::MAX_CLONE_NESTING) {
+            throw new \RangeException('Maximum call stack size exceeded');
+        }
         if ($value instanceof \Closure) {
             throw new \RuntimeException('Closure could not be cloned');
         }
         if (is_array($value)) {
-            return array_map(self::deepClone(...), $value);
+            return array_map(static fn(mixed $item): mixed => self::deepClone($item, $nesting + 1), $value);
         }
         if (!is_object($value) || $value instanceof \DateTimeInterface || $value instanceof \UnitEnum) {
             return $value;
         }
         if ($value instanceof \JsonSerializable) {
-            return self::deepClone($value->jsonSerialize());
+            return self::deepClone($value->jsonSerialize(), $nesting + 1);
         }
         $copy = new \stdClass();
         foreach (Values::entries($value) as $key => $item) {
-            $copy->{$key} = self::deepClone($item);
+            $copy->{$key} = self::deepClone($item, $nesting + 1);
         }
 
         return $copy;

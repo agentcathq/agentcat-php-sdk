@@ -12,8 +12,10 @@ use AgentCat\Internal\Pipeline\Truncator;
 use AgentCat\Internal\Support\Js;
 use AgentCat\Internal\Wire\WireEncoder;
 use AgentCat\Tests\Support\JsonAssert;
+use AgentCat\Tests\Support\Samples\LateSerializable;
 use AgentCat\Tests\Support\Samples\PlainThing;
 use AgentCat\Tests\Support\Samples\SerializableThing;
+use AgentCat\Tests\Support\Samples\WrappedValue;
 use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
@@ -790,6 +792,61 @@ final class TruncatorTest extends TestCase
         $this->assertNotSame($properties, $r->properties);
         $this->assertSame(120000, strlen(self::textAt($properties, 'blob')));
         $this->assertSame(500, strlen(self::textAt($properties, 'nested', 'inner')));
+    }
+
+    /** @return iterable<string, array{\Closure(int): mixed}> builders of a value with a string leaf `$levels` steps down */
+    public static function cloneNestingProvider(): iterable
+    {
+        yield 'lists' => [static function (int $levels): mixed {
+            $node = 'leaf';
+            for ($i = 0; $i < $levels; ++$i) {
+                $node = [$node];
+            }
+
+            return $node;
+        }];
+        yield 'objects' => [static function (int $levels): mixed {
+            $node = 'leaf';
+            for ($i = 0; $i < $levels; ++$i) {
+                $wrapper = new \stdClass();
+                $wrapper->k = $node;
+                $node = $wrapper;
+            }
+
+            return $node;
+        }];
+        yield 'JsonSerializable expansions' => [static fn(int $levels): mixed => WrappedValue::chain($levels)];
+    }
+
+    private function lastResortEvent(LateSerializable $value): Event
+    {
+        return new Event(properties: ['blob' => $this->x(120000), 'v' => $value]);
+    }
+
+    /**
+     * The last-resort clone has its own 512 cap, so it never depends on an earlier walk having checked the value.
+     * The value is shallow while the event is measured and deep only when the clone serializes it.
+     *
+     * @param \Closure(int): mixed $build
+     */
+    #[Group('review-focus-3')]
+    #[DataProvider('cloneNestingProvider')]
+    #[MaximumDuration(2000)]
+    public function testLastResortCloneIsCappedAtFiveHundredTwelve(\Closure $build): void
+    {
+        // The last serialization of a truncation that reaches the last resort is the clone's.
+        $probe = new LateSerializable();
+        Truncator::truncate($this->lastResortEvent($probe));
+        $cloneCall = $probe->calls;
+
+        // `properties` (0) > `v` (1) > its expansion (2) > 510 more levels: the leaf sits at nesting 512.
+        $r = Truncator::truncate($this->lastResortEvent(new LateSerializable($build(510), $cloneCall)));
+        $this->assertStringContainsString('"leaf"', WireEncoder::encode($r));
+        $this->assertLessThanOrEqual(102400, WireEncoder::byteSize($r));
+
+        $this->expectException(\RangeException::class);
+        $this->expectExceptionMessage('Maximum call stack size exceeded');
+        Truncator::truncate($this->lastResortEvent(new LateSerializable($build(511), $cloneCall)));
     }
 
     #[Group('ac-05-T16')]

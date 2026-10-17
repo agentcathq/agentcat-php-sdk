@@ -6,6 +6,7 @@ namespace AgentCat\Tests\Unit\Internal\Pipeline;
 
 use AgentCat\Event;
 use AgentCat\Internal\Errors\ExceptionCapture;
+use AgentCat\Internal\Events\EventFields;
 use AgentCat\Internal\Json\Json;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Pipeline\EventProcessor;
@@ -16,6 +17,9 @@ use AgentCat\Internal\Tags\TagValidator;
 use AgentCat\Internal\Wire\WireEncoder;
 use AgentCat\Tests\Support\JsonAssert;
 use AgentCat\Tests\Support\MemoryLogger;
+use AgentCat\Tests\Support\Samples\EndlessSerializable;
+use AgentCat\Tests\Support\Samples\WrappedValue;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
@@ -237,6 +241,36 @@ final class EventProcessorTest extends TestCase
         $this->assertNull($out);
         $this->assertCount(1, $this->logger->messages());
         $this->assertStringStartsWith('Failed to truncate event: ', $this->logger->messages()[0]);
+    }
+
+    /** @return iterable<string, array{string, string}> field, and the one line the stage that meets it first writes */
+    public static function endlessFieldProvider(): iterable
+    {
+        // The sanitizer walks parameters before the truncator and has its own 512 cap.
+        yield 'parameters' => ['parameters', 'Failed to sanitize event: RangeException: Maximum call stack size exceeded'];
+        yield 'response' => ['response', 'Failed to truncate event: RangeException: Maximum call stack size exceeded'];
+        yield 'identifyActorData' => ['identifyActorData', 'Failed to truncate event: RangeException: Maximum call stack size exceeded'];
+        yield 'error' => ['error', 'Failed to truncate event: RangeException: Maximum call stack size exceeded'];
+    }
+
+    #[Group('review-focus-3')]
+    #[DataProvider('endlessFieldProvider')]
+    public function testEndlessJsonSerializableDropsTheEventWithOneLine(string $field, string $line): void
+    {
+        $event = new Event();
+        EventFields::assign($event, [$field => ['o' => new EndlessSerializable()]]);
+
+        $this->assertNull((new EventProcessor())->process(new QueuedEvent($event)));
+        $this->assertSame([$line], $this->logger->messages());
+    }
+
+    #[Group('review-focus-3')]
+    public function testLongJsonSerializableChainDropsTheEventWithOneLine(): void
+    {
+        $event = new Event(response: ['o' => WrappedValue::chain(40_000)]);
+
+        $this->assertNull((new EventProcessor())->process(new QueuedEvent($event)));
+        $this->assertSame(['Failed to truncate event: RangeException: Maximum call stack size exceeded'], $this->logger->messages());
     }
 
     private function text(mixed $value, string|int ...$path): string

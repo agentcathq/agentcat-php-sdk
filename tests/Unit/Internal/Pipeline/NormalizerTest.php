@@ -8,9 +8,11 @@ use AgentCat\Internal\Json\Json;
 use AgentCat\Internal\Pipeline\Normalizer;
 use AgentCat\Tests\Support\JsonAssert;
 use AgentCat\Tests\Support\Samples\BackedStatus;
+use AgentCat\Tests\Support\Samples\EndlessSerializable;
 use AgentCat\Tests\Support\Samples\PlainThing;
 use AgentCat\Tests\Support\Samples\SerializableThing;
 use AgentCat\Tests\Support\Samples\UnitStatus;
+use AgentCat\Tests\Support\Samples\WrappedValue;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -312,5 +314,68 @@ final class NormalizerTest extends TestCase
         $this->assertSame(str_repeat('é', 5) . '...', Normalizer::normalize(str_repeat('é', 6), 10, 100, 5));
         $this->assertSame('abcde', Normalizer::normalize('abcde', 10, 100, 5));
         $this->assertSame('abcde...', Normalizer::normalize('abcdef', 10, 100, 5));
+    }
+
+    #[Group('review-focus-3')]
+    public function testEndlessJsonSerializableHitsTheNestingCap(): void
+    {
+        $this->expectException(\RangeException::class);
+        $this->expectExceptionMessage('Maximum call stack size exceeded');
+
+        Normalizer::normalize(new EndlessSerializable());
+    }
+
+    /** @return iterable<string, array{\Closure(int): mixed}> builders of a value with a string leaf `$levels` steps down */
+    public static function nestingProvider(): iterable
+    {
+        yield 'lists' => [static function (int $levels): mixed {
+            $node = 'leaf';
+            for ($i = 0; $i < $levels; ++$i) {
+                $node = [$node];
+            }
+
+            return $node;
+        }];
+        yield 'maps' => [static function (int $levels): mixed {
+            $node = 'leaf';
+            for ($i = 0; $i < $levels; ++$i) {
+                $node = ['k' => $node];
+            }
+
+            return $node;
+        }];
+        yield 'objects' => [static function (int $levels): mixed {
+            $node = 'leaf';
+            for ($i = 0; $i < $levels; ++$i) {
+                $wrapper = new \stdClass();
+                $wrapper->k = $node;
+                $node = $wrapper;
+            }
+
+            return $node;
+        }];
+        yield 'JsonSerializable expansions' => [static fn(int $levels): mixed => WrappedValue::chain($levels)];
+    }
+
+    /**
+     * The cap counts nesting, not the TS depth: a depth of 1000 lets containers reach it.
+     *
+     * @param \Closure(int): mixed $build
+     */
+    #[Group('review-focus-3')]
+    #[DataProvider('nestingProvider')]
+    public function testNestingCapIsExactlyFiveHundredTwelve(\Closure $build): void
+    {
+        $this->assertStringContainsString('"leaf"', (string) json_encode(Normalizer::normalize($build(512), 1000), 0, 1024));
+
+        $this->expectException(\RangeException::class);
+        $this->expectExceptionMessage('Maximum call stack size exceeded');
+        Normalizer::normalize($build(513), 1000);
+    }
+
+    public function testExpansionsBelowTheCapKeepTheDepthSemantics(): void
+    {
+        $this->assertSame('leaf', Normalizer::normalize(WrappedValue::chain(500)));
+        $this->assertSame('[Object]', JsonAssert::at(Normalizer::normalize(WrappedValue::chain(500, ['a' => ['b' => 1]]), 1), 'a'));
     }
 }

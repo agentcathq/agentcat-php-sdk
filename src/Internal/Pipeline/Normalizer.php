@@ -20,21 +20,28 @@ final class Normalizer
 
     private const string MAX_PROPERTIES = '[MaxProperties ~]';
 
+    /** Nesting cap over containers and `jsonSerialize()` expansions; the TS depth does not count expansions. */
+    private const int MAX_NESTING = 512;
+
     /**
-     * @throws \Throwable whatever a `jsonSerialize()` method throws
-     * @throws \Error when an array key starts with a NUL byte (PHP rejects it as a property name)
+     * @throws \Throwable      whatever a `jsonSerialize()` method throws
+     * @throws \Error          when an array key starts with a NUL byte (PHP rejects it as a property name)
+     * @throws \RangeException when the value nests deeper than 512 levels (JS `Maximum call stack size exceeded`)
      */
     public static function normalize(mixed $input, int $depth = 10, int $maxBreadth = 100, int $maxStringLength = 32_768): mixed
     {
         /** @var \SplObjectStorage<object, mixed> $memo */
         $memo = new \SplObjectStorage();
 
-        return self::visit($input, $depth, $maxBreadth, $maxStringLength, $memo);
+        return self::visit($input, $depth, $maxBreadth, $maxStringLength, $memo, 0);
     }
 
     /** @param \SplObjectStorage<object, mixed> $memo */
-    private static function visit(mixed $value, int $remainingDepth, int $maxBreadth, int $maxStringLength, \SplObjectStorage $memo): mixed
+    private static function visit(mixed $value, int $remainingDepth, int $maxBreadth, int $maxStringLength, \SplObjectStorage $memo, int $nesting): mixed
     {
+        if ($nesting > self::MAX_NESTING) {
+            throw new \RangeException('Maximum call stack size exceeded');
+        }
         if ($value === null || is_bool($value) || is_int($value)) {
             return $value;
         }
@@ -59,7 +66,7 @@ final class Normalizer
             return Values::isoDate($value);
         }
         if ($value instanceof \BackedEnum) {
-            return self::visit($value->value, $remainingDepth, $maxBreadth, $maxStringLength, $memo);
+            return self::visit($value->value, $remainingDepth, $maxBreadth, $maxStringLength, $memo, $nesting);
         }
         if ($value instanceof \UnitEnum) {
             return Values::enumMarker($value);
@@ -73,8 +80,8 @@ final class Normalizer
             }
 
             return array_is_list($value)
-                ? self::visitArray($value, $remainingDepth - 1, $maxBreadth, $maxStringLength, $memo)
-                : self::visitObject($value, $remainingDepth - 1, $maxBreadth, $maxStringLength, $memo);
+                ? self::visitArray($value, $remainingDepth - 1, $maxBreadth, $maxStringLength, $memo, $nesting + 1)
+                : self::visitObject($value, $remainingDepth - 1, $maxBreadth, $maxStringLength, $memo, $nesting + 1);
         }
         if (isset($memo[$value])) {
             return self::CIRCULAR;
@@ -82,7 +89,7 @@ final class Normalizer
         if ($value instanceof \JsonSerializable) {
             $memo[$value] = null;
             try {
-                return self::visit($value->jsonSerialize(), $remainingDepth, $maxBreadth, $maxStringLength, $memo);
+                return self::visit($value->jsonSerialize(), $remainingDepth, $maxBreadth, $maxStringLength, $memo, $nesting + 1);
             } finally {
                 unset($memo[$value]);
             }
@@ -92,7 +99,7 @@ final class Normalizer
         }
         $memo[$value] = null;
         try {
-            return self::visitObject(Values::entries($value), $remainingDepth - 1, $maxBreadth, $maxStringLength, $memo);
+            return self::visitObject(Values::entries($value), $remainingDepth - 1, $maxBreadth, $maxStringLength, $memo, $nesting + 1);
         } finally {
             unset($memo[$value]);
         }
@@ -104,11 +111,11 @@ final class Normalizer
      *
      * @return list<mixed>
      */
-    private static function visitArray(array $items, int $remainingDepth, int $maxBreadth, int $maxStringLength, \SplObjectStorage $memo): array
+    private static function visitArray(array $items, int $remainingDepth, int $maxBreadth, int $maxStringLength, \SplObjectStorage $memo, int $nesting): array
     {
         $out = [];
         foreach (array_slice($items, 0, $maxBreadth) as $item) {
-            $out[] = self::visit($item, $remainingDepth, $maxBreadth, $maxStringLength, $memo);
+            $out[] = self::visit($item, $remainingDepth, $maxBreadth, $maxStringLength, $memo, $nesting);
         }
         if (count($items) > $maxBreadth) {
             $out[] = self::MAX_PROPERTIES;
@@ -121,11 +128,11 @@ final class Normalizer
      * @param array<array-key, mixed> $entries
      * @param \SplObjectStorage<object, mixed> $memo
      */
-    private static function visitObject(array $entries, int $remainingDepth, int $maxBreadth, int $maxStringLength, \SplObjectStorage $memo): \stdClass
+    private static function visitObject(array $entries, int $remainingDepth, int $maxBreadth, int $maxStringLength, \SplObjectStorage $memo, int $nesting): \stdClass
     {
         $out = new \stdClass();
         foreach (array_slice($entries, 0, $maxBreadth, true) as $key => $item) {
-            $out->{$key} = self::visit($item, $remainingDepth, $maxBreadth, $maxStringLength, $memo);
+            $out->{$key} = self::visit($item, $remainingDepth, $maxBreadth, $maxStringLength, $memo, $nesting);
         }
         if (count($entries) > $maxBreadth) {
             $out->{'...'} = self::MAX_PROPERTIES;
