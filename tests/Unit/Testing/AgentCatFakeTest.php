@@ -21,6 +21,7 @@ use AgentCat\Tests\Support\MemoryLogger;
 use AgentCat\Tests\Support\Thrown;
 use AgentCat\ToolCall;
 use Mcp\Server\Builder;
+use PHPUnit\Framework\Assert;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
@@ -190,6 +191,35 @@ final class AgentCatFakeTest extends TestCase
 
         $second->assertNothingTracked();
         $this->assertNotSame($first->client(), $second->client());
+    }
+
+    public function testEveryPassingAssertionCountsExactlyOnePhpunitAssertion(): void
+    {
+        $fake = AgentCat::fake();
+        $fake->assertNothingTracked();
+        AgentCat::publishCustomEvent('s-1', self::PROJECT, new CustomEvent(resourceName: 'c'));
+        $this->trackedHarness()->callTool('echo', ['msg' => 'hi']);
+        $fake->events();
+
+        foreach ([
+            'assertTracked' => static fn() => $fake->assertTracked(),
+            'assertTrackedCount' => static fn() => $fake->assertTrackedCount(1),
+            'assertCustomEventPublished' => static fn() => $fake->assertCustomEventPublished(),
+        ] as $name => $assertion) {
+            $before = Assert::getCount();
+            $assertion();
+            $this->assertSame(1, Assert::getCount() - $before, $name);
+        }
+    }
+
+    public function testAssertNothingTrackedCountsOnePhpunitAssertion(): void
+    {
+        $fake = AgentCat::fake();
+        $before = Assert::getCount();
+
+        $fake->assertNothingTracked();
+
+        $this->assertSame(1, Assert::getCount() - $before);
     }
 
     private function trackedHarness(?Options $options = null): HttpHarness

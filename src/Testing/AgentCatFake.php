@@ -106,16 +106,20 @@ final readonly class AgentCatFake
 
     private function check(bool $condition, string $message): void
     {
-        if ($condition) {
-            return;
-        }
         if (class_exists(Assert::class)) {
+            if ($condition) {
+                Assert::assertNotSame('', $message); // counts one assertion, so a test with only fake assertions is not risky
+
+                return;
+            }
             Assert::fail($message); // assertTrue() would append "Failed asserting that false is true."
         }
 
         // PHPUnit is always loaded in our own suite; this is the path of a suite without it.
         // @codeCoverageIgnoreStart
-        throw new \AssertionError($message);
+        if (!$condition) {
+            throw new \AssertionError($message);
+        }
         // @codeCoverageIgnoreEnd
     }
 }
