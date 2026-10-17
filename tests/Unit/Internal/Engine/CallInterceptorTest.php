@@ -534,18 +534,18 @@ final class CallInterceptorTest extends TestCase
     }
 
     /** @return iterable<string, array{mixed, string}> */
-    public static function nonStringIntents(): iterable
+    public static function droppedIntents(): iterable
     {
         yield 'int' => [42, 'int'];
         yield 'float' => [4.5, 'float'];
         yield 'bool' => [true, 'bool'];
-        yield 'list' => [[1], 'array'];
         yield 'object' => [['a' => 1], 'stdClass'];
+        yield 'object with a length' => [['length' => 3], 'stdClass'];
     }
 
     /** Header conflict 2 (B16, N10): no event, one line, and the hooks of that call never run. */
-    #[DataProvider('nonStringIntents')]
-    public function testANonStringIntentDropsTheEventBeforeAnyHookRuns(mixed $context, string $type): void
+    #[DataProvider('droppedIntents')]
+    public function testANumberBooleanOrObjectIntentDropsTheEventBeforeAnyHookRuns(mixed $context, string $type): void
     {
         $runs = 0;
         $server = $this->server(new Options(identify: static function (ToolCall $call) use (&$runs): ?Identity {
@@ -568,6 +568,36 @@ final class CallInterceptorTest extends TestCase
         $this->interceptor->intercept($this->server(), $this->seam('echo', ['msg' => 'hi', 'context' => null]));
 
         $this->assertNull($this->onlyEvent()->userIntent);
+        $this->assertSame([], $this->logger->messages());
+    }
+
+    /** @return iterable<string, array{list<mixed>}> */
+    public static function listIntents(): iterable
+    {
+        yield 'empty' => [[]];
+        yield 'one item' => [[1]];
+        yield 'long' => [array_fill(0, 3000, 'x')];
+    }
+
+    /**
+     * TS truncation keeps a list (it has a length) and sends it raw; `userIntent` holds strings only, so it is null here.
+     *
+     * @param list<mixed> $context
+     */
+    #[DataProvider('listIntents')]
+    public function testAListIntentIsPublishedWithoutAnIntent(array $context): void
+    {
+        $runs = 0;
+        $server = $this->server(new Options(identify: static function (ToolCall $call) use (&$runs): ?Identity {
+            ++$runs;
+
+            return null;
+        }));
+
+        $this->interceptor->intercept($server, $this->seam('echo', ['msg' => 'hi', 'context' => $context]));
+
+        $this->assertNull($this->onlyEvent()->userIntent);
+        $this->assertSame(1, $runs);
         $this->assertSame([], $this->logger->messages());
     }
 

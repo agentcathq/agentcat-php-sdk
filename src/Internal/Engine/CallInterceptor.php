@@ -128,7 +128,7 @@ final readonly class CallInterceptor
         $invalidIntent = null;
         if (is_string($intent)) {
             $event->userIntent = $intent;
-        } elseif ($intent !== null) {
+        } elseif ($intent !== null && !is_array($intent)) {
             $invalidIntent = get_debug_type($intent);
         }
 
@@ -198,7 +198,9 @@ final readonly class CallInterceptor
     private function publish(TracedCall $call): void
     {
         if ($call->invalidIntent !== null) {
-            // B16: TypeScript loses this event at truncation, after its hooks ran; here they never run (N10).
+            // B16: a number, a boolean or an object as the intent. TypeScript loses this event at truncation, after
+            // its hooks ran; here they never run (N10). A list intent is published with no intent (PHP divergence:
+            // TypeScript sends the raw list).
             Log::write(sprintf('Failed to truncate event: UnexpectedValueException: userIntent is not a string (%s)', $call->invalidIntent));
 
             return;

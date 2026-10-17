@@ -48,7 +48,8 @@ interface CallSeam
     public function observe(mixed $result): Observed;
 
     /**
-     * The result with its tool-result tree replaced by a decorated one.
+     * The result with its tool-result tree replaced by a decorated one. Returns a new result and never changes
+     * `$result` in place: when publishing fails after `replace()`, the interceptor returns `$result` untouched.
      *
      * @param TResult $result
      *
