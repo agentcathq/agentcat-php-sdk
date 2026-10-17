@@ -5,7 +5,14 @@ set -euo pipefail
 repo="$(cd "$(dirname "$0")/../.." && pwd)"
 copy="$repo/.cache/mcp-sdk-main"
 rm -rf "$copy" && mkdir -p "$copy"
-tar -C "$repo" --exclude=./vendor --exclude=./.cache --exclude=./.git --exclude=./docs -cf - . | tar -C "$copy" -xf -
+# Copy the tracked files and the untracked ones that git does not ignore. A tracked file deleted in the working tree
+# is skipped.
+cd "$repo"
+git ls-files -z -co --exclude-standard | while IFS= read -r -d '' file; do
+  if [ -e "$file" ] || [ -L "$file" ]; then
+    printf '%s\0' "$file"
+  fi
+done | tar --null -T - -cf - | tar -C "$copy" -xf -
 cd "$copy"
 if [ -n "${MCP_SDK_REPO:-}" ]; then
   composer config repositories.mcp-sdk-main vcs "$MCP_SDK_REPO"
