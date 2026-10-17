@@ -151,8 +151,8 @@ final class BuilderMembersTest extends TestCase
         $this->assertStringContainsString($message, $error->getMessage());
     }
 
-    /** @return \Closure(Builder): void that unsets the member, as if a new mcp/sdk release had dropped it */
-    private static function remove(string $member): \Closure
+    /** @return \Closure(Builder): void that unsets the member, as if a new mcp/sdk release had dropped it (RuntimeDriftTest uses it too) */
+    public static function remove(string $member): \Closure
     {
         return static function (Builder $builder) use ($member): void {
             // @phpstan-ignore disallowed.method (simulates a removed member: PHP has no public way to unset a private property)
