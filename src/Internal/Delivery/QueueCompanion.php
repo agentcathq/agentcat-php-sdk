@@ -12,10 +12,16 @@ namespace AgentCat\Internal\Delivery;
  */
 interface QueueCompanion
 {
-    /** On every pass of `pump()`, `flush()` and `shutdown()`, before the side channel is pumped. Must not block. */
+    /**
+     * On every pass of `pump()`, `flush()` and `shutdown()`, except the pass after `finish()`, before the side channel
+     * is pumped. Must not block.
+     */
     public function tick(): void;
 
-    /** Once per `shutdown()`, after the events are delivered and before the last wait; may post a last request. */
+    /**
+     * Once per `shutdown()` with time left: after the events and side requests are delivered, or when only the
+     * finish reserve of the budget is left (10 %, at most 0.5 s), and before the last wait. May post a last request.
+     */
     public function finish(): void;
 
     /** Whether anything is left to send (buffered lines). */

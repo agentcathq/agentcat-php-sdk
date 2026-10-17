@@ -11,6 +11,7 @@ use AgentCat\Internal\Pipeline\QueuedEvent;
 use AgentCat\Internal\Support\ErrorText;
 use AgentCat\Internal\Transport\ApiBaseUrl;
 use AgentCat\Internal\Transport\CurlHttpChannel;
+use AgentCat\Internal\Transport\CurlSupport;
 use AgentCat\Internal\Transport\CurlTransport;
 use AgentCat\Internal\Transport\Delivery;
 use AgentCat\Internal\Transport\HttpChannel;
@@ -24,8 +25,8 @@ use AgentCat\Internal\Wire\WireMapper;
  * at most 10 000 wait (the oldest is dropped). No method throws.
  *
  * The queue also drives the side channel of the exporter and diagnostics requests (`channel()`) and its companions
- * (`attach()`): every pass ticks each companion, then pumps the channel; `flush()` and `shutdown()` wait for the
- * channel inside the same timeout.
+ * (`attach()`): every pass ticks each companion (except the pass after `finish()`), then pumps the channel; `flush()`
+ * and `shutdown()` wait for the channel inside the same timeout.
  *
  * @internal
  */
@@ -42,6 +43,11 @@ final class EventQueue
 
     /** Short waits when both the events and the side channel have transfers, so neither waits on the other's sockets. */
     private const float SLICE_SECONDS = 0.01;
+
+    /** With companions, the end of the shutdown budget is kept for `finish()`: this share of it, at most the cap. */
+    private const float FINISH_RESERVE_SHARE = 0.1;
+
+    private const float FINISH_RESERVE_MAX_SECONDS = 0.5;
 
     private static ?self $global = null;
 
@@ -214,19 +220,24 @@ final class EventQueue
      * Stops accepting events, then delivers the events and the side requests for at most the shutdown timeout
      * (TypeScript `destroy()`). The first call fixes the deadline; a later call delivers only until that same deadline,
      * and dispatches nothing once it has passed. So a signal drain and the shutdown function after it, or a signal
-     * during the shutdown function's flush, share one budget. When time is left after that delivery, each companion
-     * finishes (diagnostics posts its buffer) and one more delivery pass, to the same deadline, sends what they posted;
-     * that pass ticks no companion, so `finish()` is a companion's last call in a shutdown.
+     * during the shutdown function's flush, share one budget.
+     *
+     * With companions, the end of the budget is kept for them: 10 % of the shutdown timeout, at most 0.5 s. The
+     * delivery stops when everything is delivered or only that reserve is left. Then each companion finishes
+     * (diagnostics posts its buffer, also when a hung exporter or a slow AgentCat API used the rest of the budget), and
+     * one more pass, to the full deadline, sends what they posted. That pass ticks no companion, so `finish()` is a
+     * companion's last call in a shutdown. A call whose delivery never started (a re-entrant call from a hook or an
+     * exporter, or a clock that cannot be read) finishes no companion.
      */
     public function shutdown(): void
     {
         $this->accepting = false;
         $deadline = fn(): float => $this->shutdownDeadline ??= $this->transport->now() + $this->budget($this->shutdownTimeoutSeconds);
         if (!$this->shutdownDeadlinePassed()) {
-            $this->deliverUntil($deadline);
-            if ($this->companions !== [] && !$this->shutdownDeadlinePassed()) {
-                $this->finishCompanions();
-                $this->deliverUntil($deadline, tick: false);
+            if ($this->companions === []) {
+                $this->deliverUntil($deadline);
+            } else {
+                $this->deliverWithCompanions($deadline);
             }
         }
         if (!$this->waiting->isEmpty()) {
@@ -273,6 +284,29 @@ final class EventQueue
     }
 
     /**
+     * The shutdown delivery with companions: up to the finish reserve, then each companion's `finish()`, then the
+     * last pass, to the full deadline, which ticks none of them.
+     *
+     * @param \Closure(): float $deadline fixes the shared deadline at its first call
+     */
+    private function deliverWithCompanions(\Closure $deadline): void
+    {
+        $this->deliverUntil(fn(): float => $deadline() - $this->finishReserve());
+        // Only after a delivery that ran: a re-entrant call finds the guard still taken by the frame it runs in, and
+        // an unreadable clock left the deadline unset.
+        if (!$this->busy && $this->shutdownDeadline !== null && !$this->shutdownDeadlinePassed()) {
+            $this->finishCompanions();
+            $this->deliverUntil($deadline, tick: false);
+        }
+    }
+
+    /** 10 % of the shutdown budget, at most 0.5 s; never NaN, as `budget()` is not. */
+    private function finishReserve(): float
+    {
+        return min(self::FINISH_RESERVE_MAX_SECONDS, self::FINISH_RESERVE_SHARE * $this->budget($this->shutdownTimeoutSeconds));
+    }
+
+    /**
      * The delivery loop of `flush()` and `shutdown()`: done when no event waits or is in flight and the side channel is
      * idle. A re-entrant call returns false at once.
      *
@@ -310,7 +344,11 @@ final class EventQueue
         }
     }
 
-    /** Waits on the transport alone, or, while side requests are pending, a slice on each. `$until` is never NaN. */
+    /**
+     * Waits on the transport alone, or, while side requests are pending, a slice on each that never ends past `$until`.
+     * `$until` is never NaN. The time left goes through `CurlSupport::waitSeconds()`: within 0 and the slice, and 0 for
+     * the NaN of INF - INF (a test clock that jumped to an INF deadline).
+     */
     private function wait(float $until): void
     {
         if ($this->channel->pending() === 0) {
@@ -319,7 +357,7 @@ final class EventQueue
             return;
         }
         $this->transport->waitForActivity(min($until, $this->transport->now() + self::SLICE_SECONDS));
-        $this->channel->waitForActivity(self::SLICE_SECONDS);
+        $this->channel->waitForActivity(CurlSupport::waitSeconds($until - $this->transport->now(), self::SLICE_SECONDS));
     }
 
     /**

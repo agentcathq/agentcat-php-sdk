@@ -25,6 +25,7 @@ use AgentCat\Tests\Support\RecordingExporter;
 use AgentCat\Tests\Support\RecordingHttpChannel;
 use AgentCat\Tests\Support\RecordingTransport;
 use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LogLevel;
@@ -757,21 +758,45 @@ final class EventQueueTest extends TestCase
         $this->assertTrue($queue->hasWork());
     }
 
-    /** Neither side waits on the other's sockets: 10 ms on the transport, then 10 ms on the channel, up to the deadline. */
+    /**
+     * @return iterable<string, array{float, list<float>, list<float>}> the timeout, then where each transport slice ends
+     *                                                               and how long each channel slice is
+     */
+    public static function sliceDeadlines(): iterable
+    {
+        yield 'the channel slice is cut to the time left' => [0.035, [0.01, 0.03], [0.01, 0.005]];
+        yield 'the transport slice ends at the deadline, the channel gets none' => [0.045, [0.01, 0.03, 0.045], [0.01, 0.01, 0.0]];
+    }
+
+    /**
+     * Neither side waits on the other's sockets: up to 10 ms on the transport, then up to 10 ms on the channel, and
+     * neither slice ends past the deadline. The channel double advances the recording clock by its wait.
+     *
+     * @param list<float> $transportEnds
+     * @param list<float> $channelSlices
+     */
     #[Group('ac-06-63')]
-    public function testFlushWaitsInShortSlicesWhileASideRequestIsPending(): void
+    #[DataProvider('sliceDeadlines')]
+    public function testFlushWaitsInShortSlicesThatNeverEndPastTheDeadline(float $timeout, array $transportEnds, array $channelSlices): void
     {
         $transport = new RecordingTransport();
-        $channel = new RecordingHttpChannel(complete: false);
+        $ends = ['transport' => [], 'channel' => []];
+        $channel = new RecordingHttpChannel(complete: false, onWait: static function (float $seconds) use ($transport, &$ends): void {
+            $ends['transport'][] = $transport->now();
+            $transport->waitForActivity($transport->now() + $seconds);
+            $ends['channel'][] = $transport->now();
+        });
         $queue = new EventQueue(transport: $transport, channel: $channel);
         $channel->post(new HttpRequest('http://exporter.test/a', [], '{}'), static function (): void {});
 
-        $this->assertFalse($queue->flush(0.1));
+        $this->assertFalse($queue->flush($timeout));
 
-        $this->assertEqualsWithDelta(0.1, $transport->now(), 1e-9, 'the last slice ends at the deadline');
-        $this->assertGreaterThanOrEqual(10, $transport->waits);
-        $this->assertLessThanOrEqual(11, $transport->waits);
-        $this->assertSame(array_fill(0, $transport->waits, 0.01), $channel->waits);
+        $this->assertEqualsWithDelta($transportEnds, $ends['transport'], 1e-12);
+        $this->assertEqualsWithDelta($channelSlices, $channel->waits, 1e-12);
+        $this->assertEqualsWithDelta($timeout, $transport->now(), 1e-12, 'the last slice ends at the deadline');
+        foreach ($ends['channel'] as $end) {
+            $this->assertLessThanOrEqual($timeout + 1e-12, $end, 'no slice ends past the deadline');
+        }
     }
 
     #[Group('ac-06-63')]
@@ -849,21 +874,159 @@ final class EventQueueTest extends TestCase
         $this->assertTrue($queue->flush());
     }
 
-    /** The C2 setup of a shutdown after the shared deadline: the companions' turn never comes. */
+    /** The C2 setup of a shutdown after the shared deadline: the companions finished in the first one's reserve. */
     #[Group('ac-03-9')]
-    public function testCompanionsAreNotFinishedOnceTheSharedDeadlineHasPassed(): void
+    public function testALaterShutdownAfterTheSharedDeadlineFinishesNothing(): void
     {
         $transport = new RecordingTransport(complete: false);
         $queue = new EventQueue(transport: $transport, shutdownTimeoutSeconds: 1.0);
         $companion = new RecordingCompanion();
         $queue->attach($companion);
         $queue->add(new QueuedEvent($this->event()));
+        $queue->shutdown(); // the held event uses the budget up to the reserve, then the companion finishes
 
-        $queue->shutdown(); // the held event uses the whole budget
         $queue->shutdown();
 
-        $this->assertSame(['tick', 'tick'], $companion->calls, 'no finish, and nothing after the deadline');
+        $this->assertSame(['tick', 'tick', 'finish'], $companion->calls, 'nothing after the deadline');
         $this->assertEqualsWithDelta(1.0, $transport->now(), PHP_FLOAT_EPSILON);
+        $this->assertSame(2, $transport->waits);
+    }
+
+    /** @return iterable<string, array{float, float}> the shutdown timeout and when `finish()` runs */
+    public static function finishReserves(): iterable
+    {
+        yield '10 % of 1 s' => [1.0, 0.9];
+        yield '10 % of 2 s' => [2.0, 1.8];
+        yield 'at most 0.5 s of the default 5 s' => [EventQueue::SHUTDOWN_TIMEOUT_SECONDS, 4.5];
+        yield 'at most 0.5 s of 10 s' => [10.0, 9.5];
+    }
+
+    /**
+     * A slow AgentCat API (or a hung exporter) never keeps the companions from finishing: their requests get the end of
+     * the budget, and the shutdown still ends at its deadline. The channel double advances the recording clock.
+     */
+    #[Group('ac-03-9')]
+    #[Group('ac-06-63')]
+    #[DataProvider('finishReserves')]
+    public function testWithCompanionsTheEndOfTheBudgetIsKeptForFinish(float $timeout, float $finishAt): void
+    {
+        $transport = new RecordingTransport(complete: false);
+        $channel = new RecordingHttpChannel(complete: false, onWait: static function (float $seconds) use ($transport): void {
+            $transport->waitForActivity($transport->now() + $seconds);
+        });
+        $queue = new EventQueue(transport: $transport, shutdownTimeoutSeconds: $timeout, channel: $channel);
+        $finishedAt = [];
+        $queue->attach(new RecordingCompanion(static function () use ($transport, $channel, &$finishedAt): void {
+            $finishedAt[] = $transport->now();
+            $channel->post(new HttpRequest('http://collector.test/v1/logs', [], '{}'), static function (): void {});
+        }));
+        $queue->add(new QueuedEvent($this->event())); // never completes
+
+        $queue->shutdown();
+
+        $this->assertCount(1, $finishedAt);
+        $this->assertEqualsWithDelta($finishAt, $finishedAt[0], 1e-9, 'finish() runs when only the reserve is left');
+        $this->assertNotSame([], $channel->waits, 'the last pass waits for the request');
+        $this->assertEqualsWithDelta($timeout, $transport->now(), 1e-9, 'the last pass ends at the deadline');
+        $this->assertSame(1, $channel->pending());
+        $this->assertSame([], $this->logger->messages());
+    }
+
+    /** @return iterable<string, array{float}> */
+    public static function noBudget(): iterable
+    {
+        yield 'zero' => [0.0];
+        yield 'negative' => [-1.0];
+        yield 'NaN' => [NAN];
+    }
+
+    /** No time left, no reserve: nothing finishes, nothing waits, and no NaN reaches a deadline. */
+    #[DataProvider('noBudget')]
+    public function testWithoutABudgetNoCompanionFinishes(float $timeout): void
+    {
+        $transport = new RecordingTransport(complete: false);
+        $queue = new EventQueue(transport: $transport, shutdownTimeoutSeconds: $timeout);
+        $companion = new RecordingCompanion();
+        $queue->attach($companion);
+        $queue->add(new QueuedEvent($this->event()));
+
+        $queue->shutdown();
+
+        $this->assertSame(['tick'], $companion->calls);
+        $this->assertSame(0, $transport->waits);
+        $this->assertSame([], $this->logger->messages());
+    }
+
+    /** A hook or an exporter that calls `shutdown()` inside `pump()`: the companions finish only after the delivery. */
+    #[Group('ac-03-9')]
+    public function testAReentrantShutdownFinishesNoCompanion(): void
+    {
+        $transport = new RecordingTransport();
+        $exporter = new class implements ExporterSink {
+            public ?EventQueue $queue = null;
+
+            #[\Override]
+            public function export(Event $event): void
+            {
+                $this->queue?->shutdown();
+            }
+        };
+        $queue = new EventQueue(transport: $transport, exporters: $exporter);
+        $exporter->queue = $queue;
+        $companion = new RecordingCompanion();
+        $queue->attach($companion);
+        $queue->add(new QueuedEvent($this->event()));
+
+        $queue->pump();
+
+        $this->assertSame(['tick'], $companion->calls, 'no finish before the event is delivered');
+        $this->assertCount(1, $transport->deliveries);
+
+        $queue->shutdown();
+
+        $this->assertSame(['tick', 'tick', 'finish'], $companion->calls);
+    }
+
+    /** The same call inside a shutdown's first pass, after that shutdown fixed the deadline: still no early finish. */
+    #[Group('ac-03-9')]
+    public function testAReentrantShutdownDuringAShutdownFinishesNoCompanion(): void
+    {
+        $transport = new RecordingTransport();
+        $exporter = new class implements ExporterSink {
+            public ?EventQueue $queue = null;
+
+            #[\Override]
+            public function export(Event $event): void
+            {
+                $this->queue?->shutdown();
+            }
+        };
+        $queue = new EventQueue(transport: $transport, exporters: $exporter);
+        $exporter->queue = $queue;
+        $companion = new RecordingCompanion();
+        $queue->attach($companion);
+        $queue->add(new QueuedEvent($this->event()));
+
+        $queue->shutdown();
+
+        $this->assertSame(['tick', 'finish'], $companion->calls);
+        $this->assertCount(1, $transport->deliveries);
+    }
+
+    /** A clock that cannot be read never fixes the deadline: one failure line per shutdown, no companion finishes. */
+    public function testAFailingClockFinishesNoCompanion(): void
+    {
+        $transport = new RecordingTransport(failure: new \RuntimeException('down'));
+        $queue = new EventQueue(transport: $transport);
+        $companion = new RecordingCompanion();
+        $queue->attach($companion);
+        $queue->add(new QueuedEvent($this->event()));
+
+        $queue->shutdown();
+        $queue->shutdown();
+
+        $this->assertSame([], $companion->calls);
+        $this->assertSame(array_merge(...array_fill(0, 2, [self::GAVE_UP . 'RuntimeException: down', 'Shutting down with 1 events still in queue'])), $this->logger->messages());
     }
 
     /** `finish()` is the last call a companion gets in a shutdown: the pass after it drives the channel only. */

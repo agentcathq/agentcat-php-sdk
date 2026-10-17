@@ -22,11 +22,15 @@ final class RecordingHttpChannel implements HttpChannel
 
     private readonly HttpResponse $default;
 
-    /** @param list<HttpResponse> $responses the answers to requests 0, 1, 2, … */
+    /**
+     * @param list<HttpResponse>           $responses the answers to requests 0, 1, 2, …
+     * @param (\Closure(float): void)|null $onWait    runs in waitForActivity() with its seconds (a test can advance a clock)
+     */
     public function __construct(
         private readonly array $responses = [],
         ?HttpResponse $default = null,
         public bool $complete = true,
+        private readonly ?\Closure $onWait = null,
     ) {
         $this->default = $default ?? new HttpResponse(200, 'OK', 'ok');
     }
@@ -57,6 +61,9 @@ final class RecordingHttpChannel implements HttpChannel
     public function waitForActivity(float $seconds): void
     {
         $this->waits[] = $seconds;
+        if ($this->onWait instanceof \Closure) {
+            ($this->onWait)($seconds);
+        }
     }
 
     /** @return list<string> the URLs, in post order */
