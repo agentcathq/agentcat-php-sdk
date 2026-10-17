@@ -6,14 +6,18 @@ namespace AgentCat\Tests\Unit;
 
 use AgentCat\AgentCat;
 use AgentCat\Client;
+use AgentCat\CustomEvent;
 use AgentCat\Event;
 use AgentCat\Internal\ClientSeams;
 use AgentCat\Internal\Delivery\EventQueue;
+use AgentCat\Internal\Json\Json;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Pipeline\QueuedEvent;
 use AgentCat\Tests\Support\Environment;
+use AgentCat\Tests\Support\JsonAssert;
 use AgentCat\Tests\Support\MemoryLogger;
 use AgentCat\Tests\Support\RecordingTransport;
+use AgentCat\Tests\Support\Thrown;
 use PHPUnit\Framework\TestCase;
 
 final class AgentCatTest extends TestCase
@@ -108,6 +112,28 @@ final class AgentCatTest extends TestCase
 
         $this->assertFalse(AgentCat::flush(2.5));
         $this->assertEqualsWithDelta(2.5, $this->transport->now(), PHP_FLOAT_EPSILON, 'the simulated clock stops at the deadline');
+    }
+
+    public function testPublishCustomEventGoesThroughTheClient(): void
+    {
+        AgentCat::setClient($this->client);
+
+        AgentCat::publishCustomEvent('ses_1', 'proj_x', new CustomEvent(resourceName: 'r'));
+
+        $this->assertTrue(AgentCat::flush());
+        $this->assertCount(1, $this->transport->deliveries);
+        $body = Json::decode($this->transport->deliveries[0]->body);
+        $this->assertSame(['ses_1', 'proj_x', 'r'], [JsonAssert::at($body, 'session_id'), JsonAssert::at($body, 'project_id'), JsonAssert::at($body, 'resource_name')]);
+        $this->assertSame(["Published custom event for session ses_1 with type 'agentcat:custom'"], $this->logger->messages());
+    }
+
+    public function testPublishCustomEventPassesItsValidationErrors(): void
+    {
+        AgentCat::setClient($this->client);
+
+        $error = Thrown::by(\InvalidArgumentException::class, static fn() => AgentCat::publishCustomEvent(new \stdClass(), 'proj_x'));
+
+        $this->assertSame('Server is not tracked. Please call agentcat.track() first or provide a session ID string.', $error->getMessage());
     }
 
     public function testShutdownGoesThroughTheClient(): void

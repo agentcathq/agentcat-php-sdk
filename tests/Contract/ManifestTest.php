@@ -19,10 +19,12 @@ final class ManifestTest extends TestCase
             [
                 'Mcp\Schema\Result\CallToolResult::__construct(array $content, bool $isError = false, mixed $structuredContent = null, ?array $meta = null)',
                 'Mcp\Schema\Result\ListToolsResult::__construct(array $tools, ?string $nextCursor = null)',
+                'Mcp\Server::$protocol',
                 'Mcp\Server\Builder::$container',
                 'Mcp\Server\Builder::$logger',
                 'Mcp\Server\Builder::$parts',
                 'Mcp\Server\Builder::$referenceHandler',
+                'Mcp\Server\Protocol::$requestHandlers',
             ],
             PrivateMemberManifest::members(),
         );

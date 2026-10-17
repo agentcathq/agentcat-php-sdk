@@ -35,6 +35,12 @@ final readonly class CallToolInterceptor implements RequestHandlerInterface
         private RequestReader $reader,
     ) {}
 
+    /** The tracking state of the server: a server built from a tracked Builder finds it here. */
+    public function server(): TrackedServer
+    {
+        return $this->server;
+    }
+
     #[\Override]
     public function supports(Request $request): bool
     {

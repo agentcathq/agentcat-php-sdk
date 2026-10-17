@@ -43,6 +43,33 @@ final class AgentCat
     }
 
     /**
+     * Publishes a custom event, for a tracked server or for a session.
+     *
+     * With a server tracked by any client (the Builder, or the server built from it), the event goes to the project
+     * the server was tracked with, whatever `$projectId` says, and carries the server name and version and the SDK
+     * fields. The server's `redactEvent` option applies to it; `redactSensitiveInformation` does not. When the server
+     * was tracked with `enableTracing: false`, the event is dropped. Without `$event->sessionId`, the event has no
+     * session.
+     *
+     * With a session ID string, the event goes to `$projectId` for that session, used as it is; `$event->sessionId`
+     * wins over it. No server or SDK fields and no hooks apply.
+     *
+     * The event is queued, not sent: AgentCat delivers it like any other event. Apart from the two errors below, it
+     * never throws: a failure is logged. In test environments it validates `$projectId` and then does nothing, like
+     * `track()` (see `AGENTCAT_ENABLED` there).
+     *
+     * @param object|string $serverOrSessionId A tracked server, or the session ID of the event.
+     * @param string|null $projectId Your AgentCat project ID (`proj_…`); required, even for a tracked server.
+     * @param CustomEvent|null $event The event data; null sends an event with no data.
+     *
+     * @throws \InvalidArgumentException when `$projectId` is null or empty, or when the server is not tracked
+     */
+    public static function publishCustomEvent(object|string $serverOrSessionId, ?string $projectId, ?CustomEvent $event = null): void
+    {
+        self::client()->publishCustomEvent($serverOrSessionId, $projectId, $event);
+    }
+
+    /**
      * Sends the queued events now and waits for them. Rarely needed: AgentCat delivers on its own, between requests
      * and when the process ends.
      *

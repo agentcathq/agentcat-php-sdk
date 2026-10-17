@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace AgentCat\Tests\Unit\Internal\Engine;
 
 use AgentCat\Event;
+use AgentCat\Internal\Constants;
 use AgentCat\Internal\Delivery\EventQueue;
 use AgentCat\Internal\Engine\Publisher;
 use AgentCat\Internal\Engine\TrackedServer;
+use AgentCat\Internal\SdkVersion;
 use AgentCat\Options;
 use AgentCat\Tests\Support\RecordingExporter;
 use AgentCat\Tests\Support\RecordingTransport;
@@ -103,6 +105,86 @@ final class PublisherTest extends TestCase
         $this->publisher->publishToolCall($this->server('proj_1', new Options(enableTracing: false)), $this->event(), null, null, []);
 
         $this->assertSame(0, $this->queue->stats()['queueLength']);
+    }
+
+    #[Group('ac-01-77')]
+    #[Group('ac-01-54')]
+    #[Group('ac-05-P7')]
+    public function testPublishCustomStampsTheTrackedServerAndRunsOnlyRedactEvent(): void
+    {
+        $redacted = [];
+        $options = new Options(
+            redactSensitiveInformation: static fn(string $s): string => '[R]',
+            redactEvent: static function (Event $event) use (&$redacted): Event {
+                $redacted[] = $event->eventType;
+
+                return $event;
+            },
+        );
+        $server = new TrackedServer('proj_t', $options, static fn(): array => ['srv', '2'], $this->publisher);
+        $event = new Event(eventType: Constants::CUSTOM_EVENT_TYPE, timestamp: $this->at('2026-10-17T12:00:00.125Z'), clientName: 'stale', clientVersion: 'stale', parameters: (object) ['msg' => 'secret']);
+
+        $this->publisher->publishCustom($server, $event);
+        $this->queue->flush();
+
+        $exported = $this->exported();
+        $this->assertSame(['srv', '2', null, null, 'PHP', SdkVersion::get()], [
+            $exported->serverName,
+            $exported->serverVersion,
+            $exported->clientName,
+            $exported->clientVersion,
+            $exported->sdkLanguage,
+            $exported->agentcatVersion,
+        ]);
+        $this->assertEquals(new \stdClass(), $exported->identifyActorData);
+        $this->assertSame('proj_t', $exported->projectId);
+        $this->assertSame(375, $exported->duration, 'the elapsed time since the event was made');
+        $this->assertSame([Constants::CUSTOM_EVENT_TYPE], $redacted);
+        $this->assertEquals((object) ['msg' => 'secret'], $exported->parameters, 'D08: redactSensitiveInformation skips custom events');
+        $this->assertCount(1, $this->transport->deliveries);
+    }
+
+    public function testPublishCustomKeepsAGivenDurationAndReplacesZero(): void
+    {
+        $server = $this->server('proj_t');
+        foreach ([42, 0, 0.0, 12.5] as $duration) {
+            $this->publisher->publishCustom($server, new Event(eventType: Constants::CUSTOM_EVENT_TYPE, timestamp: $this->at('2026-10-17T12:00:00.250Z'), duration: $duration));
+        }
+        $this->queue->flush();
+
+        $this->assertSame([42, 250, 250, 12.5], array_map(static fn(Event $e): int|float|null => $e->duration, $this->exporter->events));
+    }
+
+    #[Group('ac-01-78')]
+    public function testPublishCustomOnATelemetryOnlyServerExportsWithoutDelivery(): void
+    {
+        $event = new Event(projectId: 'proj_other', eventType: Constants::CUSTOM_EVENT_TYPE);
+
+        $this->publisher->publishCustom($this->server(''), $event);
+        $this->queue->flush();
+
+        $this->assertNull($this->exported()->projectId);
+        $this->assertSame([], $this->transport->deliveries);
+    }
+
+    #[Group('ac-01-78')]
+    public function testPublishCustomUsesTheTrackedProject(): void
+    {
+        $this->publisher->publishCustom($this->server('proj_t'), new Event(projectId: 'proj_other', eventType: Constants::CUSTOM_EVENT_TYPE));
+        $this->queue->flush();
+
+        $this->assertSame('proj_t', $this->exported()->projectId);
+    }
+
+    public function testPublishCustomWithTracingOffQueuesNothing(): void
+    {
+        $event = new Event(projectId: 'proj_other', eventType: Constants::CUSTOM_EVENT_TYPE);
+
+        $this->publisher->publishCustom($this->server('proj_t', new Options(enableTracing: false)), $event);
+
+        $this->assertSame(0, $this->queue->stats()['queueLength']);
+        $this->assertSame('proj_other', $event->projectId, 'the event is left as it was');
+        $this->assertNull($event->sdkLanguage);
     }
 
     public function testElapsedMsCountsWholeMilliseconds(): void
