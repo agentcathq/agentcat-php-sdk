@@ -87,6 +87,9 @@ final class SentryDsnTest extends TestCase
         yield 'line separator in the path' => ["https://abc@h/a\u{2028}b/42"];
         yield 'paragraph separator in the path' => ["https://abc@h/a\u{2029}b/42"];
         yield 'trailing project text' => ['https://abc@h/42x'];
+        yield 'non-ASCII letter in the host' => ['https://abc@é.example.com/42'];
+        yield 'non-ASCII digits in the project' => ['https://abc@o1.sentry.io/٤٢'];
+        yield 'non-ASCII digits in the port' => ['https://abc@h:٨٠/42'];
         yield 'empty' => [''];
     }
 }

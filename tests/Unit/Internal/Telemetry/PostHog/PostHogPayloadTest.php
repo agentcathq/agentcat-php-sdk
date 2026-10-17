@@ -86,6 +86,16 @@ final class PostHogPayloadTest extends TestCase
     }
 
     #[Group('ac-06-44')]
+    public function testAKeyStartingWithNulIsLeftOutAndTheBatchIsStillBuilt(): void
+    {
+        $event = new Event(id: 'evt_1', eventType: 'mcp:tools/call', tags: ["\0bad" => 'x', 'ok' => 'y'], properties: (object) ["\0worse" => 1, 'p' => 2]);
+
+        foreach ([0, 1] as $index) {
+            $this->assertSame(['source', 'ok', 'p'], array_slice(array_keys(get_object_vars($this->properties($event, $index, ai: true))), $index === 0 ? 0 : 4, 3), "item {$index}");
+        }
+    }
+
+    #[Group('ac-06-44')]
     public function testScalarOrFalsyPropertiesAndTagsAreNotSpread(): void
     {
         foreach (['text', 5, true, [], 0, ''] as $properties) {

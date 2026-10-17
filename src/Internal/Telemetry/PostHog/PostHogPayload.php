@@ -177,7 +177,7 @@ final readonly class PostHogPayload
             return;
         }
         foreach (Values::entries($map) as $key => $value) {
-            $target->{(string) $key} = $value;
+            $target->{$key} = $value;
         }
     }
 }

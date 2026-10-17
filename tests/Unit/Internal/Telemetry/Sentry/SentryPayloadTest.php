@@ -279,6 +279,15 @@ final class SentryPayloadTest extends TestCase
         $this->assertSame(['source' => 'agentcat', 'event_type' => 'mcp:ping', 'agentcat.A b' => 'v', 'agentcat.5' => 'five'], get_object_vars($tags));
     }
 
+    public function testATagKeyStartingWithNulIsLeftOutAndTheEnvelopeIsStillBuilt(): void
+    {
+        $event = new Event(id: 'evt_1', eventType: 'mcp:ping', tags: ["\0bad" => 'x', 'ok' => 'y']);
+        $tags = JsonAssert::at($this->tree($this->payload(tracing: true)->transaction($event)->body), 'tags');
+
+        $this->assertSame(['source' => 'agentcat', 'event_type' => 'mcp:ping', 'agentcat.ok' => 'y'], $this->vars($tags));
+        $this->assertSame(['source' => 'agentcat', 'event_type' => 'mcp:ping', 'agentcat.ok' => 'y'], $this->vars(JsonAssert::at($this->tree($this->payload()->errorEvent($event, null)['body']), 'tags')));
+    }
+
     public function testExtraHoldsTheTruthyFieldsAndAnyDuration(): void
     {
         $event = ExporterFixtures::errorEvent();

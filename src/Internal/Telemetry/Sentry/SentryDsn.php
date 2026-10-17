@@ -12,7 +12,7 @@ namespace AgentCat\Internal\Telemetry\Sentry;
  */
 final readonly class SentryDsn
 {
-    private const string PATTERN = '~\A(https?)://([a-f0-9]+)@([\w.-]+)(:\d+)?(/[^\n\r\x{2028}\x{2029}]*)?/(\d+)\z~u';
+    private const string PATTERN = '~\A(https?)://([a-f0-9]+)@([A-Za-z0-9_.-]+)(:[0-9]+)?(/[^\n\r\x{2028}\x{2029}]*)?/([0-9]+)\z~u';
 
     private function __construct(
         public string $endpoint,
