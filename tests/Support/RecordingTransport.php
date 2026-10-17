@@ -59,6 +59,9 @@ final class RecordingTransport implements Transport
     public function waitForActivity(float $deadline): void
     {
         $this->fail();
+        if (is_nan($deadline)) {
+            throw new \LogicException('waitForActivity() got a NaN deadline'); // a deadline that never passes
+        }
         ++$this->waits;
         $this->clock = max($this->clock, $deadline);
     }

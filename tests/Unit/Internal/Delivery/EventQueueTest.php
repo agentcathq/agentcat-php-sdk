@@ -27,18 +27,39 @@ final class EventQueueTest extends TestCase
 {
     private const string GAVE_UP = 'Failed to deliver AgentCat event after retries: ';
 
+    /** Read by `ApiBaseUrl::resolve()` through `getenv()`, `$_ENV` and `$_SERVER`. */
+    private const array URL_VARIABLES = ['AGENTCAT_API_URL', 'MCPCAT_API_URL'];
+
     private MemoryLogger $logger;
+
+    /** @var array<string, array{getenv: string|false, env: mixed, server: mixed}> */
+    private array $savedEnvironment = [];
 
     #[\Override]
     protected function setUp(): void
     {
         $this->logger = new MemoryLogger();
         Log::setLogger($this->logger);
+        foreach (self::URL_VARIABLES as $name) {
+            $this->savedEnvironment[$name] = ['getenv' => getenv($name), 'env' => $_ENV[$name] ?? null, 'server' => $_SERVER[$name] ?? null];
+            putenv($name);
+            unset($_ENV[$name], $_SERVER[$name]);
+        }
     }
 
     #[\Override]
     protected function tearDown(): void
     {
+        foreach ($this->savedEnvironment as $name => $saved) {
+            putenv($saved['getenv'] === false ? $name : $name . '=' . $saved['getenv']);
+            unset($_ENV[$name], $_SERVER[$name]);
+            if ($saved['env'] !== null) {
+                $_ENV[$name] = $saved['env'];
+            }
+            if ($saved['server'] !== null) {
+                $_SERVER[$name] = $saved['server'];
+            }
+        }
         EventQueue::setGlobal(null);
         Log::reset();
     }
@@ -228,6 +249,20 @@ final class EventQueueTest extends TestCase
         );
     }
 
+    #[Group('ac-07-3')]
+    public function testEndpointBeforeConfigureComesFromTheEnvironment(): void
+    {
+        putenv('AGENTCAT_API_URL=https://env.example.test/');
+        $transport = new RecordingTransport();
+        $queue = new EventQueue(transport: $transport);
+
+        $queue->add(new QueuedEvent($this->event()));
+        $queue->pump();
+
+        $this->assertCount(1, $transport->deliveries);
+        $this->assertSame('https://env.example.test/v1/public/events/', $transport->deliveries[0]->url);
+    }
+
     public function testExporterSinkCanBeReplaced(): void
     {
         $first = new RecordingExporter();
@@ -411,6 +446,19 @@ final class EventQueueTest extends TestCase
         $this->assertFalse($queue->flush(), 'the recording clock jumps to an INF deadline');
         $this->assertSame(1, $transport->waits);
         $this->assertSame(INF, $transport->now());
+    }
+
+    public function testFlushWithANegativeOrNanTimeoutReturnsAtOnce(): void
+    {
+        $transport = new RecordingTransport(complete: false);
+        $queue = new EventQueue(transport: $transport);
+        $queue->add(new QueuedEvent($this->event()));
+
+        $this->assertFalse($queue->flush(-1.0));
+        $this->assertFalse($queue->flush(NAN));
+        $this->assertSame(0, $transport->waits);
+        $this->assertSame([], $this->logger->messages());
+        $this->assertCount(1, $transport->deliveries);
     }
 
     public function testFlushWaitsWhileAllSlotsAreBusy(): void

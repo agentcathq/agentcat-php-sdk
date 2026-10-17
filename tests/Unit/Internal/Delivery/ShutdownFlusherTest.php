@@ -6,6 +6,7 @@ namespace AgentCat\Tests\Unit\Internal\Delivery;
 
 use AgentCat\Event;
 use AgentCat\Internal\Delivery\EventQueue;
+use AgentCat\Internal\Delivery\ExporterSink;
 use AgentCat\Internal\Delivery\ShutdownFlusher;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Pipeline\QueuedEvent;
@@ -65,11 +66,16 @@ final class ShutdownFlusherTest extends TestCase
             },
         );
 
+        $error = null;
+
         try {
             $flusher->ensureRegistered();
-            self::fail('the registrar error reaches the queue, which logs it');
-        } catch (\RuntimeException) {
+        } catch (\RuntimeException $e) {
+            $error = $e;
         }
+
+        $this->assertInstanceOf(\RuntimeException::class, $error, 'the registrar error reaches the queue, which logs it');
+        $this->assertSame('nope', $error->getMessage());
         $flusher->ensureRegistered();
         $flusher->ensureRegistered();
 
@@ -194,6 +200,41 @@ final class ShutdownFlusherTest extends TestCase
         $this->assertCount(1, $this->transport->deliveries);
     }
 
+    #[Group('ac-03-12')]
+    public function testFinalPassDeliversAfterAnAbortedPump(): void
+    {
+        // exit() or a fatal error inside pump() never reaches the line that clears the re-entrancy guard (PHP
+        // runs no `finally` then either). Test seam: a fiber suspended inside an exporter leaves pump() unfinished
+        // in the same way, without ending the test process.
+        $exporter = new class implements ExporterSink {
+            public bool $suspend = true;
+
+            #[\Override]
+            public function export(Event $event): void
+            {
+                if ($this->suspend) {
+                    $this->suspend = false;
+                    \Fiber::suspend();
+                }
+            }
+        };
+        $this->queue->setExporterSink($exporter);
+        $this->queue->add(new QueuedEvent($this->event(projectId: null)));
+        $this->queue->add(new QueuedEvent($this->event()));
+        $aborted = new \Fiber($this->queue->pump(...));
+        $aborted->start();
+        $this->assertTrue($aborted->isSuspended());
+        $this->assertFalse($this->queue->flush(), 'the guard is still set');
+
+        $this->flusher()->onFinalShutdown();
+
+        $this->assertCount(1, $this->transport->deliveries);
+        $this->queue->add(new QueuedEvent($this->event()));
+        $this->assertSame(['Queue is shutting down, event dropped'], $this->logger->messages());
+        $aborted->resume();
+        $this->assertTrue($aborted->isTerminated());
+    }
+
     /**
      * @param (\Closure(): void)|null $finishRequest
      */
@@ -216,8 +257,8 @@ final class ShutdownFlusherTest extends TestCase
         return (new \ReflectionFunction($callback))->getName();
     }
 
-    private function event(): Event
+    private function event(?string $projectId = 'proj_test'): Event
     {
-        return new Event(projectId: 'proj_test', eventType: 'mcp:tools/call');
+        return new Event(projectId: $projectId, eventType: 'mcp:tools/call');
     }
 }

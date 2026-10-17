@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace AgentCat\Internal\Delivery;
 
 use AgentCat\Event;
-use AgentCat\Internal\Constants;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Pipeline\EventProcessor;
 use AgentCat\Internal\Pipeline\QueuedEvent;
@@ -64,7 +63,7 @@ final class EventQueue
     ) {
         $this->waiting = new \SplQueue();
         $this->encode = $encode ?? WireEncoder::encode(...);
-        $this->endpoint = ApiBaseUrl::endpoint(Constants::DEFAULT_API_BASE_URL);
+        $this->endpoint = ApiBaseUrl::endpoint(ApiBaseUrl::resolve()); // environment or default, until configure()
     }
 
     /** The queue of this process; on first use it registers the shutdown delivery for the first event. */
@@ -146,7 +145,8 @@ final class EventQueue
         $this->busy = true;
 
         try {
-            $deadline = $timeoutSeconds === null ? INF : $this->transport->now() + $timeoutSeconds;
+            // max(0.0, NAN) is 0.0: a NaN timeout must not give a deadline that never passes.
+            $deadline = $timeoutSeconds === null ? INF : $this->transport->now() + max(0.0, $timeoutSeconds);
             while (true) {
                 $this->pumpOnce();
                 if ($this->waiting->isEmpty() && $this->transport->inFlight() === 0) {
@@ -177,6 +177,17 @@ final class EventQueue
         if (!$this->waiting->isEmpty()) {
             Log::write(sprintf('Shutting down with %d events still in queue', $this->waiting->count()));
         }
+    }
+
+    /**
+     * `shutdown()` from the last shutdown function. No `pump()` or `flush()` frame is live then, but an `exit()`
+     * or a fatal error inside one (in a hook or an exporter) skips the rest of it, `finally` included, and leaves
+     * the re-entrancy guard set: clear it first, so that the waiting events are still delivered.
+     */
+    public function finalShutdown(): void
+    {
+        $this->busy = false;
+        $this->shutdown();
     }
 
     /** @return array{queueLength: int, activeRequests: int} */

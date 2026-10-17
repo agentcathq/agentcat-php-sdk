@@ -71,6 +71,7 @@ final class ShutdownDeliveryTest extends TestCase
 
         $this->assertSame(0, $process->getExitCode(), $process->getErrorOutput());
         $this->assertSame("done\n", $process->getOutput());
+        $this->assertSame('', $process->getErrorOutput());
         $requests = $this->collector()->requests($base);
         $this->assertCount(1, $requests);
         $body = $requests[0]->body;
@@ -82,6 +83,30 @@ final class ShutdownDeliveryTest extends TestCase
         $start = $requests[0]->start;
         $this->assertIsNumeric($start);
         $this->assertGreaterThan((float) $markerTime, (float) $start, 'the queue flushed after the customer shutdown function');
+    }
+
+    #[Group('ac-03-12')]
+    #[MaximumDuration(10000)]
+    public function testExitInsidePumpStillDeliversTheWaitingEvents(): void
+    {
+        $base = $this->collector()->scenario();
+        $process = new Process(
+            [PHP_BINARY, __DIR__ . '/../Fixtures/exit-in-exporter.php', $base],
+            null,
+            ['HOME' => $this->dir],
+        );
+        $process->setTimeout(10);
+
+        $process->run();
+
+        $this->assertSame(0, $process->getExitCode(), $process->getErrorOutput());
+        $this->assertSame("exit\n", $process->getOutput());
+        $this->assertSame('', $process->getErrorOutput());
+        $requests = $this->collector()->requests($base);
+        $this->assertCount(1, $requests);
+        $body = $requests[0]->body;
+        $this->assertIsString($body);
+        $this->assertSame('after-exit', JsonAssert::at(Json::decode($body), 'resource_name'));
     }
 
     private function collector(): MockCollector

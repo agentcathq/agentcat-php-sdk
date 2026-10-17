@@ -67,7 +67,7 @@ final class ShutdownFlusher
                     // keep going: delivery matters more than the finish call
                 }
             }
-            $queue->shutdown();
+            $queue->finalShutdown();
         } catch (\Throwable) {
             // a shutdown function must never throw
         }
