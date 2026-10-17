@@ -67,6 +67,12 @@ final class McpSdkAdapter
         return $signals;
     }
 
+    /** The signals, comma-joined (TS `fingerprintServerShape`); empty when none applies. */
+    public static function fingerprint(object $server): string
+    {
+        return implode(',', self::signals($server));
+    }
+
     public static function version(): string
     {
         return SdkVersion::installed('mcp/sdk') ?? 'unknown';
@@ -90,10 +96,11 @@ final class McpSdkAdapter
         }
     }
 
+    /** The PSR-3 logger set on the Builder; null when none is set or it cannot be read (C13). Never warns or throws. */
     public static function logger(Builder $builder): ?LoggerInterface
     {
         try {
-            return BuilderAccess::logger($builder);
+            return StrictErrors::run(static fn(): ?LoggerInterface => BuilderAccess::logger($builder));
         } catch (\Throwable) {
             return null; // inspect() reports the drift
         }
@@ -124,17 +131,18 @@ final class McpSdkAdapter
 
     /**
      * Wraps the reference handler, then registers AgentCat's request handlers, which run before the library's own
-     * (02 §1.4).
+     * (02 §1.4). Every read comes before the first change, so a read that throws leaves the Builder untouched.
      */
     public static function install(Builder $builder, TrackedServer $server, Publisher $publisher, CallInterceptor $interceptor): void
     {
+        $hasContainer = BuilderAccess::container($builder) instanceof ContainerInterface;
+        $custom = BuilderAccess::referenceHandler($builder);
         $delegates = new Delegates($builder); // one per Builder, shared by AgentCat's handlers
         $stash = new ThrowableStash();
-        if (!BuilderAccess::container($builder) instanceof ContainerInterface) {
+        if (!$hasContainer) {
             // The default build() would create, set here so that AgentCat's handlers and the library's share it.
             $builder->setContainer(new Container());
         }
-        $custom = BuilderAccess::referenceHandler($builder);
         $inner = $custom instanceof ReferenceHandlerInterface
             ? static fn(): ReferenceHandlerInterface => $custom
             : static fn(): ReferenceHandlerInterface => new ReferenceHandler(self::container($builder));

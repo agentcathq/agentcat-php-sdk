@@ -63,6 +63,17 @@ final class McpSdkAdapterTest extends TestCase
         $this->assertSame([], McpSdkAdapter::signals(new \stdClass()));
     }
 
+    public function testTheFingerprintJoinsTheSignalsWithCommas(): void
+    {
+        $builder = Server::builder();
+        $this->assertSame('mcpSdkBuilder', McpSdkAdapter::fingerprint($builder));
+
+        $builder->build();
+
+        $this->assertSame('mcpSdkBuilder,built', McpSdkAdapter::fingerprint($builder));
+        $this->assertSame('', McpSdkAdapter::fingerprint(new \stdClass()));
+    }
+
     public function testTheVersionIsTheInstalledMcpSdkVersion(): void
     {
         $this->assertSame(SdkVersion::installed('mcp/sdk'), McpSdkAdapter::version());

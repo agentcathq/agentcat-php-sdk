@@ -108,6 +108,82 @@ final class LogTest extends TestCase
         $this->assertSame(1, $logger->calls);
     }
 
+    public function testTheFirstAdoptedLoggerReceivesEveryLaterLine(): void
+    {
+        Log::reset();
+        $first = new MemoryLogger();
+        $second = new MemoryLogger();
+
+        Log::adopt($first);
+        Log::adopt($second);
+        Log::write('hello');
+
+        $this->assertSame(['hello'], $first->messages());
+        $this->assertSame([], $second->messages());
+    }
+
+    public function testALoggerSetWithSetLoggerWinsOverAnAdoptedOne(): void
+    {
+        $set = new MemoryLogger();
+        $adopted = new MemoryLogger();
+        Log::setLogger($set);
+
+        Log::adopt($adopted);
+        Log::write('hello');
+
+        $this->assertSame(['hello'], $set->messages());
+        $this->assertSame([], $adopted->messages());
+    }
+
+    public function testSettingNoLoggerLetsALaterAdoptionWin(): void
+    {
+        Log::setLogger(new MemoryLogger());
+        Log::setLogger(null);
+        $adopted = new MemoryLogger();
+
+        Log::adopt($adopted);
+        Log::write('hello');
+
+        $this->assertSame(['hello'], $adopted->messages());
+    }
+
+    public function testResetForgetsTheAdoptedLogger(): void
+    {
+        $first = new MemoryLogger();
+        Log::adopt($first);
+        Log::reset();
+        $second = new MemoryLogger();
+
+        Log::adopt($second);
+        Log::write('hello');
+
+        $this->assertSame([], $first->messages());
+        $this->assertSame(['hello'], $second->messages());
+    }
+
+    public function testTheFileFallbackDoesNotStopALaterAdoption(): void
+    {
+        $home = sys_get_temp_dir() . '/agentcat-logtest-' . bin2hex(random_bytes(6));
+        mkdir($home);
+        $previous = getenv('HOME');
+        putenv('HOME=' . $home);
+        Log::reset();
+        $adopted = new MemoryLogger();
+
+        try {
+            Log::write('to the file');
+            Log::adopt($adopted);
+            Log::write('to the adopted logger');
+
+            $this->assertSame(['to the adopted logger'], $adopted->messages());
+            $this->assertStringEndsWith('] to the file' . "\n", (string) file_get_contents($home . '/agentcat.log'));
+        } finally {
+            $previous === false ? putenv('HOME') : putenv('HOME=' . $previous);
+            @unlink($home . '/agentcat.log');
+            rmdir($home);
+        }
+    }
+
     public function testResetFallsBackToFileLoggerInHome(): void
     {
         $home = sys_get_temp_dir() . '/agentcat-logtest-' . bin2hex(random_bytes(6));
