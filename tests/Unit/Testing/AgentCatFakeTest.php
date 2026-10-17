@@ -22,7 +22,6 @@ use AgentCat\Tests\Support\Thrown;
 use AgentCat\ToolCall;
 use Mcp\Server\Builder;
 use PHPUnit\Framework\Assert;
-use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 /** Customer style: everything goes through `AgentCat`. */
@@ -52,7 +51,7 @@ final class AgentCatFakeTest extends TestCase
         $this->environment->restore();
     }
 
-    #[Group('ac-01-69')]
+    /** D31, Review Focus 1: PHPUnit is loaded and `AGENTCAT_ENABLED` is unset. */
     public function testWithoutFakeTheSdkStaysOffInATestSuite(): void
     {
         $builder = TrackingFixture::builder();
@@ -144,7 +143,7 @@ final class AgentCatFakeTest extends TestCase
         );
     }
 
-    #[Group('ac-01-69')]
+    /** D31: the fake records and sends nothing. */
     public function testNothingGoesToTheNetwork(): void
     {
         putenv('AGENTCAT_API_URL=' . MockCollector::closedPortUrl());
@@ -170,7 +169,7 @@ final class AgentCatFakeTest extends TestCase
         $fake->assertTrackedCount(1);
     }
 
-    #[Group('ac-01-69')]
+    /** Ruling R4: `AGENTCAT_ENABLED=false` (D44) does not turn the fake off. */
     public function testTheFakeRecordsWhateverAgentcatEnabledSays(): void
     {
         putenv('AGENTCAT_ENABLED=false');
