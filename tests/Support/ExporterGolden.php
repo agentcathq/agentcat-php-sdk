@@ -98,6 +98,34 @@ final class ExporterGolden
         return Json::encodeJs(Json::decode($json)) ?? 'unencodable';
     }
 
+    /**
+     * A Sentry envelope with the volatile parts fixed: every JSON line decoded and re-encoded, `sent_at` is `X`, and in
+     * transaction and error envelopes every `event_id` keeps its first 16 hex digits (the rest is random) and ends in `R`.
+     */
+    public static function maskSentry(string $envelope): string
+    {
+        $lines = explode("\n", $envelope);
+        $item = Json::decode($lines[1] ?? '{}');
+        $random = $item instanceof \stdClass && in_array($item->type ?? null, ['transaction', 'event'], true);
+        foreach ($lines as $index => $line) {
+            if ($line === '') {
+                continue;
+            }
+            $decoded = Json::decode($line);
+            if ($decoded instanceof \stdClass) {
+                if (isset($decoded->sent_at)) {
+                    $decoded->sent_at = 'X';
+                }
+                if ($random && is_string($decoded->event_id ?? null)) {
+                    $decoded->event_id = substr($decoded->event_id, 0, 16) . 'R';
+                }
+            }
+            $lines[$index] = Json::encodeJs($decoded) ?? 'unencodable';
+        }
+
+        return implode("\n", $lines);
+    }
+
     /** @return list<string> the lines of one `=== <name>` section, up to the next section or a TS error line */
     private static function section(string $file, string $name): array
     {
