@@ -130,10 +130,29 @@ jobs:
         if: github.event_name != 'pull_request'
         run: vendor/bin/infection --threads=max --logger-github
 
+  mcp-sdk-main:
+    name: mcp/sdk main (PHP 8.5)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.5'
+          coverage: none
+      - uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
+        with:
+          dependency-versions: highest
+      - name: Install mcp/sdk main at the commit this release was verified against
+        run: composer require --dev --no-interaction --update-with-all-dependencies "mcp/sdk:dev-main#82e19d114e95671e05e7df7909195f7ace03d90e as 0.9.0"
+      - run: vendor/bin/phpstan analyse --no-progress --error-format=github
+      - run: vendor/bin/phpunit --testsuite Contract,Integration
+
   all-green:
     name: All green
     if: always()
-    needs: [static, tests, coverage, mutation]
+    needs: [static, tests, coverage, mutation, mcp-sdk-main]
     runs-on: ubuntu-latest
     steps:
       - uses: re-actors/alls-green@b5b5b37504aa4183270bd3d855c52a67f212be35 # v1.3.0

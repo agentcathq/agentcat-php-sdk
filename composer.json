@@ -38,6 +38,8 @@
         "ergebnis/composer-normalize": "^2.54",
         "ergebnis/phpunit-slow-test-detector": "^2.26",
         "infection/infection": "^0.35.8",
+        "mcp/sdk": "^0.8.1",
+        "nyholm/psr7": "^1.8.2",
         "opis/json-schema": "^2.6",
         "php-cs-fixer/shim": "3.95.27",
         "phpat/phpat": "^0.12.5",
@@ -51,7 +53,14 @@
         "shipmonk/composer-dependency-analyser": "^1.8.4",
         "spaze/phpstan-disallowed-calls": "^4.15",
         "symfony/process": "^7.4 || ^8.1",
+        "symfony/uid": "^5.4.35 || ^6.4.3 || ^7.3 || ^8.0",
         "tomasvotruba/type-coverage": "^2.5.1"
+    },
+    "conflict": {
+        "mcp/sdk": "<0.8.1"
+    },
+    "suggest": {
+        "mcp/sdk": "Track mcp/sdk servers with AgentCat::track($builder, $projectId)"
     },
     "minimum-stability": "stable",
     "autoload": {
@@ -68,6 +77,7 @@
         "allow-plugins": {
             "ergebnis/composer-normalize": true,
             "infection/extension-installer": true,
+            "php-http/discovery": false,
             "phpstan/extension-installer": true
         },
         "sort-packages": true

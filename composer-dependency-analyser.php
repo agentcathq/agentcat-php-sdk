@@ -9,4 +9,8 @@ return (new Configuration())
     // ext-posix is optional: FileLogger guards its use with function_exists().
     ->ignoreErrorsOnExtensions(['ext-posix'], [ErrorType::SHADOW_DEPENDENCY])
     // Test fixture functions, loaded with require_once by ExceptionCaptureTest (not autoloadable).
-    ->ignoreUnknownFunctionsRegex('~^AgentCat\\\\Tests\\\\Fixtures\\\\Errors\\\\~');
+    ->ignoreUnknownFunctionsRegex('~^AgentCat\\\\Tests\\\\Fixtures\\\\Errors\\\\~')
+    // mcp/sdk is optional (01 AC-90): a dev dependency and a suggestion, used only by the adapter.
+    ->ignoreErrorsOnPackageAndPath('mcp/sdk', __DIR__ . '/src/McpSdk', [ErrorType::DEV_DEPENDENCY_IN_PROD])
+    // Psr\Container\ContainerInterface arrives with mcp/sdk; the adapter only passes it through.
+    ->ignoreErrorsOnPackageAndPath('psr/container', __DIR__ . '/src/McpSdk', [ErrorType::SHADOW_DEPENDENCY]);
