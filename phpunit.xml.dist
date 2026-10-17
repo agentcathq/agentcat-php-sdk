@@ -26,6 +26,11 @@
             <exclude>tests/Architecture/LayeringTest.php</exclude>
         </testsuite>
     </testsuites>
+    <groups>
+        <exclude>
+            <group>network</group>
+        </exclude>
+    </groups>
     <source>
         <include>
             <directory>src</directory>

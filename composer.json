@@ -38,6 +38,7 @@
         "ergebnis/composer-normalize": "^2.54",
         "ergebnis/phpunit-slow-test-detector": "^2.26",
         "infection/infection": "^0.35.8",
+        "opis/json-schema": "^2.6",
         "php-cs-fixer/shim": "3.95.27",
         "phpat/phpat": "^0.12.5",
         "phpstan/extension-installer": "^1.4.3",
