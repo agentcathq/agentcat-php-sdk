@@ -11,6 +11,7 @@ use AgentCat\Tests\Support\Samples\PlainThing;
 use AgentCat\Tests\Support\Samples\SerializableThing;
 use AgentCat\Tests\Support\Samples\UnitStatus;
 use AgentCat\Tests\Support\Samples\VisibilityThing;
+use AgentCat\Tests\Support\Thrown;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
@@ -257,20 +258,17 @@ final class StringRedactorTest extends TestCase
     #[Group('ac-05-R13')]
     public function testRedactorExceptionPropagates(): void
     {
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('Redaction failed');
-
-        StringRedactor::redact(new Event(userIntent: 'x'), static fn(string $text): string => throw new \RuntimeException('Redaction failed'));
+        $e = Thrown::by(\RuntimeException::class, fn(): mixed => StringRedactor::redact(new Event(userIntent: 'x'), static fn(string $text): string => throw new \RuntimeException('Redaction failed')));
+        $this->assertStringContainsString('Redaction failed', $e->getMessage());
     }
 
     #[Group('ac-05-R14')]
     public function testNonStringResultIsRejected(): void
     {
-        $this->expectException(\UnexpectedValueException::class);
-        $this->expectExceptionMessage('redactSensitiveInformation must return a string, got int');
-
         // @phpstan-ignore argument.type (deliberately violates the redactor contract)
-        StringRedactor::redact(new Event(userIntent: 'x'), static fn(string $text): int => 5);
+        $e = Thrown::by(\UnexpectedValueException::class, fn(): mixed => StringRedactor::redact(new Event(userIntent: 'x'), static fn(string $text): int => 5));
+
+        $this->assertStringContainsString('redactSensitiveInformation must return a string, got int', $e->getMessage());
     }
 
     public function testObjectsBecomeStdClassAndEnumsAreKept(): void
@@ -306,10 +304,8 @@ final class StringRedactorTest extends TestCase
         $cyclic = [];
         $cyclic['self'] = &$cyclic;
 
-        $this->expectException(\RangeException::class);
-        $this->expectExceptionMessage('Maximum call stack size exceeded');
-
-        StringRedactor::redact(new Event(parameters: $cyclic), $this->mask());
+        $e = Thrown::by(\RangeException::class, fn(): mixed => StringRedactor::redact(new Event(parameters: $cyclic), $this->mask()));
+        $this->assertStringContainsString('Maximum call stack size exceeded', $e->getMessage());
     }
 
     public function testDepthLimitIsExactlyFiveHundredTwelve(): void

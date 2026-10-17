@@ -7,6 +7,7 @@ namespace AgentCat\Tests\Unit\Internal\Pipeline;
 use AgentCat\Event;
 use AgentCat\Internal\Events\EventFields;
 use AgentCat\Internal\Pipeline\EventRedactionHook;
+use AgentCat\Tests\Support\Thrown;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
@@ -133,19 +134,16 @@ final class EventRedactionHookTest extends TestCase
 
     public function testHookExceptionPropagates(): void
     {
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('Hook failure');
-
-        EventRedactionHook::apply(new Event(), static fn(Event $e): Event => throw new \RuntimeException('Hook failure'));
+        $e = Thrown::by(\RuntimeException::class, fn(): mixed => EventRedactionHook::apply(new Event(), static fn(Event $e): Event => throw new \RuntimeException('Hook failure')));
+        $this->assertStringContainsString('Hook failure', $e->getMessage());
     }
 
     public function testInvalidReturnTypeIsRejected(): void
     {
-        $this->expectException(\UnexpectedValueException::class);
-        $this->expectExceptionMessage('redactEvent must return AgentCat\Event or null, got string');
-
         // @phpstan-ignore argument.type (deliberately violates the hook contract)
-        EventRedactionHook::apply(new Event(), static fn(Event $e): string => 'xyz');
+        $e = Thrown::by(\UnexpectedValueException::class, fn(): mixed => EventRedactionHook::apply(new Event(), static fn(Event $e): string => 'xyz'));
+
+        $this->assertStringContainsString('redactEvent must return AgentCat\Event or null, got string', $e->getMessage());
     }
 
     public function testBadlyTypedTagsThrowTypeError(): void

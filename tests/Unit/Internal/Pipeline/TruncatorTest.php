@@ -17,6 +17,7 @@ use AgentCat\Tests\Support\Samples\PlainThing;
 use AgentCat\Tests\Support\Samples\SerializableThing;
 use AgentCat\Tests\Support\Samples\VisibilityThing;
 use AgentCat\Tests\Support\Samples\WrappedValue;
+use AgentCat\Tests\Support\Thrown;
 use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
@@ -437,9 +438,8 @@ final class TruncatorTest extends TestCase
     #[DataProvider('badMessageProvider')]
     public function testNonStringMessageThrows(mixed $message, string $expected): void
     {
-        $this->expectException(\UnexpectedValueException::class);
-        $this->expectExceptionMessage($expected);
-        Truncator::truncate(new Event(error: $this->object(message: $message)));
+        $e = Thrown::by(\UnexpectedValueException::class, fn(): mixed => Truncator::truncate(new Event(error: $this->object(message: $message))));
+        $this->assertStringContainsString($expected, $e->getMessage());
     }
 
     #[Group('ac-05-T15')]
@@ -482,9 +482,8 @@ final class TruncatorTest extends TestCase
         $this->assertSame(0, JsonAssert::at($r->error, 'frames'));
         $r = Truncator::truncate(new Event(error: $this->object(frames: null)));
         $this->assertNull(JsonAssert::at($r->error, 'frames'));
-        $this->expectException(\UnexpectedValueException::class);
-        $this->expectExceptionMessage('error.frames must be a list or a string, got bool');
-        Truncator::truncate(new Event(error: $this->object(frames: true)));
+        $e = Thrown::by(\UnexpectedValueException::class, fn(): mixed => Truncator::truncate(new Event(error: $this->object(frames: true))));
+        $this->assertStringContainsString('error.frames must be a list or a string, got bool', $e->getMessage());
     }
 
     #[Group('ac-05-T16')]
@@ -511,9 +510,8 @@ final class TruncatorTest extends TestCase
     public function testClosureCannotBeClonedInTheLastResort(): void
     {
         $event = new Event(properties: ['blob' => $this->x(120000), 'cb' => static fn(): int => 1]);
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('Closure could not be cloned');
-        Truncator::truncate($event);
+        $e = Thrown::by(\RuntimeException::class, fn(): mixed => Truncator::truncate($event));
+        $this->assertStringContainsString('Closure could not be cloned', $e->getMessage());
     }
 
     public function testClosureUnderBudgetPasses(): void
@@ -567,16 +565,14 @@ final class TruncatorTest extends TestCase
         $owner = new \stdClass();
         $owner->child = new \stdClass();
         $owner->child->parent = $owner;
-        $this->expectException(\UnexpectedValueException::class);
-        $this->expectExceptionMessage('Converting circular structure to JSON');
-        Truncator::truncate(new Event(properties: ['owner' => $owner]));
+        $e = Thrown::by(\UnexpectedValueException::class, fn(): mixed => Truncator::truncate(new Event(properties: ['owner' => $owner])));
+        $this->assertStringContainsString('Converting circular structure to JSON', $e->getMessage());
     }
 
     public function testThrowingJsonSerializablePropagates(): void
     {
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('cannot serialize');
-        Truncator::truncate(new Event(properties: ['x' => new SerializableThing(throw: true)]));
+        $e = Thrown::by(\RuntimeException::class, fn(): mixed => Truncator::truncate(new Event(properties: ['x' => new SerializableThing(throw: true)])));
+        $this->assertStringContainsString('cannot serialize', $e->getMessage());
     }
 
     public function testPlainObjectOnlyExposesPublicState(): void
@@ -861,9 +857,8 @@ final class TruncatorTest extends TestCase
         $this->assertStringContainsString('"leaf"', WireEncoder::encode($r));
         $this->assertLessThanOrEqual(102400, WireEncoder::byteSize($r));
 
-        $this->expectException(\RangeException::class);
-        $this->expectExceptionMessage('Maximum call stack size exceeded');
-        Truncator::truncate($this->lastResortEvent(new LateSerializable($build(511), $cloneCall)));
+        $e = Thrown::by(\RangeException::class, fn(): mixed => Truncator::truncate($this->lastResortEvent(new LateSerializable($build(511), $cloneCall))));
+        $this->assertStringContainsString('Maximum call stack size exceeded', $e->getMessage());
     }
 
     #[Group('ac-05-T16')]

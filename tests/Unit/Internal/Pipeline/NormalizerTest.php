@@ -14,6 +14,7 @@ use AgentCat\Tests\Support\Samples\SerializableThing;
 use AgentCat\Tests\Support\Samples\UnitStatus;
 use AgentCat\Tests\Support\Samples\VisibilityThing;
 use AgentCat\Tests\Support\Samples\WrappedValue;
+use AgentCat\Tests\Support\Thrown;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -262,9 +263,8 @@ final class NormalizerTest extends TestCase
     #[Group('ac-05-T17')]
     public function testJsonSerializableExceptionPropagates(): void
     {
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('cannot serialize');
-        Normalizer::normalize(new SerializableThing(throw: true));
+        $e = Thrown::by(\RuntimeException::class, fn(): mixed => Normalizer::normalize(new SerializableThing(throw: true)));
+        $this->assertStringContainsString('cannot serialize', $e->getMessage());
     }
 
     #[Group('ac-05-T17')]
@@ -329,10 +329,8 @@ final class NormalizerTest extends TestCase
     #[Group('review-focus-3')]
     public function testEndlessJsonSerializableHitsTheNestingCap(): void
     {
-        $this->expectException(\RangeException::class);
-        $this->expectExceptionMessage('Maximum call stack size exceeded');
-
-        Normalizer::normalize(new EndlessSerializable());
+        $e = Thrown::by(\RangeException::class, fn(): mixed => Normalizer::normalize(new EndlessSerializable()));
+        $this->assertStringContainsString('Maximum call stack size exceeded', $e->getMessage());
     }
 
     /** @return iterable<string, array{\Closure(int): mixed}> builders of a value with a string leaf `$levels` steps down */
@@ -378,9 +376,8 @@ final class NormalizerTest extends TestCase
     {
         $this->assertStringContainsString('"leaf"', (string) json_encode(Normalizer::normalize($build(512), 1000), 0, 1024));
 
-        $this->expectException(\RangeException::class);
-        $this->expectExceptionMessage('Maximum call stack size exceeded');
-        Normalizer::normalize($build(513), 1000);
+        $e = Thrown::by(\RangeException::class, fn(): mixed => Normalizer::normalize($build(513), 1000));
+        $this->assertStringContainsString('Maximum call stack size exceeded', $e->getMessage());
     }
 
     public function testExpansionsBelowTheCapKeepTheDepthSemantics(): void

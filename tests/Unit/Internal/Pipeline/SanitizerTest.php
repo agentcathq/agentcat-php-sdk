@@ -10,6 +10,7 @@ use AgentCat\Internal\Pipeline\Sanitizer;
 use AgentCat\Tests\Support\JsonAssert;
 use AgentCat\Tests\Support\Samples\PlainThing;
 use AgentCat\Tests\Support\Samples\SerializableThing;
+use AgentCat\Tests\Support\Thrown;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -233,9 +234,8 @@ final class SanitizerTest extends TestCase
         $p = new \stdClass();
         $p->self = $p;
 
-        $this->expectException(\RangeException::class);
-        $this->expectExceptionMessage('Maximum call stack size exceeded');
-        Sanitizer::sanitize(new Event(parameters: $p));
+        $e = Thrown::by(\RangeException::class, fn(): mixed => Sanitizer::sanitize(new Event(parameters: $p)));
+        $this->assertStringContainsString('Maximum call stack size exceeded', $e->getMessage());
     }
 
     #[Group('ac-05-S11')]
@@ -272,9 +272,8 @@ final class SanitizerTest extends TestCase
         $ok = Sanitizer::sanitize(new Event(parameters: $deep(512)));
         $this->assertNotNull($ok->parameters);
 
-        $this->expectException(\RangeException::class);
-        $this->expectExceptionMessage('Maximum call stack size exceeded');
-        Sanitizer::sanitize(new Event(parameters: $deep(513)));
+        $e = Thrown::by(\RangeException::class, fn(): mixed => Sanitizer::sanitize(new Event(parameters: $deep(513))));
+        $this->assertStringContainsString('Maximum call stack size exceeded', $e->getMessage());
     }
 
     #[Group('ac-05-S11')]

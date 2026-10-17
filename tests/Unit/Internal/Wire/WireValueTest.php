@@ -11,6 +11,7 @@ use AgentCat\Tests\Support\Samples\PlainThing;
 use AgentCat\Tests\Support\Samples\SerializableThing;
 use AgentCat\Tests\Support\Samples\UnitStatus;
 use AgentCat\Tests\Support\Samples\VisibilityThing;
+use AgentCat\Tests\Support\Thrown;
 use PHPUnit\Framework\TestCase;
 
 final class WireValueTest extends TestCase
@@ -70,16 +71,14 @@ final class WireValueTest extends TestCase
     {
         $this->assertEquals((object) ['kind' => 'thing', 'size' => 2], WireValue::from(new SerializableThing()));
 
-        $this->expectException(\UnexpectedValueException::class);
-        $this->expectExceptionMessage('Converting circular structure to JSON');
-        WireValue::from(new SerializableThing(returnSelf: true));
+        $e = Thrown::by(\UnexpectedValueException::class, fn(): mixed => WireValue::from(new SerializableThing(returnSelf: true)));
+        $this->assertStringContainsString('Converting circular structure to JSON', $e->getMessage());
     }
 
     public function testJsonSerializableThrowPropagates(): void
     {
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('cannot serialize');
-        WireValue::from(new SerializableThing(throw: true));
+        $e = Thrown::by(\RuntimeException::class, fn(): mixed => WireValue::from(new SerializableThing(throw: true)));
+        $this->assertStringContainsString('cannot serialize', $e->getMessage());
     }
 
     public function testPlainObjectExposesPublicProperties(): void
@@ -92,9 +91,8 @@ final class WireValueTest extends TestCase
         $object = new \stdClass();
         $object->self = $object;
 
-        $this->expectException(\UnexpectedValueException::class);
-        $this->expectExceptionMessage('Converting circular structure to JSON');
-        WireValue::from($object);
+        $e = Thrown::by(\UnexpectedValueException::class, fn(): mixed => WireValue::from($object));
+        $this->assertStringContainsString('Converting circular structure to JSON', $e->getMessage());
     }
 
     public function testSharedObjectIsExpandedTwice(): void
@@ -123,9 +121,8 @@ final class WireValueTest extends TestCase
         $array = [];
         $array['self'] = &$array;
 
-        $this->expectException(\UnexpectedValueException::class);
-        $this->expectExceptionMessage('Maximum nesting depth of 512 exceeded');
-        WireValue::from($array);
+        $e = Thrown::by(\UnexpectedValueException::class, fn(): mixed => WireValue::from($array));
+        $this->assertStringContainsString('Maximum nesting depth of 512 exceeded', $e->getMessage());
     }
 
     public function testDepthExactlyAtTheCapIsAccepted(): void

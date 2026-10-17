@@ -6,6 +6,7 @@ namespace AgentCat\Tests\Unit\Internal\Events;
 
 use AgentCat\Event;
 use AgentCat\Internal\Events\EventFields;
+use AgentCat\Tests\Support\Thrown;
 use AgentCat\Tests\Support\WireEvents;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -71,10 +72,10 @@ final class EventFieldsTest extends TestCase
     #[DataProvider('badAssignments')]
     public function testAssignRejectsWrongTypes(string $name, mixed $value, string $message): void
     {
-        $this->expectException(\TypeError::class);
-        $this->expectExceptionMessage($message);
-
-        EventFields::assign(new Event(), [$name => $value]);
+        $e = Thrown::by(\TypeError::class, static function () use ($name, $value): void {
+            EventFields::assign(new Event(), [$name => $value]);
+        });
+        $this->assertStringContainsString($message, $e->getMessage());
     }
 
     public function testUnknownNamesAreIgnored(): void
