@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace AgentCat\Tests\Unit;
 
 use AgentCat\Event;
+use AgentCat\Exporters\DatadogExporter;
+use AgentCat\Exporters\OtlpExporter;
+use AgentCat\Exporters\PostHogExporter;
+use AgentCat\Exporters\SentryExporter;
 use AgentCat\Identity;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Options;
@@ -107,6 +111,9 @@ final class OptionsTest extends TestCase
             'apiBaseUrl' => 'https://api.example.test',
             'eventTags' => $eventTags,
             'eventProperties' => $eventProperties,
+            'exporters' => [],
+            'disableDiagnostics' => true,
+            'disableSignalHandlers' => true,
         ]);
 
         $this->assertFalse($options->enableReportMissing);
@@ -121,6 +128,9 @@ final class OptionsTest extends TestCase
         $this->assertSame('https://api.example.test', $options->apiBaseUrl);
         $this->assertSame($eventTags, $options->eventTags);
         $this->assertSame($eventProperties, $options->eventProperties);
+        $this->assertSame([], $options->exporters);
+        $this->assertTrue($options->disableDiagnostics);
+        $this->assertTrue($options->disableSignalHandlers);
         $this->assertSame([], $this->logger->messages());
     }
 
@@ -182,5 +192,99 @@ final class OptionsTest extends TestCase
     {
         $this->assertEquals(new Options(), Options::fromArray([]));
         $this->assertSame([], $this->logger->messages());
+    }
+
+    #[Group('ac-01-13')]
+    public function testTheTelemetryOptionsDefaultToNoneAndOn(): void
+    {
+        $options = new Options();
+
+        $this->assertNull($options->exporters);
+        $this->assertFalse($options->disableDiagnostics);
+        $this->assertFalse($options->disableSignalHandlers);
+    }
+
+    public function testFromArrayBuildsEveryExporterTypeFromItsTypeScriptKeys(): void
+    {
+        $options = Options::fromArray([
+            'disableDiagnostics' => true,
+            'exporters' => [
+                'otlp' => ['type' => 'otlp', 'endpoint' => 'http://localhost:4318', 'headers' => ['x-api-key' => 'k']],
+                'dd' => ['type' => 'datadog', 'apiKey' => 'ddkey', 'site' => 'datadoghq.eu', 'service' => 'svc', 'env' => 'prod'],
+                'sentry' => ['type' => 'sentry', 'dsn' => 'https://abc@o1.ingest.sentry.io/42', 'environment' => 'production', 'release' => '1.2.3', 'enableTracing' => true],
+                'ph' => ['type' => 'posthog', 'apiKey' => 'phc_x', 'host' => 'https://eu.i.posthog.com', 'enableAITracing' => true],
+                'typed' => new OtlpExporter('http://collector:4318'),
+            ],
+        ]);
+
+        $this->assertTrue($options->disableDiagnostics);
+        $this->assertEquals([
+            'otlp' => new OtlpExporter('http://localhost:4318', ['x-api-key' => 'k']),
+            'dd' => new DatadogExporter('ddkey', 'datadoghq.eu', 'svc', 'prod'),
+            'sentry' => new SentryExporter('https://abc@o1.ingest.sentry.io/42', 'production', '1.2.3', true),
+            'ph' => new PostHogExporter('phc_x', 'https://eu.i.posthog.com', true),
+            'typed' => new OtlpExporter('http://collector:4318'),
+        ], $options->exporters);
+        $this->assertSame([], $this->logger->messages());
+    }
+
+    #[Group('ac-06-10')]
+    public function testFromArraySkipsAnUnknownTypeWithTheTypeScriptLine(): void
+    {
+        $options = Options::fromArray(['exporters' => ['a' => ['type' => 'otlp', 'endpoint' => 'http://h'], 'b' => ['type' => 'bogus'], 'c' => ['endpoint' => 'x']]]);
+
+        $this->assertSame(['a'], array_keys($options->exporters ?? []));
+        $this->assertSame(['Unknown exporter type: bogus', 'Unknown exporter type: undefined'], $this->logger->messages());
+    }
+
+    /** Review Focus 2: config files whose env() values are missing or mistyped. */
+    public function testFromArraySkipsAnExporterWithMissingOrMistypedValues(): void
+    {
+        $options = Options::fromArray(['exporters' => [
+            'dd' => ['type' => 'datadog', 'apiKey' => null, 'site' => 'datadoghq.com', 'service' => 'svc'],
+            'sentry' => ['type' => 'sentry', 'dsn' => 'https://abc@o1.ingest.sentry.io/42', 'enableTracing' => 'yes'],
+            'otlp' => ['type' => 'otlp', 'endpoint' => 'http://h', 'headers' => ['x' => 1], 'timeout' => 5],
+            'ph' => ['type' => 'posthog', 'apiKey' => 'phc_x', 'hots' => 'typo'],
+            'str' => 'otlp',
+        ]]);
+
+        $this->assertEquals(['ph' => new PostHogExporter('phc_x')], $options->exporters);
+        $this->assertSame([
+            'Failed to initialize exporter dd: InvalidArgumentException: exporter option "apiKey" must be string, got null',
+            'Failed to initialize exporter sentry: InvalidArgumentException: exporter option "enableTracing" must be bool, got string',
+            'WARN: Unknown AgentCat option "exporters.otlp.timeout" ignored',
+            'Failed to initialize exporter otlp: InvalidArgumentException: exporter option "headers" must be array<string, string>, got array',
+            'WARN: Unknown AgentCat option "exporters.ph.hots" ignored',
+            'Failed to initialize exporter str: InvalidArgumentException: exporter configuration must be an array, got string',
+        ], $this->logger->messages());
+    }
+
+    public function testFromArrayRejectsWrongTelemetryOptionTypes(): void
+    {
+        $options = Options::fromArray(['exporters' => 'otlp', 'disableDiagnostics' => 'yes', 'disableSignalHandlers' => 1]);
+
+        $this->assertNull($options->exporters);
+        $this->assertFalse($options->disableDiagnostics);
+        $this->assertFalse($options->disableSignalHandlers);
+        $this->assertSame([
+            'WARN: AgentCat option "exporters" must be array or null, got string; the default is used',
+            'WARN: AgentCat option "disableDiagnostics" must be bool, got string; the default is used',
+            'WARN: AgentCat option "disableSignalHandlers" must be bool, got int; the default is used',
+        ], $this->logger->messages());
+    }
+
+    public function testFromArrayKeepsAnEmptyExporterListAndAnExplicitNull(): void
+    {
+        $this->assertSame([], Options::fromArray(['exporters' => []])->exporters);
+        $this->assertNull(Options::fromArray(['exporters' => null])->exporters);
+        $this->assertSame([], $this->logger->messages());
+    }
+
+    public function testFromArrayKeepsNumericExporterKeysAsIntegers(): void
+    {
+        $options = Options::fromArray(['exporters' => [['type' => 'otlp', 'endpoint' => 'x', 'bad' => 1]]]);
+
+        $this->assertEquals([0 => new OtlpExporter('x')], $options->exporters);
+        $this->assertSame(['WARN: Unknown AgentCat option "exporters.0.bad" ignored'], $this->logger->messages());
     }
 }

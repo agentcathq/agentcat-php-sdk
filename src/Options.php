@@ -4,7 +4,12 @@ declare(strict_types=1);
 
 namespace AgentCat;
 
+use AgentCat\Exporters\DatadogExporter;
+use AgentCat\Exporters\OtlpExporter;
+use AgentCat\Exporters\PostHogExporter;
+use AgentCat\Exporters\SentryExporter;
 use AgentCat\Internal\Logging\Log;
+use AgentCat\Internal\Telemetry\ExporterConfigs;
 
 /**
  * Options for tracking an MCP server. Use named arguments: the argument names are public API.
@@ -16,6 +21,7 @@ final readonly class Options
     private const array KEYS = [
         'enableReportMissing', 'enableTracing', 'enableToolCallContext', 'customContextDescription', 'enableAgentTracking',
         'resolveSessionId', 'identify', 'redactSensitiveInformation', 'redactEvent', 'apiBaseUrl', 'eventTags', 'eventProperties',
+        'exporters', 'disableDiagnostics', 'disableSignalHandlers',
     ];
 
     /**
@@ -31,6 +37,15 @@ final readonly class Options
      * @param string|null $apiBaseUrl Base URL of the AgentCat API; null uses the default.
      * @param \Closure(ToolCall): (array<array-key, mixed>|null)|null $eventTags Returns extra tags (string keys and values) for a call.
      * @param (\Closure(ToolCall): mixed)|null $eventProperties Returns extra JSON-encodable properties for a call.
+     * @param array<array-key, OtlpExporter|DatadogExporter|SentryExporter|PostHogExporter>|null $exporters Also sends every
+     *        event to your own tools, keyed by a name of your choice. The first track() in the process that passes exporters
+     *        sets them up for every server; later calls change nothing.
+     * @param bool $disableDiagnostics Turns off diagnostics: AgentCat's own log lines (the lines of agentcat.log), sent to
+     *        AgentCat to find broken installs. The lines can contain session IDs, actor IDs, tool names and error messages.
+     *        The first track() in the process decides. DISABLE_DIAGNOSTICS also turns them off, or on with false; they are
+     *        off in test environments.
+     * @param bool $disableSignalHandlers Does not install the SIGTERM and SIGINT handlers that deliver queued events before
+     *        the process ends. Use it when your application installs its own handlers. Default: false.
      */
     public function __construct(
         public bool $enableReportMissing = true,
@@ -45,6 +60,9 @@ final readonly class Options
         public ?string $apiBaseUrl = null,
         public ?\Closure $eventTags = null,
         public ?\Closure $eventProperties = null,
+        public ?array $exporters = null,
+        public bool $disableDiagnostics = false,
+        public bool $disableSignalHandlers = false,
     ) {}
 
     /**
@@ -76,6 +94,9 @@ final readonly class Options
             apiBaseUrl: self::string($config, 'apiBaseUrl'),
             eventTags: self::closure($config, 'eventTags'),
             eventProperties: self::closure($config, 'eventProperties'),
+            exporters: self::exporters($config),
+            disableDiagnostics: self::bool($config, 'disableDiagnostics', false),
+            disableSignalHandlers: self::bool($config, 'disableSignalHandlers', false),
         );
     }
 
@@ -91,6 +112,25 @@ final readonly class Options
         self::reject($key, 'bool', $config[$key]);
 
         return $default;
+    }
+
+    /**
+     * @param array<array-key, mixed> $config
+     *
+     * @return array<array-key, OtlpExporter|DatadogExporter|SentryExporter|PostHogExporter>|null
+     */
+    private static function exporters(array $config): ?array
+    {
+        $value = $config['exporters'] ?? null;
+        if ($value === null) {
+            return null;
+        }
+        if (is_array($value)) {
+            return ExporterConfigs::fromArray($value);
+        }
+        self::reject('exporters', 'array or null', $value);
+
+        return null;
     }
 
     /** @param array<array-key, mixed> $config */
