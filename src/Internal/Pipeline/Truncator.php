@@ -205,7 +205,8 @@ final class Truncator
             if ($size <= self::MAX_EVENT_BYTES) {
                 return $result;
             }
-            $paths = self::stringPaths($fields, []);
+            $paths = [];
+            self::collectStringPaths($fields, [], $paths);
             usort($paths, static fn(array $a, array $b): int => $b['length'] <=> $a['length']);
             $remaining = $size - self::MAX_EVENT_BYTES + self::LAST_RESORT_MARGIN;
             $cut = false;
@@ -217,7 +218,7 @@ final class Truncator
                 if ($reduction < self::LAST_RESORT_MIN_REDUCTION) {
                     continue;
                 }
-                $fields = self::replaceInFields($fields, $path, Js::utf16Slice(self::valueAt($fields, $path), $length - $reduction) . self::TRUNCATION_SUFFIX);
+                self::cutAt($fields, $path, $length - $reduction);
                 $remaining -= $reduction;
                 $cut = true;
             }
@@ -262,73 +263,44 @@ final class Truncator
     }
 
     /**
-     * Strings longer than 100 units, depth first, in field and key order.
+     * Appends the strings longer than 100 units to `$paths`, depth first, in field and key order.
      *
      * @param list<array-key> $prefix
-     *
-     * @return list<array{path: list<array-key>, length: int}>
+     * @param list<array{path: list<array-key>, length: int}> $paths
      */
-    private static function stringPaths(mixed $value, array $prefix): array
+    private static function collectStringPaths(mixed $value, array $prefix, array &$paths): void
     {
         if (is_string($value)) {
             $length = Js::utf16Length($value);
-
-            return $length > self::LAST_RESORT_MIN_LENGTH ? [['path' => $prefix, 'length' => $length]] : [];
-        }
-        if (!is_array($value) && !$value instanceof \stdClass) {
-            return [];
-        }
-        $paths = [];
-        foreach (Values::entries($value) as $key => $item) {
-            $paths = array_merge($paths, self::stringPaths($item, [...$prefix, $key]));
-        }
-
-        return $paths;
-    }
-
-    /** @param list<array-key> $path */
-    private static function valueAt(mixed $node, array $path): string
-    {
-        foreach ($path as $step) {
-            if (is_array($node)) {
-                $node = $node[$step] ?? null;
-            } elseif ($node instanceof \stdClass) {
-                $node = $node->{$step} ?? null;
-            } else {
-                return '';
+            if ($length > self::LAST_RESORT_MIN_LENGTH) {
+                $paths[] = ['path' => $prefix, 'length' => $length];
+            }
+        } elseif (is_array($value) || $value instanceof \stdClass) {
+            foreach (Values::entries($value) as $key => $item) {
+                self::collectStringPaths($item, [...$prefix, $key], $paths);
             }
         }
-
-        return is_string($node) ? $node : '';
     }
 
     /**
-     * @param array<string, mixed> $fields
-     * @param list<array-key> $path
+     * Cuts the string at `$path` to its first `$keep` units plus the suffix. Works in place: `$fields` is the
+     * private clone, so a cut never copies the arrays around it.
      *
-     * @return array<string, mixed>
+     * @param array<string, mixed> $fields
+     * @param list<array-key> $path a path from collectStringPaths(), so every step is an array or a `\stdClass`
      */
-    private static function replaceInFields(array $fields, array $path, string $replacement): array
+    private static function cutAt(array &$fields, array $path, int $keep): void
     {
-        $name = (string) array_shift($path);
-        $fields[$name] = self::replaceAt($fields[$name] ?? null, $path, $replacement);
-
-        return $fields;
-    }
-
-    /** @param list<array-key> $path */
-    private static function replaceAt(mixed $node, array $path, string $replacement): mixed
-    {
-        if ($path === []) {
-            return $replacement;
+        $node = &$fields;
+        foreach ($path as $step) {
+            if ($node instanceof \stdClass) {
+                $node = &$node->{$step};
+            } elseif (is_array($node)) {
+                $node = &$node[$step];
+            }
         }
-        $step = array_shift($path);
-        if (is_array($node)) {
-            $node[$step] = self::replaceAt($node[$step] ?? null, $path, $replacement);
-        } elseif ($node instanceof \stdClass) {
-            $node->{$step} = self::replaceAt($node->{$step} ?? null, $path, $replacement);
+        if (is_string($node)) {
+            $node = Js::utf16Slice($node, $keep) . self::TRUNCATION_SUFFIX;
         }
-
-        return $node;
     }
 }

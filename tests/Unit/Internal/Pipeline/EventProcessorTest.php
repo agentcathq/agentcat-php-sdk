@@ -19,6 +19,7 @@ use AgentCat\Tests\Support\JsonAssert;
 use AgentCat\Tests\Support\MemoryLogger;
 use AgentCat\Tests\Support\Samples\EndlessSerializable;
 use AgentCat\Tests\Support\Samples\WrappedValue;
+use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -271,6 +272,31 @@ final class EventProcessorTest extends TestCase
 
         $this->assertNull((new EventProcessor())->process(new QueuedEvent($event)));
         $this->assertSame(['Failed to truncate event: RangeException: Maximum call stack size exceeded'], $this->logger->messages());
+    }
+
+    /**
+     * 16 000 strings of 200 units reach the last resort. Its cost was quadratic in the number of strings: 6.6 s on
+     * the 4-core dev machine. It is linear now: 0.4 s, 0.5 s with pcov coverage. The 1.5 s bound is 3x the linear
+     * time under coverage and 4x below the quadratic time, so a loaded machine (Infection runs one process per core)
+     * stays under it, and a return to the quadratic cost does not.
+     */
+    #[Group('ac-05-T9')]
+    #[MaximumDuration(1500)]
+    public function testLastResortOverManyStringsIsFast(): void
+    {
+        $properties = [];
+        for ($i = 0; $i < 16_000; ++$i) {
+            $properties['k' . $i] = str_repeat('a b ', 50);
+        }
+
+        $start = hrtime(true);
+        $out = (new EventProcessor())->process(new QueuedEvent(new Event(properties: $properties)));
+        $seconds = (hrtime(true) - $start) / 1e9;
+
+        $this->assertInstanceOf(Event::class, $out);
+        $this->assertSame(str_repeat('a b ', 13) . '...', JsonAssert::at($out->properties, 'k0'));
+        $this->assertSame([], $this->logger->messages());
+        $this->assertLessThan(1.5, $seconds);
     }
 
     private function text(mixed $value, string|int ...$path): string
