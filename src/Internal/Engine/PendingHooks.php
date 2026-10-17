@@ -60,11 +60,7 @@ final class PendingHooks
         if ($options->eventTags instanceof \Closure) {
             $hook = $options->eventTags;
             $pending[] = self::guarded('eventTags', static function (Event $event) use ($hook, $call): void {
-                $raw = self::invoke($hook, $call, 'eventTags callback error: ');
-                if (!Js::truthy($raw)) {
-                    return;
-                }
-                $valid = TagValidator::validate($raw);
+                $valid = TagValidator::validate(self::invoke($hook, $call, 'eventTags callback error: ')); // null for a falsy value
                 if ($valid !== null) {
                     $event->tags = HandleTags::merge($valid, $event->tags ?? []); // customer first, SDK tags win (B13, D15)
                 }

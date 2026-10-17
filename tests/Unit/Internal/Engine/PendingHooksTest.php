@@ -143,6 +143,27 @@ final class PendingHooksTest extends TestCase
         $this->assertSame([], $this->logger->messages());
     }
 
+    /** @return iterable<string, array{mixed}> */
+    public static function falsyTags(): iterable
+    {
+        yield 'null' => [null];
+        yield 'false' => [false];
+        yield 'zero' => [0];
+        yield 'empty string' => [''];
+        yield 'empty array' => [[]];
+    }
+
+    /** `01` AC-45: a falsy eventTags result keeps only the SDK tags, silently. */
+    #[DataProvider('falsyTags')]
+    #[Group('ac-01-45')]
+    public function testFalsyEventTagsKeepTheSdkTags(mixed $tags): void
+    {
+        $event = $this->apply(Options::fromArray(['eventTags' => static fn(ToolCall $c): mixed => $tags]), 'proj_1', ['agentcat_session_id_source' => 'hook']);
+
+        $this->assertSame(['agentcat_session_id_source' => 'hook'], $event->tags);
+        $this->assertSame([], $this->logger->messages());
+    }
+
     /** Review Focus 1. */
     public function testEventPropertiesFalseLeavesNoProperties(): void
     {
