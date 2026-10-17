@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace AgentCat;
 
+use AgentCat\Testing\AgentCatFake;
+
 /**
  * The AgentCat entry point: `AgentCat::track($builder, 'proj_…')` before `$builder->build()`.
  *
@@ -94,6 +96,23 @@ final class AgentCat
     public static function shutdown(): void
     {
         self::client()->shutdown();
+    }
+
+    /**
+     * Starts recording for your test suite: installs a client that records every event and sends nothing, and
+     * returns the fake to assert on. Restore the real client with `AgentCat::setClient(null)` in `tearDown()`.
+     *
+     * Call it before the server is tracked: a Builder tracked earlier keeps the client that tracked it.
+     *
+     * The fake records whatever `AGENTCAT_ENABLED` says, so a CI that sets `AGENTCAT_ENABLED=false` still works. Test
+     * environments without `fake()` stay silent: `track()` does nothing there.
+     */
+    public static function fake(): AgentCatFake
+    {
+        $fake = new AgentCatFake();
+        self::setClient($fake->client());
+
+        return $fake;
     }
 
     /** The shared client; the first call creates it. */
