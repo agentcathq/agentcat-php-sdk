@@ -145,8 +145,10 @@ final class EventQueue
         $this->busy = true;
 
         try {
-            // max(0.0, NAN) is 0.0: a NaN timeout must not give a deadline that never passes.
-            $deadline = $timeoutSeconds === null ? INF : $this->transport->now() + max(0.0, $timeoutSeconds);
+            // A NaN or negative timeout means "no time left". max() is no guard: max(0.0, NAN) is NaN on PHP 8.4+.
+            $deadline = $timeoutSeconds === null
+                ? INF
+                : $this->transport->now() + (is_nan($timeoutSeconds) ? 0.0 : max(0.0, $timeoutSeconds));
             while (true) {
                 $this->pumpOnce();
                 if ($this->waiting->isEmpty() && $this->transport->inFlight() === 0) {
