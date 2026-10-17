@@ -9,10 +9,16 @@ namespace AgentCat\Internal\Delivery;
  * a handler, these signals end PHP at once: no shutdown function runs, and the waiting events are lost.
  *
  * The global queue calls `install()` when it gets an event, so nothing happens at autoload. It installs once, only
- * under the CLI SAPI with ext-pcntl, and keeps the handler each signal had before. On the signal it shuts the queue down
- * (`EventQueue::SHUTDOWN_TIMEOUT_SECONDS` at most). Then it calls that earlier handler, and the process keeps
- * running, or, when there was none, it raises the signal again with the default disposition (TypeScript
- * `runSignalShutdown`). A signal that the application ignores (`SIG_IGN`) stays ignored.
+ * under the CLI SAPI with ext-pcntl, and keeps the handler each signal had before. A signal that the application
+ * ignores (`SIG_IGN`) stays ignored. When it installs a handler, `install()` also turns on
+ * `pcntl_async_signals(true)`, which is process wide: from then on every PHP signal handler of the process runs
+ * between two opcodes, not at `pcntl_signal_dispatch()` or a tick.
+ *
+ * Each handler runs once (TypeScript `process.once`). It first gives the signal back to the earlier handler, so a
+ * second Ctrl-C during the drain acts as if AgentCat were not there. Then it shuts the queue down
+ * (`EventQueue::SHUTDOWN_TIMEOUT_SECONDS` at most, shared with the shutdown function), then calls that earlier
+ * handler with PHP's arguments, and the process keeps running, or, when there was none, it raises the signal again
+ * with the default disposition (TypeScript `runSignalShutdown`).
  *
  * @internal
  */
@@ -55,16 +61,21 @@ final class SignalDrain
             }
         }
         $this->installed = true;
+        $installedAny = false;
         foreach ([\SIGTERM, \SIGINT] as $signal) {
             $previous = pcntl_signal_get_handler($signal);
             if ($previous === \SIG_IGN) {
                 continue; // the application ignores this signal: so do we
             }
-            pcntl_signal($signal, function (int $signo) use ($previous): void {
-                $this->onSignal($signo, $previous);
+            pcntl_signal($signal, function (int $signo, mixed $siginfo = null) use ($previous): void {
+                pcntl_signal($signo, $previous); // once: a second signal during the drain goes where it went before
+                $this->onSignal($signo, $previous, $siginfo);
             });
+            $installedAny = true;
         }
-        pcntl_async_signals(true); // the stdio loop sleeps in usleep(): handlers must run without pcntl_signal_dispatch()
+        if ($installedAny) {
+            pcntl_async_signals(true); // the stdio loop sleeps in usleep(): handlers must run without pcntl_signal_dispatch()
+        }
     }
 
     /**
@@ -72,16 +83,17 @@ final class SignalDrain
      * signal again (`03` AC-10).
      *
      * @param mixed $previous the handler before ours: a callable, or `SIG_DFL`
+     * @param mixed $siginfo  PHP's second handler argument (an array), passed on to `$previous` unchanged
      */
-    public function onSignal(int $signal, mixed $previous): void
+    public function onSignal(int $signal, mixed $previous, mixed $siginfo = null): void
     {
         try {
-            ($this->queue)()->finalShutdown(); // at most EventQueue::SHUTDOWN_TIMEOUT_SECONDS
+            ($this->queue)()->finalShutdown(); // at most what is left of EventQueue::SHUTDOWN_TIMEOUT_SECONDS
         } catch (\Throwable) {
             // a signal handler must never throw
         }
         if (is_callable($previous)) {
-            $previous($signal, null);
+            $previous($signal, $siginfo);
 
             return;
         }

@@ -272,15 +272,16 @@ final class CurlTransport implements Transport
                 continue;
             }
             curl_setopt_array($handle, $this->curlOptions($next['delivery']));
+            // Recorded before the add: a signal drain that runs right after the add must see this transfer.
+            $id = spl_object_id($handle);
+            $this->active[$id] = ['handle' => $handle] + $next;
             $code = ($this->multiStatus)('curl_multi_add_handle', curl_multi_add_handle($this->multi(), $handle));
             if ($code !== CURLM_OK) {
+                unset($this->active[$id]);
                 // PHP keeps the handle in its list of the multi handle even when libcurl refused it.
                 curl_multi_remove_handle($this->multi(), $handle);
                 $this->failed($next['delivery'], $next['attempt'], $this->multiError($code));
-
-                continue;
             }
-            $this->active[spl_object_id($handle)] = ['handle' => $handle] + $next;
         }
     }
 

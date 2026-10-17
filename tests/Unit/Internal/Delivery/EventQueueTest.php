@@ -504,6 +504,25 @@ final class EventQueueTest extends TestCase
         $this->assertSame([], $this->logger->messages(), 'in-flight deliveries are not reported');
     }
 
+    /** A signal drain, the shutdown function after it, and a signal during that flush share one budget. */
+    #[Group('ac-03-9')]
+    public function testLaterShutdownsShareTheFirstShutdownsBudget(): void
+    {
+        $transport = new RecordingTransport(complete: false);
+        $queue = new EventQueue(transport: $transport);
+        for ($i = 0; $i < 6; ++$i) {
+            $queue->add(new QueuedEvent($this->event()));
+        }
+
+        $queue->shutdown();
+        $queue->finalShutdown();
+        $queue->shutdown();
+
+        $this->assertEqualsWithDelta(5.0, $transport->now(), PHP_FLOAT_EPSILON, 'one budget in total');
+        $this->assertSame(1, $transport->waits);
+        $this->assertSame(array_fill(0, 3, 'Shutting down with 1 events still in queue'), $this->logger->messages());
+    }
+
     public function testShutdownDeliversEverything(): void
     {
         $transport = new RecordingTransport();

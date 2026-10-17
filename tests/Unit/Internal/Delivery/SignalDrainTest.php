@@ -91,10 +91,26 @@ final class SignalDrainTest extends TestCase
             $calls[] = ['arguments' => $arguments, 'delivered' => count($this->transport->deliveries)];
         };
 
+        $this->drain()->onSignal(self::SIGTERM, $customer, ['signo' => self::SIGTERM, 'pid' => 42]);
+
+        $this->assertSame(
+            [['arguments' => [self::SIGTERM, ['signo' => self::SIGTERM, 'pid' => 42]], 'delivered' => 1]],
+            $calls,
+            'called once, after the drain, with PHP\'s signal information unchanged',
+        );
+        $this->assertSame([], $this->raised, 'the earlier handler owns termination');
+    }
+
+    public function testWithoutSignalInformationTheEarlierHandlerGetsNull(): void
+    {
+        $calls = [];
+        $customer = static function (mixed ...$arguments) use (&$calls): void {
+            $calls[] = $arguments;
+        };
+
         $this->drain()->onSignal(self::SIGTERM, $customer);
 
-        $this->assertSame([['arguments' => [self::SIGTERM, null], 'delivered' => 1]], $calls, 'called once, after the drain');
-        $this->assertSame([], $this->raised, 'the earlier handler owns termination');
+        $this->assertSame([[self::SIGTERM, null]], $calls);
     }
 
     public function testASignalHandlerNeverThrows(): void
@@ -163,12 +179,35 @@ final class SignalDrainTest extends TestCase
         $this->assertInstanceOf(\Closure::class, $onTerm);
         $this->assertInstanceOf(\Closure::class, $onInt);
         $this->assertNotSame($customer, $onTerm);
-        $onTerm(\SIGTERM, null);
+        $onTerm(\SIGTERM, ['signo' => \SIGTERM]);
         $raisedOnTerm = $this->raised;
-        $onInt(\SIGINT, null);
-        $this->assertSame([[\SIGTERM, null]], $calls, 'only SIGTERM had an earlier handler');
+        $termHandlerAfter = pcntl_signal_get_handler(\SIGTERM);
+        $onInt(\SIGINT, ['signo' => \SIGINT]);
+        $this->assertSame([[\SIGTERM, ['signo' => \SIGTERM]]], $calls, 'only SIGTERM had an earlier handler');
         $this->assertSame([], $raisedOnTerm, 'the earlier SIGTERM handler owns termination');
         $this->assertSame([['signal' => \SIGINT, 'delivered' => 0]], $this->raised);
+        $this->assertSame($customer, $termHandlerAfter, 'once: a second SIGTERM goes to the earlier handler');
+        $this->assertSame(\SIG_DFL, pcntl_signal_get_handler(\SIGINT), 'once: a second SIGINT gets the default disposition');
+    }
+
+    /** Hands each signal back before the drain, so a second Ctrl-C during the drain acts as without AgentCat. */
+    #[RequiresPhpExtension('pcntl')]
+    public function testTheHandlerGivesTheSignalBackBeforeTheDrain(): void
+    {
+        $this->resetHandlers();
+        $seen = [];
+        $queue = function () use (&$seen): EventQueue {
+            $seen[] = pcntl_signal_get_handler(\SIGINT);
+
+            return $this->queue;
+        };
+        (new SignalDrain($queue, $this->raise(...), static fn(string $function): bool => true, 'cli'))->install();
+        $onInt = pcntl_signal_get_handler(\SIGINT);
+        $this->assertInstanceOf(\Closure::class, $onInt);
+
+        $onInt(\SIGINT, null);
+
+        $this->assertSame([\SIG_DFL], $seen, 'SIG_DFL was back when the drain started');
     }
 
     #[RequiresPhpExtension('pcntl')]
@@ -196,6 +235,21 @@ final class SignalDrainTest extends TestCase
 
         $this->assertSame(\SIG_IGN, pcntl_signal_get_handler(\SIGTERM));
         $this->assertInstanceOf(\Closure::class, pcntl_signal_get_handler(\SIGINT));
+    }
+
+    /** Async signals are process wide: with nothing installed, AgentCat leaves the mode alone. */
+    #[RequiresPhpExtension('pcntl')]
+    public function testWithBothSignalsIgnoredNothingChanges(): void
+    {
+        $this->resetHandlers();
+        pcntl_signal(\SIGTERM, \SIG_IGN);
+        pcntl_signal(\SIGINT, \SIG_IGN);
+
+        $this->drain()->install();
+
+        $this->assertSame(\SIG_IGN, pcntl_signal_get_handler(\SIGTERM));
+        $this->assertSame(\SIG_IGN, pcntl_signal_get_handler(\SIGINT));
+        $this->assertFalse(pcntl_async_signals());
     }
 
     /**

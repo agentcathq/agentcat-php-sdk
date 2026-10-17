@@ -62,6 +62,8 @@
         "mcp/sdk": "<0.8.1"
     },
     "suggest": {
+        "ext-pcntl": "Delivers the queued events when a CLI server (an MCP stdio server) gets SIGTERM or SIGINT",
+        "ext-posix": "Ends the process with the signal after that delivery, and finds the home directory for agentcat.log when HOME is not set",
         "mcp/sdk": "Track mcp/sdk servers with AgentCat::track($builder, $projectId)"
     },
     "minimum-stability": "stable",

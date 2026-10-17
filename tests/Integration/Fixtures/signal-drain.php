@@ -10,22 +10,40 @@ use AgentCat\Internal\Pipeline\QueuedEvent;
 
 require dirname(__DIR__, 3) . '/vendor/autoload.php';
 
-// A long-running CLI server that gets SIGTERM while one event waits in the global queue.
+// A long-running CLI server with one event in the global queue.
 // Usage: signal-drain.php <collector-url> <mode> <marker>
-//   default: no SIGTERM handler of its own. AgentCat delivers the event, then SIGTERM ends the process.
-//   chain:   its own SIGTERM handler first. AgentCat delivers the event, then calls that handler, which writes
-//            "customer" and the time to <marker>; the script goes on and prints "done".
+//   default:    no SIGTERM handler of its own. It sends itself SIGTERM: AgentCat delivers the event, then SIGTERM
+//               ends the process.
+//   chain:      its own SIGTERM handler first, typed the way PHP calls it (int $signo, array $info). AgentCat
+//               delivers the event, then calls that handler, which writes "customer", the time and $info['signo'] to
+//               <marker>; the script goes on and prints "done".
+//   chain-exit: its own SIGTERM handler calls exit(0). It prints "signaled" just before it sends itself SIGTERM.
+//   twice:      like default, but it prints "signaled" just before the SIGTERM, so that the test can send another.
+//   shutdown:   no signal of its own: it prints "ending" and ends, so that the shutdown function delivers the event.
 $baseUrl = $argv[1] ?? '';
 $mode = $argv[2] ?? '';
 $markerFile = $argv[3] ?? '';
 if ($mode === 'chain') {
-    pcntl_signal(SIGTERM, static function () use ($markerFile): void {
-        file_put_contents($markerFile, sprintf("customer\n%.6F", microtime(true)));
+    pcntl_signal(SIGTERM, static function (int $signo, array $info) use ($markerFile): void {
+        file_put_contents($markerFile, sprintf("customer\n%.6F\n%s", microtime(true), var_export($info['signo'] ?? null, true)));
+    });
+}
+if ($mode === 'chain-exit') {
+    pcntl_signal(SIGTERM, static function (): never {
+        exit(0);
     });
 }
 $queue = EventQueue::global();
 $queue->configure($baseUrl);
 $queue->add(new QueuedEvent(new Event(projectId: 'proj_test', eventType: 'mcp:tools/call', resourceName: 'signal-drain')));
+if ($mode === 'shutdown') {
+    echo "ending\n";
+
+    exit(0);
+}
+if ($mode === 'chain-exit' || $mode === 'twice') {
+    echo "signaled\n";
+}
 posix_kill(posix_getpid(), SIGTERM);
 if ($mode === 'chain') {
     usleep(200_000);

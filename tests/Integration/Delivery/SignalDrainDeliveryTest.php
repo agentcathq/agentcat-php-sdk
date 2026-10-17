@@ -22,6 +22,9 @@ final class SignalDrainDeliveryTest extends TestCase
     /** Seconds from start to death by SIGTERM; the fixture's own loop runs for 5 s. */
     private const float SIGNAL_DEADLINE = 3.0;
 
+    /** `EventQueue::SHUTDOWN_TIMEOUT_SECONDS`. */
+    private const float BUDGET = 5.0;
+
     private static ?MockCollector $collector = null;
 
     /** HOME of the script (its agentcat.log) and the marker file. */
@@ -106,15 +109,80 @@ final class SignalDrainDeliveryTest extends TestCase
         $contents = file_get_contents($marker);
         $this->assertIsString($contents);
         $lines = explode("\n", $contents);
-        $this->assertCount(2, $lines);
-        [$who, $time] = $lines;
+        $this->assertCount(3, $lines);
+        [$who, $time, $signo] = $lines;
         $this->assertSame('customer', $who);
         $this->assertIsNumeric($time);
+        $this->assertSame('15', $signo, "the handler typed (int \$signo, array \$info) got PHP's siginfo");
         $requests = $this->collector()->requests($base);
         $this->assertCount(1, $requests);
         $start = $requests[0]->start;
         $this->assertIsNumeric($start);
         $this->assertGreaterThan((float) $start, (float) $time, 'the queue drained before the customer handler ran');
+    }
+
+    /** TypeScript `process.once`: AgentCat gives SIGTERM back before it drains, so a second one ends the process. */
+    #[MaximumDuration(10000)]
+    public function testASecondSigtermDuringTheDrainEndsTheProcessAtOnce(): void
+    {
+        [$hole, $url] = $this->blackHole();
+        $process = $this->fixture($url, 'twice');
+        $process->start();
+        $this->assertTrue($this->waitForLine($process, 'signaled'), $process->getErrorOutput());
+        $first = microtime(true);
+        $this->waitUntil($process, $first + 0.3);
+
+        $process->signal(15);
+        $process->wait();
+        $elapsed = microtime(true) - $first;
+
+        $this->assertTrue($process->hasBeenSignaled(), $process->getErrorOutput());
+        $this->assertSame(15, $process->getTermSignal());
+        $this->assertLessThan(self::SIGNAL_DEADLINE - 1.0, $elapsed, 'the second SIGTERM did not wait for the 5 s drain');
+        fclose($hole);
+    }
+
+    /** One budget: a chained handler that exits runs the shutdown function, which must not drain for 5 s more. */
+    #[Group('ac-03-11')]
+    #[MaximumDuration(10000)]
+    public function testAChainedHandlerThatExitsEndsWithinOneShutdownBudget(): void
+    {
+        [$hole, $url] = $this->blackHole();
+        $process = $this->fixture($url, 'chain-exit');
+        $process->start();
+        $this->assertTrue($this->waitForLine($process, 'signaled'), $process->getErrorOutput());
+        $signaled = microtime(true);
+
+        $process->wait();
+        $elapsed = microtime(true) - $signaled;
+
+        $this->assertSame(0, $process->getExitCode(), $process->getErrorOutput());
+        $this->assertGreaterThan(self::BUDGET - 0.5, $elapsed, 'the drain used its budget (the collector never answers)');
+        $this->assertLessThan(self::BUDGET + 0.5, $elapsed, 'one 5 s budget, not two');
+        fclose($hole);
+    }
+
+    /** One budget: SIGTERM 2 s into the shutdown function's flush ends the process when that flush would have. */
+    #[Group('ac-03-10')]
+    #[MaximumDuration(10000)]
+    public function testASigtermDuringTheShutdownFlushKeepsItsDeadline(): void
+    {
+        [$hole, $url] = $this->blackHole();
+        $process = $this->fixture($url, 'shutdown');
+        $process->start();
+        $this->assertTrue($this->waitForLine($process, 'ending'), $process->getErrorOutput());
+        $flushStart = microtime(true);
+        $this->waitUntil($process, $flushStart + 2.0);
+
+        $process->signal(15);
+        $process->wait();
+        $elapsed = microtime(true) - $flushStart;
+
+        $this->assertTrue($process->hasBeenSignaled(), $process->getErrorOutput());
+        $this->assertSame(15, $process->getTermSignal());
+        $this->assertGreaterThan(self::BUDGET - 0.5, $elapsed, 'the signal drain kept the remaining budget');
+        $this->assertLessThan(self::BUDGET + 0.5, $elapsed, 'the signal did not start a new 5 s budget');
+        fclose($hole);
     }
 
     private function fixture(string $base, string $mode, string $marker = ''): Process
@@ -127,6 +195,43 @@ final class SignalDrainDeliveryTest extends TestCase
         $process->setTimeout(10);
 
         return $process;
+    }
+
+    /**
+     * A listening socket that never accepts: the kernel completes the connection, curl sends its request, and no answer
+     * comes (a collector that is reachable but stuck). Keep the socket open while the fixture runs.
+     *
+     * @return array{resource, string} the socket and its base URL
+     */
+    private function blackHole(): array
+    {
+        $socket = stream_socket_server('tcp://127.0.0.1:0', $errorCode, $errorMessage);
+        $this->assertIsResource($socket, $errorMessage ?? '');
+        $name = stream_socket_get_name($socket, false);
+        $this->assertIsString($name);
+
+        return [$socket, 'http://' . $name];
+    }
+
+    /** Waits (within the process timeout) until the fixture prints `$line`; false when it ended first. */
+    private function waitForLine(Process $process, string $line): bool
+    {
+        $output = '';
+
+        return $process->waitUntil(static function (string $type, string $chunk) use (&$output, $line): bool {
+            $output .= $chunk;
+
+            return str_contains($output, $line . "\n");
+        });
+    }
+
+    /** Waits until `$deadline` (microtime) while the fixture runs. */
+    private function waitUntil(Process $process, float $deadline): void
+    {
+        while ($process->isRunning() && microtime(true) < $deadline) {
+            usleep(5_000);
+        }
+        $this->assertTrue($process->isRunning(), 'the fixture ended early: ' . $process->getErrorOutput());
     }
 
     /** @return list<mixed> the `resource_name` of each request the collector got, in order */
