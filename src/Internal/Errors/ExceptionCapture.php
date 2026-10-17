@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace AgentCat\Internal\Errors;
 
-use AgentCat\Internal\Json\Json;
 use AgentCat\Internal\Support\ClassName;
 use AgentCat\Internal\Support\ErrorText;
 use AgentCat\Internal\Support\Js;
 use AgentCat\Internal\Support\Values;
+use AgentCat\Internal\Wire\WireEncoder;
+use AgentCat\Internal\Wire\WireValue;
 
 /**
  * Builds the `error` object of an event (TS `captureException`).
@@ -132,13 +133,20 @@ final class ExceptionCapture
         return $chained;
     }
 
-    /** TS `stringifyNonError`. */
+    /**
+     * TS `stringifyNonError`: the `JSON.stringify` text, so invalid UTF-8 becomes U+FFFD and NaN or INF `null`.
+     * A value `JSON.stringify` throws on (a cycle, a throwing `jsonSerialize()`) gives `[object Object]`.
+     */
     private static function stringify(mixed $value): string
     {
         if ($value === null || is_scalar($value)) {
             return Js::string($value);
         }
 
-        return Json::encodeJs($value) ?? '[object Object]';
+        try {
+            return json_encode(WireValue::from($value), WireEncoder::FLAGS);
+        } catch (\Throwable) {
+            return '[object Object]';
+        }
     }
 }

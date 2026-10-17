@@ -13,6 +13,7 @@ use AgentCat\Internal\Wire\WireEncoder;
 use AgentCat\Tests\Fixtures\Errors\LegacyMessageException;
 use AgentCat\Tests\Fixtures\Errors\Thrower;
 use AgentCat\Tests\Support\JsonAssert;
+use AgentCat\Tests\Support\Samples\SerializableThing;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -442,6 +443,28 @@ final class ExceptionCaptureTest extends TestCase
         yield 'list' => [[1, 'a'], '[1,"a"]'];
         yield 'object' => [Json::decode('{"a":"é/"}'), '{"a":"é/"}'];
         yield 'cyclic object' => [$cyclic, '[object Object]'];
+        yield 'throwing JsonSerializable' => [['x' => new SerializableThing(throw: true)], '[object Object]'];
+        yield 'date' => [new \DateTimeImmutable('2025-01-15T12:00:00Z'), '"2025-01-15T12:00:00.000Z"'];
+        yield 'closure property' => [['a' => 1, 'f' => static fn(): int => 1], '{"a":1}'];
+    }
+
+    /** @return iterable<string, array{mixed, string}> values `json_encode()` refuses but `JSON.stringify` encodes */
+    public static function jsonStringifyProvider(): iterable
+    {
+        yield 'invalid UTF-8 from a latin1 database' => [['code' => 1366, 'message' => "Incorrect string value: '\xE9t\xE9'"], "{\"code\":1366,\"message\":\"Incorrect string value: '\u{FFFD}t\u{FFFD}'\"}"];
+        yield 'NaN' => [['ratio' => NAN], '{"ratio":null}'];
+        yield 'infinities' => [['up' => INF, 'down' => [-INF]], '{"up":null,"down":[null]}'];
+    }
+
+    /** TS `JSON.stringify` gives the JSON text: each bad byte becomes U+FFFD and a non-finite number `null`. */
+    #[Group('review-focus-1')]
+    #[DataProvider('jsonStringifyProvider')]
+    public function testNonThrowableIsStringifiedLikeJsonStringify(mixed $value, string $message): void
+    {
+        $data = ExceptionCapture::capture($value);
+
+        $this->assertSame($message, $data->message);
+        $this->assertSame('php', $data->platform);
     }
 
     #[DataProvider('nonThrowableProvider')]
