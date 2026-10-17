@@ -154,13 +154,16 @@ final class EventQueue
 
     /**
      * Stops accepting events, then delivers for at most the shutdown timeout (TypeScript `destroy()`). The first call
-     * fixes the deadline; a later call delivers only until that same deadline. So a signal drain and the shutdown
-     * function after it, or a signal during the shutdown function's flush, share one budget.
+     * fixes the deadline; a later call delivers only until that same deadline, and dispatches nothing once it has
+     * passed. So a signal drain and the shutdown function after it, or a signal during the shutdown function's flush,
+     * share one budget.
      */
     public function shutdown(): void
     {
         $this->accepting = false;
-        $this->deliverUntil(fn(): float => $this->shutdownDeadline ??= $this->transport->now() + $this->budget($this->shutdownTimeoutSeconds));
+        if (!$this->shutdownDeadlinePassed()) {
+            $this->deliverUntil(fn(): float => $this->shutdownDeadline ??= $this->transport->now() + $this->budget($this->shutdownTimeoutSeconds));
+        }
         if (!$this->waiting->isEmpty()) {
             Log::write(sprintf('Shutting down with %d events still in queue', $this->waiting->count()));
         }
@@ -182,6 +185,16 @@ final class EventQueue
     public function stats(): array
     {
         return ['queueLength' => $this->waiting->count(), 'activeRequests' => $this->transport->inFlight()];
+    }
+
+    /** True when an earlier `shutdown()` fixed the deadline and that deadline has passed. */
+    private function shutdownDeadlinePassed(): bool
+    {
+        try {
+            return $this->shutdownDeadline !== null && $this->transport->now() >= $this->shutdownDeadline;
+        } catch (\Throwable) {
+            return false; // the delivery loop logs the transport's failure
+        }
     }
 
     /** A NaN or negative timeout means "no time left". max() is no guard: max(0.0, NAN) is NaN on PHP 8.4+. */

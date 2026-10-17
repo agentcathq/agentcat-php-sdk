@@ -523,6 +523,70 @@ final class EventQueueTest extends TestCase
         $this->assertSame(array_fill(0, 3, 'Shutting down with 1 events still in queue'), $this->logger->messages());
     }
 
+    /** The shutdown function after a signal drain that used the whole budget: no hook runs, no transfer starts. */
+    #[Group('ac-03-9')]
+    public function testAShutdownAfterTheSharedDeadlineDispatchesNothing(): void
+    {
+        $transport = new RecordingTransport(complete: false);
+        $queue = new EventQueue(transport: $transport);
+        for ($i = 0; $i < 7; ++$i) {
+            $queue->add(new QueuedEvent($this->event()));
+        }
+        $queue->shutdown(); // 5 in delivery until the deadline, 2 waiting
+        $transport->complete = true;
+        $transport->pump(); // the 5 slots are free again
+
+        $queue->finalShutdown();
+        $queue->shutdown();
+
+        $this->assertCount(5, $transport->deliveries, 'nothing dispatched after the deadline');
+        $this->assertSame(1, $transport->waits);
+        $this->assertSame(array_fill(0, 3, 'Shutting down with 2 events still in queue'), $this->logger->messages());
+    }
+
+    /** A later shutdown before the deadline still delivers, until that deadline. */
+    #[Group('ac-03-9')]
+    public function testAShutdownBeforeTheSharedDeadlineStillDelivers(): void
+    {
+        $transport = new RecordingTransport();
+        $queue = new EventQueue(transport: $transport);
+        $breakTransport = static function () use ($transport): void {
+            $transport->failure = new \RuntimeException('down');
+        };
+        $queue->add(new QueuedEvent($this->event('first'), pending: [$breakTransport]));
+        $queue->add(new QueuedEvent($this->event('second')));
+        $queue->shutdown(); // fixes the deadline at 5 s; the first hook breaks the transport at 0 s
+        $transport->failure = null;
+
+        $queue->shutdown();
+
+        $this->assertEqualsWithDelta(0.0, $transport->now(), PHP_FLOAT_EPSILON, 'still before the deadline');
+        $this->assertSame(['second'], $this->resourceNames($transport));
+        $this->assertSame(['queueLength' => 0, 'activeRequests' => 0], $queue->stats());
+    }
+
+    public function testALaterShutdownWithAFailingClockNeverThrows(): void
+    {
+        $transport = new RecordingTransport();
+        $queue = new EventQueue(transport: $transport);
+        $breakTransport = static function () use ($transport): void {
+            $transport->failure = new \RuntimeException('down');
+        };
+        $queue->add(new QueuedEvent($this->event('first'), pending: [$breakTransport]));
+        $queue->add(new QueuedEvent($this->event('second')));
+        $queue->shutdown();
+        $this->logger->records = [];
+
+        $queue->shutdown(); // the deadline check cannot read the clock: the delivery loop logs the failure
+
+        $this->assertSame([
+            self::GAVE_UP . 'RuntimeException: down',
+            self::GAVE_UP . 'RuntimeException: down',
+            'Shutting down with 1 events still in queue',
+        ], $this->logger->messages());
+        $this->assertSame([], $transport->deliveries);
+    }
+
     public function testShutdownDeliversEverything(): void
     {
         $transport = new RecordingTransport();
