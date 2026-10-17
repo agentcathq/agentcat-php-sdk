@@ -19,14 +19,13 @@ use AgentCat\Internal\SdkVersion;
 use AgentCat\Options;
 use AgentCat\Tests\Support\Environment;
 use AgentCat\Tests\Support\JsonAssert;
+use AgentCat\Tests\Support\McpSdk\BuilderMembers;
 use AgentCat\Tests\Support\McpSdk\TrackingFixture;
 use AgentCat\Tests\Support\MemoryLogger;
 use AgentCat\Tests\Support\RecordingExporter;
 use AgentCat\Tests\Support\RecordingTransport;
 use AgentCat\Tests\Support\Thrown;
-use Mcp\Server;
 use Mcp\Server\Builder;
-use Mcp\Server\Protocol;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -45,7 +44,7 @@ final class PublishCustomEventTest extends TestCase
 
     private const string PUBLISHED_WITHOUT_SESSION = "Published custom event without a session with type 'agentcat:custom'";
 
-    private const string COMPATIBILITY = 'AgentCat SDK Compatibility: AgentCat supports mcp/sdk 0.8.1+ (pass the Mcp\Server\Builder to AgentCat::track() before build()).';
+    private const string NOT_TRACKED_AFTER_FAILURE = 'Warning: Failed to publish custom event - the server is not tracked (see the earlier AgentCat log line)';
 
     private Environment $environment;
 
@@ -69,11 +68,13 @@ final class PublishCustomEventTest extends TestCase
         $this->exporter = new RecordingExporter();
         $this->queue = new EventQueue(transport: $this->transport, exporters: $this->exporter);
         $this->client = new Client(ClientSeams::of($this->queue, static fn(): bool => true));
+        TrackedServers::resetIncomplete(); // no failed track() before this test
     }
 
     #[\Override]
     protected function tearDown(): void
     {
+        TrackedServers::resetIncomplete();
         Log::reset();
         $this->environment->restore();
     }
@@ -452,29 +453,55 @@ final class PublishCustomEventTest extends TestCase
         $this->assertSame(TrackedServers::get($builder), TrackedServers::get($server), 'kept for the server');
     }
 
-    /** Ruling R3: the state kept for a server is used without reading the server again. */
-    public function testTheStateKeptForAServerIsUsedFirst(): void
+    /** @return iterable<string, array{\Closure(Client, Builder): void}> */
+    public static function failedTracks(): iterable
     {
-        $server = new Server((new \ReflectionClass(Protocol::class))->newInstanceWithoutConstructor()); // unreadable
-        TrackedServers::add($server, new TrackedServer(self::PROJECT, new Options(), static fn(): array => ['kept', '1.0'], new Publisher($this->queue)));
-
-        $this->client->publishCustomEvent($server, self::PROJECT, new CustomEvent(sessionId: 'ses_1'));
-
-        $this->assertSame('kept', JsonAssert::at($this->body(), 'server_name'));
-        $this->assertSame(["Published custom event for session ses_1 with type 'agentcat:custom'"], $this->logger->messages());
+        yield 'mcp/sdk internals changed' => [static function (Client $client, Builder $builder): void {
+            BuilderMembers::uninitialize('referenceHandler')($builder);
+            $client->track($builder, self::PROJECT);
+        }];
+        yield 'an internal failure' => [static function (Client $client, Builder $builder): void {
+            $failing = new Client(ClientSeams::of(new EventQueue(transport: new RecordingTransport()), static fn(): bool => throw new \RuntimeException('boom')));
+            $failing->track($builder, self::PROJECT);
+        }];
+        yield 'another object of an unsupported shape' => [static function (Client $client): void {
+            $client->track(new \stdClass(), self::PROJECT);
+        }];
     }
 
-    /** Ruling R3: a server whose members AgentCat cannot read logs the compatibility line once, and nothing else. */
-    public function testAServerWhoseInternalsChangedLogsTheCompatibilityLineOnce(): void
+    /**
+     * Finding F1: after a track() that AgentCat could not complete (it logged why), a server it cannot find logs a
+     * warning instead of throwing into the customer's code, for example after an mcp/sdk upgrade.
+     *
+     * @param \Closure(Client, Builder): void $fail
+     */
+    #[DataProvider('failedTracks')]
+    public function testAfterAFailedTrackAnUntrackedServerLogsInsteadOfThrowing(\Closure $fail): void
     {
-        $server = new Server((new \ReflectionClass(Protocol::class))->newInstanceWithoutConstructor());
+        $builder = TrackingFixture::builder();
+        $fail($this->client, $builder);
+        $this->assertCount(1, array_filter($this->logger->messages(), static fn(string $line): bool => str_starts_with($line, 'Warning: Failed to track server - ')));
+        $this->logger->records = [];
 
-        $this->client->publishCustomEvent($server, self::PROJECT, new CustomEvent(sessionId: 'ses_1'));
-        $this->client->publishCustomEvent($server, self::PROJECT, new CustomEvent(sessionId: 'ses_1'));
+        $this->client->publishCustomEvent($builder, self::PROJECT, new CustomEvent(sessionId: 'ses_1'));
+        $this->client->publishCustomEvent($builder->build(), self::PROJECT, new CustomEvent(sessionId: 'ses_1'));
 
         $this->assertNothingQueued();
-        $this->assertSame([['level' => LogLevel::WARNING, 'message' => self::COMPATIBILITY]], $this->logger->records);
-        $this->assertNull(TrackedServers::get($server));
+        $line = ['level' => LogLevel::WARNING, 'message' => self::NOT_TRACKED_AFTER_FAILURE];
+        $this->assertSame([$line, $line], $this->logger->records, 'one line per call');
+        $error = Thrown::by(\InvalidArgumentException::class, fn() => $this->client->publishCustomEvent($builder, null));
+        $this->assertSame(self::NO_PROJECT, $error->getMessage(), 'the project ID is still checked first');
+    }
+
+    #[Group('ac-01-68')]
+    public function testAfterASuccessfulTrackAnUntrackedServerStillThrows(): void
+    {
+        $this->tracked();
+
+        $error = Thrown::by(\InvalidArgumentException::class, fn() => $this->client->publishCustomEvent(TrackingFixture::builder(), self::PROJECT));
+
+        $this->assertSame(self::NOT_TRACKED, $error->getMessage());
+        $this->assertFalse(TrackedServers::incomplete());
     }
 
     /** Tracks a fresh Builder for `harness-server` 1.2.3 and builds it, so its server info is known; clears the log. */

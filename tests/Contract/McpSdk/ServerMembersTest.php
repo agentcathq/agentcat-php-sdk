@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace AgentCat\Tests\Contract\McpSdk;
 
+use AgentCat\Client;
+use AgentCat\CustomEvent;
+use AgentCat\Event;
+use AgentCat\Internal\ClientSeams;
 use AgentCat\Internal\Engine\TrackedServer;
 use AgentCat\Internal\Engine\TrackedServers;
 use AgentCat\Internal\Logging\Log;
@@ -11,6 +15,7 @@ use AgentCat\McpSdk\Internal\Access\BuilderAccess;
 use AgentCat\McpSdk\Internal\Access\ServerAccess;
 use AgentCat\McpSdk\Internal\CallToolInterceptor;
 use AgentCat\McpSdk\McpSdkAdapter;
+use AgentCat\Options;
 use AgentCat\Tests\Support\McpSdk\TrackingFixture;
 use AgentCat\Tests\Support\Thrown;
 use Mcp\Server;
@@ -33,11 +38,13 @@ final class ServerMembersTest extends TestCase
     protected function setUp(): void
     {
         $this->fixture = new TrackingFixture();
+        TrackedServers::resetIncomplete();
     }
 
     #[\Override]
     protected function tearDown(): void
     {
+        TrackedServers::resetIncomplete();
         Log::reset();
     }
 
@@ -85,6 +92,7 @@ final class ServerMembersTest extends TestCase
         $this->assertNull(McpSdkAdapter::trackedServer(TrackingFixture::builder()));
         $this->assertNull(McpSdkAdapter::trackedServer(new \stdClass()));
         $this->assertSame([], $this->fixture->lines());
+        $this->assertFalse(TrackedServers::incomplete(), 'an untracked server is no failure of AgentCat');
     }
 
     public function testAnUnreadableProtocolThrows(): void
@@ -113,11 +121,43 @@ final class ServerMembersTest extends TestCase
         ];
 
         foreach ($servers as $server) {
-            $this->assertFalse(McpSdkAdapter::trackedServer($server));
-            $this->assertFalse(McpSdkAdapter::trackedServer($server));
+            $this->assertNull(McpSdkAdapter::trackedServer($server));
+            $this->assertNull(McpSdkAdapter::trackedServer($server));
+            $this->assertNull(TrackedServers::get($server));
         }
 
         $line = ['level' => LogLevel::WARNING, 'message' => McpSdkAdapter::COMPATIBILITY_LINE];
         $this->assertSame([$line, $line], $this->fixture->logger->records);
+        $this->assertTrue(TrackedServers::incomplete(), 'publishCustomEvent() then logs instead of throwing');
+    }
+
+    /** Ruling R3 and finding F1: `publishCustomEvent()` on such a server logs and queues nothing, and never throws. */
+    public function testPublishingForAServerWhoseInternalsChangedLogsAndReturns(): void
+    {
+        $server = new Server((new \ReflectionClass(Protocol::class))->newInstanceWithoutConstructor());
+
+        $this->client()->publishCustomEvent($server, TrackingFixture::PROJECT, new CustomEvent(sessionId: 'ses_1'));
+        $this->client()->publishCustomEvent($server, TrackingFixture::PROJECT, new CustomEvent(sessionId: 'ses_1'));
+
+        $this->assertSame(['queueLength' => 0, 'activeRequests' => 0], $this->fixture->queue->stats());
+        $warning = ['level' => LogLevel::WARNING, 'message' => 'Warning: Failed to publish custom event - the server is not tracked (see the earlier AgentCat log line)'];
+        $this->assertSame([['level' => LogLevel::WARNING, 'message' => McpSdkAdapter::COMPATIBILITY_LINE], $warning, $warning], $this->fixture->logger->records);
+    }
+
+    /** Ruling R3: the state kept for a server is used without reading the server again. */
+    public function testTheStateKeptForAServerIsUsedFirst(): void
+    {
+        $server = new Server((new \ReflectionClass(Protocol::class))->newInstanceWithoutConstructor()); // unreadable
+        TrackedServers::add($server, new TrackedServer(TrackingFixture::PROJECT, new Options(), static fn(): array => ['kept', '1.0'], $this->fixture->publisher));
+
+        $this->client()->publishCustomEvent($server, TrackingFixture::PROJECT, new CustomEvent(sessionId: 'ses_1'));
+
+        $this->assertSame(['kept'], array_map(static fn(Event $event): ?string => $event->serverName, $this->fixture->events()));
+        $this->assertSame(["Published custom event for session ses_1 with type 'agentcat:custom'"], $this->fixture->lines());
+    }
+
+    private function client(): Client
+    {
+        return new Client(ClientSeams::of($this->fixture->queue, static fn(): bool => true));
     }
 }

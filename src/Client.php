@@ -122,6 +122,8 @@ final readonly class Client
 
             return $server;
         } catch (\Throwable $e) {
+            // Every failure ends here, after the shape or compatibility line where there is one.
+            TrackedServers::markIncomplete();
             Log::write('Warning: Failed to track server - ' . ErrorText::of($e));
 
             return $server;
@@ -141,8 +143,12 @@ final readonly class Client
      * wins over it. No server or SDK fields and no hooks apply.
      *
      * The event is queued, not sent: AgentCat delivers it like any other event. Apart from the two errors below, it
-     * never throws: a failure is logged. In test environments it validates `$projectId` and then does nothing, like
-     * `track()` (see `AGENTCAT_ENABLED` there).
+     * never throws: a failure is logged. When a `track()` in this process could not track a server, a server that is
+     * not tracked logs a warning instead of the second error. In test environments it validates `$projectId` and then
+     * does nothing, like `track()` (see `AGENTCAT_ENABLED` there).
+     *
+     * In a file without `declare(strict_types=1)`, PHP turns an int, float or bool first argument into a session ID
+     * string.
      *
      * @param object|string $serverOrSessionId A tracked server, or the session ID of the event.
      * @param string|null $projectId Your AgentCat project ID (`proj_…`); required, even for a tracked server.
@@ -165,10 +171,14 @@ final readonly class Client
             $sessionId = $sessionId !== '' ? $sessionId : $serverOrSessionId; // verbatim: no derivation, '' is sessionless
         } else {
             $server = TrackedServers::get($serverOrSessionId) ?? McpSdkAdapter::trackedServer($serverOrSessionId);
-            if ($server === false) {
-                return; // mcp/sdk internals changed: the adapter logged the compatibility line
-            }
             if (!$server instanceof TrackedServer) {
+                if (TrackedServers::incomplete()) {
+                    // AgentCat's own failure, logged before: it must not throw into the customer's code
+                    Log::write('Warning: Failed to publish custom event - the server is not tracked (see the earlier AgentCat log line)');
+
+                    return;
+                }
+
                 throw new \InvalidArgumentException('Server is not tracked. Please call agentcat.track() first or provide a session ID string.');
             }
             if ($sessionId === '') {

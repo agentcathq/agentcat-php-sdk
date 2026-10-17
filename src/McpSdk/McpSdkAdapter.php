@@ -139,11 +139,13 @@ final class McpSdkAdapter
      * The tracking state of a server built from a tracked Builder (01 AC-69): AgentCat's `tools/call` handler, among
      * the server's request handlers, holds it. A state found is kept for the server. Never throws.
      *
-     * @return TrackedServer|false|null null when the object is not an mcp/sdk server or its Builder was not tracked;
-     *                                  false when its request handlers cannot be read (C6), after the compatibility
-     *                                  line, which is logged once per server
+     * When the request handlers cannot be read (C6), the compatibility line is logged once per server, and
+     * `TrackedServers::incomplete()` turns true.
+     *
+     * @return TrackedServer|null null when the object is not an mcp/sdk server, its Builder was not tracked, or its
+     *                            request handlers cannot be read
      */
-    public static function trackedServer(object $server): TrackedServer|false|null
+    public static function trackedServer(object $server): ?TrackedServer
     {
         if (!$server instanceof Server) {
             return null;
@@ -152,8 +154,9 @@ final class McpSdkAdapter
             $handlers = StrictErrors::run(static fn(): array => ServerAccess::requestHandlers(ServerAccess::protocol($server)));
         } catch (\Throwable) {
             Drift::report($server);
+            TrackedServers::markIncomplete();
 
-            return false;
+            return null;
         }
         foreach ($handlers as $handler) {
             if ($handler instanceof CallToolInterceptor) {

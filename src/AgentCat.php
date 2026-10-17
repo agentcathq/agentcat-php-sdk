@@ -55,8 +55,12 @@ final class AgentCat
      * wins over it. No server or SDK fields and no hooks apply.
      *
      * The event is queued, not sent: AgentCat delivers it like any other event. Apart from the two errors below, it
-     * never throws: a failure is logged. In test environments it validates `$projectId` and then does nothing, like
-     * `track()` (see `AGENTCAT_ENABLED` there).
+     * never throws: a failure is logged. When a `track()` in this process could not track a server, a server that is
+     * not tracked logs a warning instead of the second error. In test environments it validates `$projectId` and then
+     * does nothing, like `track()` (see `AGENTCAT_ENABLED` there).
+     *
+     * In a file without `declare(strict_types=1)`, PHP turns an int, float or bool first argument into a session ID
+     * string.
      *
      * @param object|string $serverOrSessionId A tracked server, or the session ID of the event.
      * @param string|null $projectId Your AgentCat project ID (`proj_…`); required, even for a tracked server.

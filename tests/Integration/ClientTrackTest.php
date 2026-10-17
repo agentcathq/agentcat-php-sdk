@@ -68,6 +68,7 @@ final class ClientTrackTest extends TestCase
     protected function setUp(): void
     {
         $this->environment = Environment::clear('AGENTCAT_PROJECT_ID', 'AGENTCAT_API_URL', 'MCPCAT_API_URL', 'AGENTCAT_ENABLED', 'APP_ENV');
+        TrackedServers::resetIncomplete();
         $this->logger = new MemoryLogger();
         Log::setLogger($this->logger);
         $this->transport = new RecordingTransport();
@@ -79,6 +80,7 @@ final class ClientTrackTest extends TestCase
     #[\Override]
     protected function tearDown(): void
     {
+        TrackedServers::resetIncomplete(); // a failed track() marks the process
         Log::reset();
         $this->environment->restore();
     }
@@ -98,6 +100,7 @@ final class ClientTrackTest extends TestCase
             'AgentCat setup complete | project ' . self::PROJECT . ' | tracing=true context=true reportMissing=true exporters=0',
         ], $this->logger->messages());
         $this->assertSame(['echo', GetMoreTools::NAME], $this->names($this->harness($builder)->listTools()));
+        $this->assertFalse(TrackedServers::incomplete());
     }
 
     #[Group('ac-01-4')]
@@ -162,6 +165,7 @@ final class ClientTrackTest extends TestCase
         $this->assertSame($builder, $client->track($builder, self::PROJECT));
 
         $this->assertSame(['Warning: Failed to track server - RuntimeException: boom'], $this->logger->messages());
+        $this->assertTrue(TrackedServers::incomplete(), 'publishCustomEvent() then logs instead of throwing');
     }
 
     #[Group('ac-01-3')]

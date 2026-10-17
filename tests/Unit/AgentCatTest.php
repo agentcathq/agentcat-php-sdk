@@ -10,6 +10,7 @@ use AgentCat\CustomEvent;
 use AgentCat\Event;
 use AgentCat\Internal\ClientSeams;
 use AgentCat\Internal\Delivery\EventQueue;
+use AgentCat\Internal\Engine\TrackedServers;
 use AgentCat\Internal\Json\Json;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Pipeline\QueuedEvent;
@@ -43,11 +44,13 @@ final class AgentCatTest extends TestCase
         $this->transport = new RecordingTransport();
         $this->queue = new EventQueue(transport: $this->transport);
         $this->client = new Client(ClientSeams::of($this->queue, static fn(): bool => true));
+        TrackedServers::resetIncomplete();
     }
 
     #[\Override]
     protected function tearDown(): void
     {
+        TrackedServers::resetIncomplete(); // a failed track() marks the process
         AgentCat::setClient(null);
         EventQueue::setGlobal(null); // N9: the default client of setClient(null) builds the global queue
         Log::reset();
