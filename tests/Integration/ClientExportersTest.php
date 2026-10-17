@@ -69,6 +69,7 @@ final class ClientExportersTest extends TestCase
     {
         TrackedServers::resetIncomplete();
         TrackedServers::resetSkipped();
+        EventQueue::setGlobal(null);
         Log::reset();
         $this->environment->restore();
     }
@@ -241,6 +242,22 @@ final class ClientExportersTest extends TestCase
         } finally {
             $collector->stop();
         }
+    }
+
+    /** A `Client` built without seams (what a container autowires) sets exporters up on the process queue. */
+    public function testTheDefaultClientSetsExportersUpOnTheGlobalQueue(): void
+    {
+        putenv('AGENTCAT_ENABLED=true');
+        EventQueue::setGlobal($this->queue);
+        $builder = TrackingFixture::builder();
+        Tools::echo($builder);
+        (new Client())->track($builder, self::PROJECT, new Options(exporters: ['otlp' => new OtlpExporter('http://otlp.test')]));
+        $this->call($builder);
+
+        $this->assertTrue($this->queue->flush());
+
+        $this->assertSame(['http://otlp.test/v1/traces'], $this->http->urls());
+        $this->assertContains('Initialized telemetry with 1 exporters', $this->logger->messages());
     }
 
     public function testWithoutTheTelemetrySeamNoExportersAreSetUp(): void

@@ -330,7 +330,8 @@ final class AgentCatFakeTest extends TestCase
         $this->assertSame('mcp:tools/call', $events[0]->eventType);
         $logs = $fake->logs();
         $this->assertContains('AgentCat setup complete | project ' . self::PROJECT . ' | tracing=true context=true reportMissing=true exporters=1', $logs);
-        $this->assertSame([], array_values(array_filter($logs, static fn(string $l): bool => str_contains($l, 'Initialized telemetry'))));
+        // No `Initialized telemetry` assertion: the fake's queue already has a recorder sink, so install() skips it
+        // whatever the flag says. ClientExportersTest::testWithoutTheTelemetrySeamNoExportersAreSetUp covers the flag.
     }
 
     public function testTelemetryOnlyServersAreRecordedToo(): void
