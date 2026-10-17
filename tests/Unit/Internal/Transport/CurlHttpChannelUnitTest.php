@@ -1,0 +1,185 @@
+<?php
+
+declare(strict_types=1);
+
+namespace AgentCat\Tests\Unit\Internal\Transport;
+
+use AgentCat\Internal\Logging\Log;
+use AgentCat\Internal\Transport\CurlHttpChannel;
+use AgentCat\Internal\Transport\HttpRequest;
+use AgentCat\Internal\Transport\HttpResponse;
+use AgentCat\Tests\Support\MemoryLogger;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\TestCase;
+
+/** No transfer starts here: nothing is pumped, or curl is "missing". tests/Integration/Transport covers the transfers. */
+final class CurlHttpChannelUnitTest extends TestCase
+{
+    private const string FULL = 'WARN: AgentCat telemetry export queue full, dropping the oldest request';
+
+    private const string NO_CURL = 'WARN: AgentCat cannot send telemetry exports or diagnostics: ext-curl functions are missing or disabled (';
+
+    private MemoryLogger $logger;
+
+    #[\Override]
+    protected function setUp(): void
+    {
+        $this->logger = new MemoryLogger();
+        Log::setLogger($this->logger);
+    }
+
+    #[\Override]
+    protected function tearDown(): void
+    {
+        Log::reset();
+    }
+
+    public function testAFullQueueDropsTheOldestRequestWithOneLineEach(): void
+    {
+        $channel = new CurlHttpChannel();
+
+        for ($i = 0; $i < CurlHttpChannel::MAX_WAITING + 2; ++$i) {
+            $channel->post(new HttpRequest('http://127.0.0.1:9/r' . $i, [], '{}'), static function (): void {});
+        }
+
+        $this->assertSame(1000, $channel->pending());
+        $this->assertSame(0, $channel->inTransfer());
+        $this->assertSame([self::FULL, self::FULL], $this->logger->messages());
+    }
+
+    public function testWithoutACurlFunctionEveryRequestIsDroppedWithOneLine(): void
+    {
+        $called = new \ArrayObject();
+        $channel = new CurlHttpChannel(functionExists: static fn(string $function): bool => $function !== 'curl_multi_init');
+        $onDone = static function () use ($called): void {
+            $called[] = true;
+        };
+
+        $channel->post(new HttpRequest('http://127.0.0.1:9/a', [], '{}'), $onDone);
+        $channel->post(new HttpRequest('http://127.0.0.1:9/b', [], '{}'), $onDone);
+        $channel->pump();
+        $channel->waitForActivity(1.0);
+
+        $this->assertSame(0, $channel->pending());
+        $this->assertCount(0, $called);
+        $this->assertSame([self::NO_CURL . 'curl_multi_init)'], $this->logger->messages());
+    }
+
+    public function testTheLineNamesEveryMissingFunction(): void
+    {
+        $channel = new CurlHttpChannel(functionExists: static fn(string $function): bool => !in_array($function, ['curl_multi_strerror', 'curl_init'], true));
+
+        $channel->post(new HttpRequest('http://127.0.0.1:9', [], ''), static function (): void {});
+
+        $this->assertSame([self::NO_CURL . 'curl_init, curl_multi_strerror)'], $this->logger->messages());
+    }
+
+    public function testTheFunctionsAreCheckedOnceAtTheFirstPost(): void
+    {
+        $checked = new \ArrayObject();
+        $channel = new CurlHttpChannel(functionExists: static function (string $function) use ($checked): bool {
+            $checked[] = $function;
+
+            return function_exists($function);
+        });
+        $channel->pump();
+        $this->assertCount(0, $checked);
+
+        $channel->post(new HttpRequest('http://127.0.0.1:9/a', [], ''), static function (): void {});
+        $channel->post(new HttpRequest('http://127.0.0.1:9/b', [], ''), static function (): void {});
+
+        $this->assertSame(
+            ['curl_init', 'curl_setopt_array', 'curl_error', 'curl_strerror', 'curl_getinfo', 'curl_multi_init', 'curl_multi_add_handle', 'curl_multi_remove_handle', 'curl_multi_exec', 'curl_multi_info_read', 'curl_multi_select', 'curl_multi_strerror'],
+            $checked->getArrayCopy(),
+        );
+        $this->assertSame(2, $channel->pending());
+        $this->assertSame([], $this->logger->messages());
+    }
+
+    public function testAPumpWithNothingToSendRunsNoCurl(): void
+    {
+        $calls = new \ArrayObject();
+        $multiStatus = static function (string $function, int $code) use ($calls): int {
+            $calls[] = $function;
+
+            return $code;
+        };
+        $channel = new CurlHttpChannel(multiStatus: $multiStatus);
+        $missing = new CurlHttpChannel(functionExists: static fn(string $function): bool => $function !== 'curl_multi_init', multiStatus: $multiStatus);
+        $missing->post(new HttpRequest('http://127.0.0.1:9', [], ''), static function (): void {});
+
+        $channel->pump();
+        $missing->pump();
+
+        $this->assertCount(0, $calls);
+        $this->assertSame(0, $channel->pending());
+    }
+
+    /** @return iterable<string, array{float}> */
+    public static function bounds(): iterable
+    {
+        yield 'NAN' => [NAN];
+        yield 'negative' => [-1.0];
+        yield 'one second' => [1.0];
+        yield 'INF' => [INF];
+    }
+
+    /** A waiting request starts at the next pump(); with nothing in transfer there is nothing to wait for. */
+    #[DataProvider('bounds')]
+    public function testAWaitWithNothingInTransferReturnsAtOnce(float $seconds): void
+    {
+        $channel = new CurlHttpChannel();
+        $channel->post(new HttpRequest('http://127.0.0.1:9', [], ''), static function (): void {});
+        $begin = hrtime(true);
+
+        $channel->waitForActivity($seconds);
+
+        $this->assertLessThan(0.05, (hrtime(true) - $begin) / 1e9);
+        $this->assertSame(1, $channel->pending());
+        $this->assertSame(0, $channel->inTransfer());
+    }
+
+    /** @return iterable<string, array{int, ?string, bool}> */
+    public static function outcomes(): iterable
+    {
+        yield '200' => [200, null, true];
+        yield '299' => [299, null, true];
+        yield '199' => [199, null, false];
+        yield '300' => [300, null, false];
+        yield '200 with an error' => [200, 'cURL error 56: Recv failure', false];
+    }
+
+    #[DataProvider('outcomes')]
+    public function testAResponseIsOkForA2xxStatusWithoutAnError(int $status, ?string $error, bool $ok): void
+    {
+        $this->assertSame($ok, (new HttpResponse($status, 'R', 'b', $error))->ok());
+    }
+
+    public function testAFailedResponseCarriesOnlyItsError(): void
+    {
+        $response = HttpResponse::failed('x');
+
+        $this->assertSame(0, $response->status);
+        $this->assertSame('', $response->reason);
+        $this->assertSame('', $response->body);
+        $this->assertSame('x', $response->error);
+        $this->assertFalse($response->ok());
+    }
+
+    public function testAResponseWithoutAnErrorHasANullError(): void
+    {
+        $response = new HttpResponse(204, 'No Content', '');
+
+        $this->assertNull($response->error);
+        $this->assertTrue($response->ok());
+    }
+
+    public function testARequestKeepsItsHeadersInOrder(): void
+    {
+        $request = new HttpRequest('https://example.test/v1/logs', ['b' => '2', 'a' => '1'], '{}');
+
+        $this->assertSame('https://example.test/v1/logs', $request->url);
+        $this->assertSame(['b' => '2', 'a' => '1'], $request->headers);
+        $this->assertSame('{}', $request->body);
+    }
+}

@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 // Mock AgentCat collector for the transport and queue tests (php -S, PHP_CLI_SERVER_WORKERS=8).
 // Path /c/<scenario>/<rest>. Files in $AGENTCAT_COLLECTOR_DIR:
-//   <scenario>.json  {"steps":[{"status":503,"delayMs":0,"body":""}],"default":{"status":202,"body":"{\"status\":\"accepted\"}"}}
+//   <scenario>.json  {"steps":[{"status":503,"delayMs":0,"body":"","location":"http://…"}],"default":{"status":202,"body":"{\"status\":\"accepted\"}"}}
+//                    (`location`, optional, is sent as the Location header)
 //   <scenario>.log   one JSON line per request (n, method, path, headers, body, start, end), written before the response.
 
 $dir = getenv('AGENTCAT_COLLECTOR_DIR');
@@ -37,6 +38,7 @@ $step = $steps[$index] ?? ($scenario instanceof stdClass ? ($scenario->default ?
 $status = $step instanceof stdClass && is_int($step->status ?? null) ? $step->status : 202;
 $delayMs = $step instanceof stdClass && is_int($step->delayMs ?? null) ? $step->delayMs : 0;
 $responseBody = $step instanceof stdClass && is_string($step->body ?? null) ? $step->body : '';
+$location = $step instanceof stdClass && is_string($step->location ?? null) ? $step->location : null;
 
 $requestBody = file_get_contents('php://input');
 if ($delayMs > 0) {
@@ -54,6 +56,9 @@ file_put_contents($prefix . '.log', json_encode([
 
 http_response_code($status);
 header('Content-Type: application/json');
+if ($location !== null) {
+    header('Location: ' . $location); // after http_response_code(): PHP sends 302 unless a 201 or 3xx is set
+}
 echo $responseBody;
 
 return true;
