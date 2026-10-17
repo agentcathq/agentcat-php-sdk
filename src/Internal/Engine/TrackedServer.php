@@ -7,7 +7,8 @@ namespace AgentCat\Internal\Engine;
 use AgentCat\Options;
 
 /**
- * The engine state of one tracked server: its options, listing state and injection registries.
+ * The engine state of one tracked server: its options, listing state, injection registries and the publisher of
+ * the client that tracked it.
  *
  * @internal
  */
@@ -24,13 +25,21 @@ final class TrackedServer
     /**
      * @param string $projectId '' in telemetry-only mode
      * @param \Closure(): array{0: ?string, 1: ?string} $serverInfo server name and version, read when an event is published
+     * @param Publisher $publisher the publisher of the client that tracked the server
      */
     public function __construct(
         public readonly string $projectId,
         public readonly Options $options,
         private readonly \Closure $serverInfo,
+        private readonly Publisher $publisher,
     ) {
         $this->injection = new InjectionState();
+    }
+
+    /** The publisher of the client that tracked the server: its events, custom ones included, go out through it. */
+    public function publisher(): Publisher
+    {
+        return $this->publisher;
     }
 
     public function hookMode(): bool

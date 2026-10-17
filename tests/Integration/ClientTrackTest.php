@@ -10,6 +10,7 @@ use AgentCat\Identity;
 use AgentCat\Internal\ClientSeams;
 use AgentCat\Internal\Constants;
 use AgentCat\Internal\Delivery\EventQueue;
+use AgentCat\Internal\Engine\TrackedServers;
 use AgentCat\Internal\Json\Json;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Tools\GetMoreTools;
@@ -340,6 +341,7 @@ final class ClientTrackTest extends TestCase
         $this->assertCount(1, array_filter($texts, static fn(mixed $text): bool => is_string($text) && str_starts_with($text, Constants::MINT_BACK_HEADER_ISSUED)));
         $this->assertSame('echo: hi', $texts[1] ?? null);
         $this->assertSame('first', $this->event()->identifyActorGivenId, 'the first client owns the Builder');
+        $this->assertSame($this->queue, TrackedServers::get($builder)?->publisher()->queue(), "the server keeps its owner's publisher");
         $this->assertTrue($other->flush());
         $this->assertSame([], $otherExporter->events);
         $this->assertSame([], $otherTransport->deliveries);

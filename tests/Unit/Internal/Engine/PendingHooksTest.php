@@ -6,12 +6,15 @@ namespace AgentCat\Tests\Unit\Internal\Engine;
 
 use AgentCat\Event;
 use AgentCat\Identity;
+use AgentCat\Internal\Delivery\EventQueue;
 use AgentCat\Internal\Engine\PendingHooks;
+use AgentCat\Internal\Engine\Publisher;
 use AgentCat\Internal\Engine\TrackedServer;
 use AgentCat\Internal\Id\SessionId;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Options;
 use AgentCat\Tests\Support\MemoryLogger;
+use AgentCat\Tests\Support\RecordingTransport;
 use AgentCat\ToolCall;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
@@ -347,7 +350,7 @@ final class PendingHooksTest extends TestCase
 
     private function server(Options $options, string $projectId = 'proj_1'): TrackedServer
     {
-        return new TrackedServer($projectId, $options, static fn(): array => [null, null]);
+        return new TrackedServer($projectId, $options, static fn(): array => [null, null], new Publisher(new EventQueue(transport: new RecordingTransport())));
     }
 
     private function call(): ToolCall

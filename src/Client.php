@@ -105,7 +105,7 @@ final readonly class Client
             } elseif (preg_match(self::PROJECT_ID_PATTERN, $projectId) !== 1) {
                 Log::write(sprintf('WARN: Project ID "%s" does not match proj_ followed by 27 letters or digits; the AgentCat API drops its events', $projectId));
             }
-            $state = new TrackedServer($projectId, $options, McpSdkAdapter::serverInfo($server));
+            $state = new TrackedServer($projectId, $options, McpSdkAdapter::serverInfo($server), $this->publisher);
             McpSdkAdapter::install($server, $state, $this->publisher, $this->interceptor);
             TrackedServers::add($server, $state);
             Log::write(sprintf(

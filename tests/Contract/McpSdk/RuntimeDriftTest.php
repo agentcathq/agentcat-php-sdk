@@ -291,7 +291,7 @@ final class RuntimeDriftTest extends TestCase
     private function tracked(Builder $builder): array
     {
         $publisher = new Publisher($this->queue);
-        $server = new TrackedServer('proj_aaaaaaaaaaaaaaaaaaaaaaaaaaa', new Options(), McpSdkAdapter::serverInfo($builder));
+        $server = new TrackedServer('proj_aaaaaaaaaaaaaaaaaaaaaaaaaaa', new Options(), McpSdkAdapter::serverInfo($builder), $publisher);
         McpSdkAdapter::install($builder, $server, $publisher, new CallInterceptor($publisher));
 
         return [$server, new HttpHarness($builder->build())];

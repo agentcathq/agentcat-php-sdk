@@ -150,7 +150,7 @@ final class PublisherTest extends TestCase
 
     private function server(string $projectId, ?Options $options = null): TrackedServer
     {
-        return new TrackedServer($projectId, $options ?? new Options(), static fn(): array => ['srv', '1.0']);
+        return new TrackedServer($projectId, $options ?? new Options(), static fn(): array => ['srv', '1.0'], $this->publisher);
     }
 
     private function event(int|float|null $duration = null): Event

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace AgentCat\Tests\Unit\Internal\Engine;
 
+use AgentCat\Internal\Delivery\EventQueue;
+use AgentCat\Internal\Engine\Publisher;
 use AgentCat\Internal\Engine\ToolListing;
 use AgentCat\Internal\Engine\ToolListInjector;
 use AgentCat\Internal\Engine\TrackedServer;
@@ -11,6 +13,7 @@ use AgentCat\Internal\Json\Json;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Options;
 use AgentCat\Tests\Support\MemoryLogger;
+use AgentCat\Tests\Support\RecordingTransport;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
@@ -37,7 +40,7 @@ final class ToolListingTest extends TestCase
 
     private function server(): TrackedServer
     {
-        return new TrackedServer('proj', new Options(), static fn(): array => [null, null]);
+        return new TrackedServer('proj', new Options(), static fn(): array => [null, null], new Publisher(new EventQueue(transport: new RecordingTransport())));
     }
 
     private function tool(string $json): \stdClass

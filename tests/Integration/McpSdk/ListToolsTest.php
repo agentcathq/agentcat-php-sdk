@@ -521,7 +521,7 @@ final class ListToolsTest extends TestCase
 
     private function track(Builder $builder, Options $options = new Options()): TrackedServer
     {
-        $server = new TrackedServer(self::PROJECT, $options, McpSdkAdapter::serverInfo($builder));
+        $server = new TrackedServer(self::PROJECT, $options, McpSdkAdapter::serverInfo($builder), $this->publisher);
         McpSdkAdapter::install($builder, $server, $this->publisher, new CallInterceptor($this->publisher));
 
         return $server;

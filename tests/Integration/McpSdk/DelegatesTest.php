@@ -89,10 +89,11 @@ final class DelegatesTest extends TestCase
     {
         $builder = Server::builder();
         $builder->build();
+        $publisher = new Publisher(new EventQueue(transport: new RecordingTransport()));
         $interceptor = new ListToolsInterceptor(
-            new TrackedServer('proj', new Options(), static fn(): array => [null, null]),
+            new TrackedServer('proj', new Options(), static fn(): array => [null, null], $publisher),
             new Delegates($builder), // the interceptor is not in this Builder's handlers
-            new Publisher(new EventQueue(transport: new RecordingTransport())),
+            $publisher,
         );
         $request = (new ListToolsRequest())->withId(3);
 
@@ -107,9 +108,9 @@ final class DelegatesTest extends TestCase
     {
         $builder = Server::builder();
         $builder->build();
-        $server = new TrackedServer('proj', new Options(), static fn(): array => [null, null]);
-        $delegates = new Delegates($builder); // the interceptors are not in this Builder's handlers
         $publisher = new Publisher(new EventQueue(transport: new RecordingTransport()));
+        $server = new TrackedServer('proj', new Options(), static fn(): array => [null, null], $publisher);
+        $delegates = new Delegates($builder); // the interceptors are not in this Builder's handlers
         $interceptor = new CallToolInterceptor(
             $server,
             $delegates,

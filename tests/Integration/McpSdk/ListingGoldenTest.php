@@ -91,7 +91,7 @@ final class ListingGoldenTest extends TestCase
             $builder->add(Tool::fromArray($tool), new RecordingTool());
         }
         $publisher = new Publisher(new EventQueue(transport: new RecordingTransport()));
-        McpSdkAdapter::install($builder, new TrackedServer('proj_aaaaaaaaaaaaaaaaaaaaaaaaaaa', $options, McpSdkAdapter::serverInfo($builder)), $publisher, new CallInterceptor($publisher));
+        McpSdkAdapter::install($builder, new TrackedServer('proj_aaaaaaaaaaaaaaaaaaaaaaaaaaa', $options, McpSdkAdapter::serverInfo($builder), $publisher), $publisher, new CallInterceptor($publisher));
         $harness = new HttpHarness($builder->build());
         $harness->initialize();
 

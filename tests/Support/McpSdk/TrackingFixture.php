@@ -55,7 +55,7 @@ final readonly class TrackingFixture
 
     public function track(Builder $builder, Options $options = new Options(), string $projectId = self::PROJECT): TrackedServer
     {
-        $server = new TrackedServer($projectId, $options, McpSdkAdapter::serverInfo($builder));
+        $server = new TrackedServer($projectId, $options, McpSdkAdapter::serverInfo($builder), $this->publisher);
         McpSdkAdapter::install($builder, $server, $this->publisher, new CallInterceptor($this->publisher));
 
         return $server;

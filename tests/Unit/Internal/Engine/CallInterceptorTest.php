@@ -702,7 +702,7 @@ final class CallInterceptorTest extends TestCase
     /** @param (\Closure(): array{0: ?string, 1: ?string})|null $serverInfo */
     private function server(?Options $options = null, ?\Closure $serverInfo = null): TrackedServer
     {
-        return new TrackedServer('proj_test', $options ?? new Options(), $serverInfo ?? static fn(): array => ['srv', '1']);
+        return new TrackedServer('proj_test', $options ?? new Options(), $serverInfo ?? static fn(): array => ['srv', '1'], new Publisher($this->queue));
     }
 
     /** @return \Closure(): array{0: ?string, 1: ?string} */

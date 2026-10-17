@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace AgentCat\Tests\Unit\Internal\Engine;
 
+use AgentCat\Internal\Delivery\EventQueue;
+use AgentCat\Internal\Engine\Publisher;
 use AgentCat\Internal\Engine\TrackedServer;
 use AgentCat\Internal\Engine\TrackedServers;
 use AgentCat\Options;
+use AgentCat\Tests\Support\RecordingTransport;
 use PHPUnit\Framework\TestCase;
 
 final class TrackedServersTest extends TestCase
@@ -37,6 +40,6 @@ final class TrackedServersTest extends TestCase
 
     private function state(object $server): TrackedServer
     {
-        return new TrackedServer('proj', new Options(), static fn(): array => [$server::class, null]);
+        return new TrackedServer('proj', new Options(), static fn(): array => [$server::class, null], new Publisher(new EventQueue(transport: new RecordingTransport())));
     }
 }
