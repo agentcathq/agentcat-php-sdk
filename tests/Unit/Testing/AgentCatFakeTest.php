@@ -32,6 +32,12 @@ final class AgentCatFakeTest extends TestCase
 {
     private const string PROJECT = 'proj_abcdefghijklmnopqrstuvwxyz0';
 
+    private const string NOT_TRACKED = 'Server is not tracked. Please call agentcat.track() first or provide a session ID string.';
+
+    private const string NOT_TRACKED_WHILE_OFF = 'Warning: Failed to publish custom event - the server is not tracked (track() ran while AgentCat was off; call AgentCat::fake() before track())';
+
+    private const string TRACKED_WHILE_OFF_HINT = 'A server was tracked while AgentCat was off: call AgentCat::fake() before track().';
+
     private Environment $environment;
 
     private MemoryLogger $logger;
@@ -48,12 +54,15 @@ final class AgentCatFakeTest extends TestCase
         $this->logger = new MemoryLogger();
         Log::setLogger($this->logger);
         $this->home = $this->home();
+        TrackedServers::resetIncomplete();
+        TrackedServers::resetSkipped();
     }
 
     #[\Override]
     protected function tearDown(): void
     {
         TrackedServers::resetIncomplete();
+        TrackedServers::resetSkipped(); // the SDK is off in this suite: AgentCat::track() without fake() marks the process
         AgentCat::setClient(null);
         EventQueue::setGlobal(null);
         Log::reset();
@@ -79,6 +88,59 @@ final class AgentCatFakeTest extends TestCase
         $this->assertSame(['echo'], $this->toolNames($builder), 'no get_more_tools was injected');
         $this->assertSame(['queueLength' => 0, 'activeRequests' => 0], EventQueue::global()->stats());
         $this->assertFileDoesNotExist($this->home() . '/agentcat.log');
+    }
+
+    /** The application's factory tracks its server in `setUp()`, while AgentCat is off; the test body calls `fake()`. */
+    public function testAServerTrackedBeforeTheFakeLogsInsteadOfThrowing(): void
+    {
+        $builder = TrackingFixture::builder();
+        Tools::echo($builder);
+        AgentCat::track($builder, self::PROJECT);
+        $server = $builder->build();
+        $fake = AgentCat::fake();
+
+        AgentCat::publishCustomEvent($builder, self::PROJECT, new CustomEvent(message: 'm'));
+        AgentCat::publishCustomEvent($server, self::PROJECT, new CustomEvent(message: 'm'));
+
+        $this->assertSame([self::NOT_TRACKED_WHILE_OFF, self::NOT_TRACKED_WHILE_OFF], $fake->logs());
+        $this->assertSame([], $fake->events());
+        $this->assertSame(['queueLength' => 0, 'activeRequests' => 0], EventQueue::global()->stats());
+    }
+
+    public function testAssertionsWithoutAToolCallHintAtAServerTrackedBeforeTheFake(): void
+    {
+        AgentCat::track(TrackingFixture::builder(), self::PROJECT);
+        $fake = AgentCat::fake();
+
+        $this->assertSame(
+            'Failed asserting that a tool call matching the filter was tracked. ' . self::TRACKED_WHILE_OFF_HINT,
+            $this->failureOf(static fn() => $fake->assertTracked(static fn(Event $e): bool => true)),
+        );
+        $this->assertSame(
+            'Failed asserting that 1 tool call(s) were tracked: 0 were. ' . self::TRACKED_WHILE_OFF_HINT,
+            $this->failureOf(static fn() => $fake->assertTrackedCount(1)),
+        );
+
+        $this->trackedHarness()->callTool('echo', ['msg' => 'hi']);
+
+        $this->assertSame(
+            'Failed asserting that a tool call matching the filter was tracked.',
+            $this->failureOf(static fn() => $fake->assertTracked(static fn(Event $e): bool => false)),
+            'a tool call was recorded: no hint',
+        );
+        $this->assertSame(
+            'Failed asserting that 2 tool call(s) were tracked: 1 were.',
+            $this->failureOf(static fn() => $fake->assertTrackedCount(2)),
+        );
+    }
+
+    public function testWithoutATrackWhileOffAnUntrackedBuilderStillThrows(): void
+    {
+        AgentCat::fake();
+
+        $error = Thrown::by(\InvalidArgumentException::class, static fn() => AgentCat::publishCustomEvent(TrackingFixture::builder(), self::PROJECT));
+
+        $this->assertSame(self::NOT_TRACKED, $error->getMessage());
     }
 
     public function testFakeInstallsItsClient(): void

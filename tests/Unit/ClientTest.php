@@ -7,6 +7,7 @@ namespace AgentCat\Tests\Unit;
 use AgentCat\Client;
 use AgentCat\Event;
 use AgentCat\Internal\Delivery\EventQueue;
+use AgentCat\Internal\Engine\TrackedServers;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Pipeline\QueuedEvent;
 use AgentCat\Tests\Support\Autowire;
@@ -37,6 +38,7 @@ final class ClientTest extends TestCase
     #[\Override]
     protected function tearDown(): void
     {
+        TrackedServers::resetSkipped(); // a track() while AgentCat is off marks the process
         EventQueue::setGlobal(null);
         Log::reset();
         $this->environment->restore();

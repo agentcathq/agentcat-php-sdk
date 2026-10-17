@@ -9,6 +9,7 @@ use AgentCat\Event;
 use AgentCat\Internal\ClientSeams;
 use AgentCat\Internal\Constants;
 use AgentCat\Internal\Delivery\EventQueue;
+use AgentCat\Internal\Engine\TrackedServers;
 use AgentCat\Testing\Internal\FakeLog;
 use AgentCat\Testing\Internal\InstantTransport;
 use AgentCat\Testing\Internal\RecordingSink;
@@ -79,7 +80,8 @@ final readonly class AgentCatFake
      */
     public function assertTracked(?\Closure $filter = null): void
     {
-        $this->check($this->matching($this->ofType(Constants::TOOLS_CALL_EVENT_TYPE), $filter) !== [], 'Failed asserting that a tool call matching the filter was tracked.');
+        $toolCalls = $this->ofType(Constants::TOOLS_CALL_EVENT_TYPE);
+        $this->check($this->matching($toolCalls, $filter) !== [], $this->hinted('Failed asserting that a tool call matching the filter was tracked.', $toolCalls));
     }
 
     /** Asserts that no event of any type was recorded. */
@@ -92,8 +94,9 @@ final readonly class AgentCatFake
     /** Asserts the number of tracked tool calls (`mcp:tools/call`); custom events do not count. */
     public function assertTrackedCount(int $count): void
     {
-        $actual = count($this->ofType(Constants::TOOLS_CALL_EVENT_TYPE));
-        $this->check($actual === $count, sprintf('Failed asserting that %d tool call(s) were tracked: %d were.', $count, $actual));
+        $toolCalls = $this->ofType(Constants::TOOLS_CALL_EVENT_TYPE);
+        $actual = count($toolCalls);
+        $this->check($actual === $count, $this->hinted(sprintf('Failed asserting that %d tool call(s) were tracked: %d were.', $count, $actual), $toolCalls));
     }
 
     /**
@@ -104,6 +107,16 @@ final readonly class AgentCatFake
     public function assertCustomEventPublished(?\Closure $filter = null): void
     {
         $this->check($this->matching($this->ofType(Constants::CUSTOM_EVENT_TYPE), $filter) !== [], 'Failed asserting that a custom event matching the filter was published.');
+    }
+
+    /**
+     * Adds why no tool call may have been recorded: a server tracked while AgentCat was off is not tracked at all.
+     *
+     * @param array<int, Event> $toolCalls
+     */
+    private function hinted(string $message, array $toolCalls): string
+    {
+        return $toolCalls === [] && TrackedServers::skipped() ? $message . ' A server was tracked while AgentCat was off: call AgentCat::fake() before track().' : $message;
     }
 
     /** @return array<int, Event> */

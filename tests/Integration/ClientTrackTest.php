@@ -69,6 +69,7 @@ final class ClientTrackTest extends TestCase
     {
         $this->environment = Environment::clear('AGENTCAT_PROJECT_ID', 'AGENTCAT_API_URL', 'MCPCAT_API_URL', 'AGENTCAT_ENABLED', 'APP_ENV');
         TrackedServers::resetIncomplete();
+        TrackedServers::resetSkipped();
         $this->logger = new MemoryLogger();
         Log::setLogger($this->logger);
         $this->transport = new RecordingTransport();
@@ -81,6 +82,7 @@ final class ClientTrackTest extends TestCase
     protected function tearDown(): void
     {
         TrackedServers::resetIncomplete(); // a failed track() marks the process
+        TrackedServers::resetSkipped(); // so does a track() while AgentCat is off
         Log::reset();
         $this->environment->restore();
     }

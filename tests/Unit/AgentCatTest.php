@@ -45,12 +45,14 @@ final class AgentCatTest extends TestCase
         $this->queue = new EventQueue(transport: $this->transport);
         $this->client = new Client(ClientSeams::of($this->queue, static fn(): bool => true));
         TrackedServers::resetIncomplete();
+        TrackedServers::resetSkipped();
     }
 
     #[\Override]
     protected function tearDown(): void
     {
         TrackedServers::resetIncomplete(); // a failed track() marks the process
+        TrackedServers::resetSkipped(); // so does a track() while AgentCat is off
         AgentCat::setClient(null);
         EventQueue::setGlobal(null); // N9: the default client of setClient(null) builds the global queue
         Log::reset();

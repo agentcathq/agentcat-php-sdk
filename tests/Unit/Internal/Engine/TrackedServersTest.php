@@ -18,6 +18,7 @@ final class TrackedServersTest extends TestCase
     protected function tearDown(): void
     {
         TrackedServers::resetIncomplete();
+        TrackedServers::resetSkipped();
     }
 
     public function testAServerHasTheStateItWasAddedWith(): void
@@ -59,6 +60,19 @@ final class TrackedServersTest extends TestCase
         TrackedServers::resetIncomplete();
         $this->assertFalse(TrackedServers::incomplete());
         $this->assertSame($state, TrackedServers::get($server), 'the reset keeps the tracked servers');
+    }
+
+    public function testTheSkippedFlagIsProcessWideUntilReset(): void
+    {
+        TrackedServers::resetSkipped();
+        $this->assertFalse(TrackedServers::skipped());
+
+        TrackedServers::markSkipped();
+
+        $this->assertTrue(TrackedServers::skipped());
+        $this->assertFalse(TrackedServers::incomplete(), 'a separate flag');
+        TrackedServers::resetSkipped();
+        $this->assertFalse(TrackedServers::skipped());
     }
 
     private function state(object $server): TrackedServer

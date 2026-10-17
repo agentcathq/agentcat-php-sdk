@@ -6,8 +6,8 @@ namespace AgentCat\Internal\Engine;
 
 /**
  * Every server tracked in this process, whichever `Client` tracked it. The first `track()` of a server owns it, and
- * a later one from any client changes nothing. An entry goes away with its server. A process-wide flag also records
- * that a server could not be tracked or read.
+ * a later one from any client changes nothing. An entry goes away with its server. Two process-wide flags also record
+ * that a server could not be tracked or read, and that `track()` ran while AgentCat was off.
  *
  * @internal
  */
@@ -17,6 +17,8 @@ final class TrackedServers
     private static ?\WeakMap $servers = null;
 
     private static bool $incomplete = false;
+
+    private static bool $skipped = false;
 
     /** The tracking state of the server, or null when no client tracks it. */
     public static function get(object $server): ?TrackedServer
@@ -48,6 +50,28 @@ final class TrackedServers
     public static function resetIncomplete(): void
     {
         self::$incomplete = false;
+    }
+
+    /**
+     * Records that a `track()` returned without tracking because AgentCat was off (D31, D44). A server tracked like
+     * that is not tracked at all: once `AgentCat::fake()` turns a client on, `publishCustomEvent()` logs for it
+     * instead of throwing, and the fake's assertions say why no tool call was recorded.
+     */
+    public static function markSkipped(): void
+    {
+        self::$skipped = true;
+    }
+
+    /** True once `markSkipped()` ran in this process. */
+    public static function skipped(): bool
+    {
+        return self::$skipped;
+    }
+
+    /** Tests only: forgets `markSkipped()`. The tracked servers stay. */
+    public static function resetSkipped(): void
+    {
+        self::$skipped = false;
     }
 
     /** @return \WeakMap<object, TrackedServer> */

@@ -46,6 +46,8 @@ final class PublishCustomEventTest extends TestCase
 
     private const string NOT_TRACKED_AFTER_FAILURE = 'Warning: Failed to publish custom event - the server is not tracked (see the earlier AgentCat log line)';
 
+    private const string NOT_TRACKED_WHILE_OFF = 'Warning: Failed to publish custom event - the server is not tracked (track() ran while AgentCat was off; call AgentCat::fake() before track())';
+
     private Environment $environment;
 
     private MemoryLogger $logger;
@@ -69,12 +71,14 @@ final class PublishCustomEventTest extends TestCase
         $this->queue = new EventQueue(transport: $this->transport, exporters: $this->exporter);
         $this->client = new Client(ClientSeams::of($this->queue, static fn(): bool => true));
         TrackedServers::resetIncomplete(); // no failed track() before this test
+        TrackedServers::resetSkipped(); // and no track() while AgentCat was off
     }
 
     #[\Override]
     protected function tearDown(): void
     {
         TrackedServers::resetIncomplete();
+        TrackedServers::resetSkipped();
         Log::reset();
         $this->environment->restore();
     }
@@ -496,6 +500,34 @@ final class PublishCustomEventTest extends TestCase
         $this->assertSame([$line, $line], $this->logger->records, 'one line per call');
         $error = Thrown::by(\InvalidArgumentException::class, fn() => $this->client->publishCustomEvent($builder, null));
         $this->assertSame(self::NO_PROJECT, $error->getMessage(), 'the project ID is still checked first');
+    }
+
+    /** A server tracked while AgentCat was off (test mode, D31) was not tracked at all: an enabled client logs. */
+    public function testAfterATrackWhileOffAnUntrackedServerLogsInsteadOfThrowing(): void
+    {
+        $off = new Client(ClientSeams::of($this->queue, static fn(): bool => false));
+        $builder = TrackingFixture::builder();
+        $off->track($builder, self::PROJECT);
+
+        $this->client->publishCustomEvent($builder, self::PROJECT, new CustomEvent(sessionId: 'ses_1'));
+        $this->client->publishCustomEvent($builder->build(), self::PROJECT, new CustomEvent(sessionId: 'ses_1'));
+
+        $this->assertNothingQueued();
+        $line = ['level' => LogLevel::WARNING, 'message' => self::NOT_TRACKED_WHILE_OFF];
+        $this->assertSame([$line, $line], $this->logger->records, 'one line per call');
+        $error = Thrown::by(\InvalidArgumentException::class, fn() => $this->client->publishCustomEvent($builder, null));
+        $this->assertSame(self::NO_PROJECT, $error->getMessage(), 'the project ID is still checked first');
+    }
+
+    public function testTheFailedTrackLineWinsOverTheTrackWhileOffLine(): void
+    {
+        (new Client(ClientSeams::of($this->queue, static fn(): bool => false)))->track(TrackingFixture::builder(), self::PROJECT);
+        $this->client->track(new \stdClass(), self::PROJECT); // fails: marks the process incomplete
+        $this->logger->records = [];
+
+        $this->client->publishCustomEvent(TrackingFixture::builder(), self::PROJECT);
+
+        $this->assertSame([self::NOT_TRACKED_AFTER_FAILURE], $this->logger->messages());
     }
 
     #[Group('ac-01-68')]

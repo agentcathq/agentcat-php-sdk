@@ -59,9 +59,9 @@ final class AgentCat
      * wins over it. No server or SDK fields and no hooks apply.
      *
      * The event is queued, not sent: AgentCat delivers it like any other event. Apart from the two errors below, it
-     * never throws: a failure is logged. When a `track()` in this process could not track a server, a server that is
-     * not tracked logs a warning instead of the second error. In test environments it validates `$projectId` and then
-     * does nothing, like `track()` (see `AGENTCAT_ENABLED` there).
+     * never throws: a failure is logged. When a `track()` in this process could not track a server, or ran while
+     * AgentCat was off, a server that is not tracked logs a warning instead of the second error. In test environments
+     * it validates `$projectId` and then does nothing, like `track()` (see `AGENTCAT_ENABLED` there).
      *
      * In a file without `declare(strict_types=1)`, PHP turns an int, float or bool first argument into a session ID
      * string.
@@ -104,10 +104,12 @@ final class AgentCat
      * Starts recording for your test suite: installs a client that records every event and sends nothing, and
      * returns the fake to assert on. Restore the real client with `AgentCat::setClient(null)` in `tearDown()`.
      *
+     * Call it first, before the application builds its servers. In a test environment, a server tracked before
+     * `fake()` is not tracked at all: no tool call of it is recorded. With `AGENTCAT_ENABLED=true`, a server tracked
+     * before `fake()` keeps the client that tracked it.
+     *
      * While the fake is the shared client, AgentCat logs to the fake's `logs()` only, and adopts no Builder's PSR-3
      * logger. `setClient()` brings back the log routing from before the first `fake()`.
-     *
-     * Call it before the server is tracked: a Builder tracked earlier keeps the client that tracked it.
      *
      * The fake records whatever `AGENTCAT_ENABLED` says, so a CI that sets `AGENTCAT_ENABLED=false` still works. Test
      * environments without `fake()` stay silent: `track()` does nothing there.

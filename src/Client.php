@@ -76,6 +76,8 @@ final readonly class Client
     {
         try {
             if (!($this->enabled)()) {
+                TrackedServers::markSkipped(); // a fake() after this finds no tracked server: it must not throw then
+
                 return $server; // D44 AGENTCAT_ENABLED, else D31: nothing in test environments unless fake()
             }
             $options ??= new Options();
@@ -143,9 +145,9 @@ final readonly class Client
      * wins over it. No server or SDK fields and no hooks apply.
      *
      * The event is queued, not sent: AgentCat delivers it like any other event. Apart from the two errors below, it
-     * never throws: a failure is logged. When a `track()` in this process could not track a server, a server that is
-     * not tracked logs a warning instead of the second error. In test environments it validates `$projectId` and then
-     * does nothing, like `track()` (see `AGENTCAT_ENABLED` there).
+     * never throws: a failure is logged. When a `track()` in this process could not track a server, or ran while
+     * AgentCat was off, a server that is not tracked logs a warning instead of the second error. In test environments
+     * it validates `$projectId` and then does nothing, like `track()` (see `AGENTCAT_ENABLED` there).
      *
      * In a file without `declare(strict_types=1)`, PHP turns an int, float or bool first argument into a session ID
      * string.
@@ -175,6 +177,12 @@ final readonly class Client
                 if (TrackedServers::incomplete()) {
                     // AgentCat's own failure, logged before: it must not throw into the customer's code
                     Log::write('Warning: Failed to publish custom event - the server is not tracked (see the earlier AgentCat log line)');
+
+                    return;
+                }
+                if (TrackedServers::skipped()) {
+                    // a test that tracked the server before fake(): its code must not get the exception
+                    Log::write('Warning: Failed to publish custom event - the server is not tracked (track() ran while AgentCat was off; call AgentCat::fake() before track())');
 
                     return;
                 }
