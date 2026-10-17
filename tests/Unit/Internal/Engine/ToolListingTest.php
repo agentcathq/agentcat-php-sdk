@@ -76,6 +76,17 @@ final class ToolListingTest extends TestCase
         $this->assertNull($server->registry);
     }
 
+    /** TS listWrap: `!Array.isArray(tools) || tools.length === 0`. */
+    #[Group('ac-04-28')]
+    public function testAListingWithoutAToolListIsServedAsIs(): void
+    {
+        $server = $this->server();
+
+        $this->assertNull(ToolListing::apply($server, null));
+        $this->assertSame([ToolListInjector::NO_TOOLS_WARNING], $this->logger->messages());
+        $this->assertNull($server->registry);
+    }
+
     public function testListingAddsGetMoreToolsAndRecordsRegistry(): void
     {
         $server = $this->server();

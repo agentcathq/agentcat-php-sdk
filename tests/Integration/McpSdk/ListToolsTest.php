@@ -199,6 +199,7 @@ final class ListToolsTest extends TestCase
         $result = $this->harness($builder)->listTools();
 
         $this->assertEquals((object) ['content' => [(object) ['type' => 'text', 'text' => 'odd']], 'isError' => false], $result);
+        $this->assertSame([ToolListInjector::NO_TOOLS_WARNING], $this->logger->messages(), 'TS listWrap: the answer has no tools array');
     }
 
     #[Group('ac-02-11')]
@@ -432,7 +433,7 @@ final class ListToolsTest extends TestCase
         $result = $this->customerListing(true, $listing);
 
         $this->assertEquals($twin, $result);
-        $this->assertSame([], $this->logger->messages());
+        $this->assertSame([ToolListInjector::NO_TOOLS_WARNING], $this->logger->messages(), 'TS listWrap: `tools` is not an array');
     }
 
     public function testAFailedInjectionServesTheOriginalListing(): void

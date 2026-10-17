@@ -53,15 +53,13 @@ final readonly class ListToolsInterceptor implements RequestHandlerInterface
             return $response;
         }
         try {
-            $listing = Trees::listing($response->result); // the library's own wire tree: AgentCat changes only its `tools`
-            if ($listing === null) {
-                return $response; // another answer, or no tool list on the wire
-            }
-            [$original, $tree, $listed] = $listing;
-            $tools = ToolListing::apply($this->server, $listed);
-            if ($tools === null) {
+            // The library's own wire tree: AgentCat changes only its `tools`. Null: another answer, or no tool list.
+            $listing = Trees::listing($response->result);
+            $tools = ToolListing::apply($this->server, $listing[2] ?? null);
+            if ($listing === null || $tools === null) {
                 return $response;
             }
+            [$original, $tree] = $listing;
             $tree->tools = $tools;
 
             return new Response($response->getId(), new WireListToolsResult($original, $tree));

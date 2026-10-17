@@ -11,15 +11,16 @@ use AgentCat\Internal\Support\ErrorText;
 final class ToolListing
 {
     /**
-     * TS listWrap after the original handler: an empty listing is served as is (B11, D15); a degraded injection keeps
-     * the previous registries (Plan A ledger carry).
+     * TS listWrap after the original handler: a listing without a tool list or with an empty one is served as is
+     * (`!Array.isArray(tools) || tools.length === 0`, B11, D15); a degraded injection keeps the previous registries
+     * (Plan A ledger carry).
      *
-     * @param list<mixed> $tools
+     * @param list<mixed>|null $tools null when the answer has no tool list
      * @return list<mixed>|null the tools to advertise, or null to serve the original listing
      */
-    public static function apply(TrackedServer $server, array $tools): ?array
+    public static function apply(TrackedServer $server, ?array $tools): ?array
     {
-        if ($tools === []) {
+        if ($tools === null || $tools === []) {
             Log::write(ToolListInjector::NO_TOOLS_WARNING);
 
             return null;
