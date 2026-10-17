@@ -5,16 +5,21 @@ declare(strict_types=1);
 namespace AgentCat\Internal\Transport;
 
 use AgentCat\Internal\Logging\Log;
+use AgentCat\Internal\SdkVersion;
 
 /**
  * What `CurlTransport` and `CurlHttpChannel` share about ext-curl: the check that every curl function they call
  * exists (a PHP without ext-curl, or with some of its functions in `disable_functions`), made once and logged once
- * (D32), the options of a `POST`, and the texts of a failed transfer and of a failed multi handle.
+ * (D32), the User-Agent, the timeouts and the options of a `POST`, the bound of one wait, and the texts of a failed
+ * transfer and of a failed multi handle. `CurlMulti` runs the transfers.
  *
  * @internal
  */
 final class CurlSupport
 {
+    /** The longest curl timeout: 2^31 - 1 ms, what a 32-bit C `long` (curl's option type on Windows) carries. */
+    public const float MAX_TIMEOUT_SECONDS = 2_147_483.647;
+
     /** Every curl function `CurlTransport` and `CurlHttpChannel` call. */
     private const array FUNCTIONS = [
         'curl_init', 'curl_setopt_array', 'curl_error', 'curl_strerror', 'curl_getinfo', 'curl_multi_init',
@@ -57,30 +62,65 @@ final class CurlSupport
         return $this->usable === true;
     }
 
+    /** `agentcat-php/<SDK version> php/<PHP version>`. */
+    public static function userAgent(): string
+    {
+        return 'agentcat-php/' . SdkVersion::get() . ' php/' . PHP_VERSION;
+    }
+
     /**
-     * The options of one `POST`: `$headers` (`Name: value` lines) and the SDK User-Agent, http and https only, no
-     * redirects, no signals, connect and total timeouts rounded to milliseconds. The response headers stay out of
-     * the body.
+     * `$seconds` in whole milliseconds, for `CURLOPT_CONNECTTIMEOUT_MS` and `CURLOPT_TIMEOUT_MS`.
      *
-     * @param list<string> $headers
+     * @throws \InvalidArgumentException for NAN, for less than 0.0005 (it would round to 0 ms, curl's "no timeout", or
+     *                                   to a negative value curl rejects) and for more than MAX_TIMEOUT_SECONDS (INF
+     *                                   included): a programming error, the queue passes constants
+     */
+    public static function timeoutMilliseconds(float $seconds): int
+    {
+        // Checked before the cast: on PHP 8.5, (int) of a float that is not finite or beyond the int range warns.
+        if (is_nan($seconds) || $seconds < 0.0005 || $seconds > self::MAX_TIMEOUT_SECONDS) {
+            throw new \InvalidArgumentException(sprintf(
+                'A curl timeout must round to 1 through 2147483647 milliseconds, got %s seconds',
+                var_export($seconds, true),
+            ));
+        }
+
+        return (int) round($seconds * 1000);
+    }
+
+    /** The bound of one wait: `$seconds` within 0 and `$max`. NAN is 0 before `min()`/`max()` see it (PHP 8.4 changed them). */
+    public static function waitSeconds(float $seconds, float $max): float
+    {
+        return is_nan($seconds) ? 0.0 : max(0.0, min($seconds, $max));
+    }
+
+    /**
+     * The options of one `POST`. `$capture`, the options that take the response (`CURLOPT_RETURNTRANSFER`, or the
+     * write and header functions), come first: curl_setopt_array() stops at the first option it rejects, and a
+     * handle without them would print the response body to STDOUT, the stdio MCP stream. Then the request:
+     * `$headers` (`Name: value` lines) and the SDK User-Agent, http and https only, no redirects, no signals, and
+     * the connect and total timeouts. The response headers stay out of the body.
+     *
+     * @param array<int, mixed> $capture
+     * @param list<string>      $headers
      *
      * @return array<int, mixed>
      */
-    public static function postOptions(string $url, string $body, array $headers, float $connectTimeoutSeconds, float $totalTimeoutSeconds): array
+    public static function postOptions(array $capture, string $url, string $body, array $headers, int $connectTimeoutMs, int $totalTimeoutMs): array
     {
-        return [
+        return $capture + [
             CURLOPT_URL => $url,
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => $body,
             // A blank `Expect:` stops libcurl from waiting for `100 Continue` on large bodies.
             CURLOPT_HTTPHEADER => [...$headers, 'Expect:'],
-            CURLOPT_USERAGENT => CurlTransport::userAgent(),
+            CURLOPT_USERAGENT => self::userAgent(),
             CURLOPT_HEADER => false,
             CURLOPT_FOLLOWLOCATION => false,
             CURLOPT_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
             CURLOPT_NOSIGNAL => true,
-            CURLOPT_CONNECTTIMEOUT_MS => (int) round($connectTimeoutSeconds * 1000),
-            CURLOPT_TIMEOUT_MS => (int) round($totalTimeoutSeconds * 1000),
+            CURLOPT_CONNECTTIMEOUT_MS => $connectTimeoutMs,
+            CURLOPT_TIMEOUT_MS => $totalTimeoutMs,
         ];
     }
 

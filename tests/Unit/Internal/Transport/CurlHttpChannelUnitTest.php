@@ -9,10 +9,11 @@ use AgentCat\Internal\Transport\CurlHttpChannel;
 use AgentCat\Internal\Transport\HttpRequest;
 use AgentCat\Internal\Transport\HttpResponse;
 use AgentCat\Tests\Support\MemoryLogger;
+use AgentCat\Tests\Support\Thrown;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
-/** No transfer starts here: nothing is pumped, or curl is "missing". tests/Integration/Transport covers the transfers. */
+/** No transfer starts here: nothing is pumped, curl is "missing", or every add is refused. tests/Integration/Transport covers the transfers. */
 final class CurlHttpChannelUnitTest extends TestCase
 {
     private const string FULL = 'WARN: AgentCat telemetry export queue full, dropping the oldest request';
@@ -36,15 +37,47 @@ final class CurlHttpChannelUnitTest extends TestCase
 
     public function testAFullQueueDropsTheOldestRequestWithOneLineEach(): void
     {
-        $channel = new CurlHttpChannel();
+        // Every add is refused: one pump then fails each waiting request through its callback, and none is sent.
+        $swallowed = [];
+        $channel = new CurlHttpChannel(
+            multiStatus: static fn(string $function, int $code): int => $function === 'curl_multi_add_handle' ? CURLM_INTERNAL_ERROR : $code,
+            onSwallowed: static function (\Throwable $error) use (&$swallowed): void {
+                $swallowed[] = $error;
+            },
+        );
+        $ran = [];
 
         for ($i = 0; $i < CurlHttpChannel::MAX_WAITING + 2; ++$i) {
-            $channel->post(new HttpRequest('http://127.0.0.1:9/r' . $i, [], '{}'), static function (): void {});
+            $channel->post(new HttpRequest('http://127.0.0.1:9/r' . $i, [], '{}'), static function () use (&$ran, $i): void {
+                $ran[] = $i;
+            });
         }
 
         $this->assertSame(1000, $channel->pending());
         $this->assertSame(0, $channel->inTransfer());
         $this->assertSame([self::FULL, self::FULL], $this->logger->messages());
+        $channel->pump();
+        $this->assertSame(range(2, 1001), $ran, 'r0 and r1, the oldest, were dropped');
+        $this->assertSame(0, $channel->pending());
+        $this->assertSame([], $swallowed);
+    }
+
+    /** @return iterable<string, array{float, float}> */
+    public static function badTimeouts(): iterable
+    {
+        yield 'connect NAN' => [NAN, 10.0];
+        yield 'connect negative' => [-1.0, 10.0];
+        yield 'total INF' => [2.0, INF];
+        yield 'total zero (curl: no timeout)' => [2.0, 0.0];
+    }
+
+    /** M2: a timeout curl cannot take is a programming error; the queue builds the channel with the defaults. */
+    #[DataProvider('badTimeouts')]
+    public function testATimeoutCurlCannotTakeIsRejectedAtConstruction(float $connectTimeoutSeconds, float $totalTimeoutSeconds): void
+    {
+        $error = Thrown::by(\InvalidArgumentException::class, static fn(): CurlHttpChannel => new CurlHttpChannel($connectTimeoutSeconds, $totalTimeoutSeconds));
+
+        $this->assertStringStartsWith('A curl timeout must round to 1 through 2147483647 milliseconds, got ', $error->getMessage());
     }
 
     public function testWithoutACurlFunctionEveryRequestIsDroppedWithOneLine(): void

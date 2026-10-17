@@ -10,7 +10,8 @@ use AgentCat\Internal\Support\ErrorText;
 /**
  * The second curl_multi handle of a queue: exporter and diagnostics requests, no retries (TypeScript sends each once),
  * connect and total timeouts, http/https only, no redirects. `pump()` never blocks. PHP warnings are suppressed and
- * every throwable is swallowed (D32): a failed request reaches only its callback.
+ * every throwable is swallowed (D32; tests see them through `$onSwallowed`): a failed request reaches only its
+ * callback. `CurlMulti` runs the transfers.
  *
  * @internal
  */
@@ -32,34 +33,38 @@ final class CurlHttpChannel implements HttpChannel
     /** The reason phrase of a status line; the last status line of a response wins. */
     private const string STATUS_LINE = '~\AHTTP/\S+\s+\d{3}(?:[ \t]+([^\r\n]*))?~';
 
-    /** Null until the first transfer. */
-    private ?\CurlMultiHandle $multi = null;
-
     /** The ext-curl check, made at the first post. */
     private readonly CurlSupport $curl;
 
-    /** @var \Closure(string, int): int */
-    private readonly \Closure $multiStatus;
+    /** @var CurlMulti<HttpTransfer> the requests in transfer */
+    private readonly CurlMulti $multi;
+
+    private readonly int $connectTimeoutMs;
+
+    private readonly int $totalTimeoutMs;
 
     /** @var list<array{request: HttpRequest, onDone: \Closure(HttpResponse): void}> */
     private array $waiting = [];
 
-    /** @var array<int, array{handle: \CurlHandle, onDone: \Closure(HttpResponse): void, reason: string, body: string}> transfers in `$multi`, keyed by `spl_object_id($handle)` */
-    private array $active = [];
-
     /**
-     * @param (\Closure(string): bool)|null     $functionExists tests only: tells whether a curl function exists. Default `function_exists()`.
-     * @param (\Closure(string, int): int)|null $multiStatus    tests only: receives the function name and the CURLM code of each
-     *                                                          `curl_multi_add_handle()` and `curl_multi_exec()` call, returns the code to act on
+     * @param (\Closure(string): bool)|null       $functionExists tests only: tells whether a curl function exists. Default `function_exists()`.
+     * @param (\Closure(string, int): int)|null   $multiStatus    tests only: receives the function name and the CURLM code of each
+     *                                                            `curl_multi_add_handle()` and `curl_multi_exec()` call, returns the code to act on
+     * @param (\Closure(\Throwable): void)|null $onSwallowed    tests only: sees every throwable the channel swallows (D32); must not throw
+     *
+     * @throws \InvalidArgumentException for a timeout curl cannot take (`CurlSupport::timeoutMilliseconds()`)
      */
     public function __construct(
-        private readonly float $connectTimeoutSeconds = CurlTransport::CONNECT_TIMEOUT_SECONDS,
-        private readonly float $totalTimeoutSeconds = CurlTransport::TOTAL_TIMEOUT_SECONDS,
+        float $connectTimeoutSeconds = CurlTransport::CONNECT_TIMEOUT_SECONDS,
+        float $totalTimeoutSeconds = CurlTransport::TOTAL_TIMEOUT_SECONDS,
         ?\Closure $functionExists = null,
         ?\Closure $multiStatus = null,
+        private readonly ?\Closure $onSwallowed = null,
     ) {
+        $this->connectTimeoutMs = CurlSupport::timeoutMilliseconds($connectTimeoutSeconds);
+        $this->totalTimeoutMs = CurlSupport::timeoutMilliseconds($totalTimeoutSeconds);
         $this->curl = new CurlSupport(self::NO_CURL, $functionExists);
-        $this->multiStatus = $multiStatus ?? static fn(string $function, int $code): int => $code;
+        $this->multi = new CurlMulti($multiStatus);
     }
 
     #[\Override]
@@ -78,7 +83,7 @@ final class CurlHttpChannel implements HttpChannel
     #[\Override]
     public function pump(): void
     {
-        if ($this->waiting === [] && $this->active === []) {
+        if ($this->waiting === [] && $this->multi->count() === 0) {
             return; // nothing posted (or nothing can be): no curl call
         }
         $this->guarded(function (): void {
@@ -91,32 +96,25 @@ final class CurlHttpChannel implements HttpChannel
     #[\Override]
     public function pending(): int
     {
-        return count($this->waiting) + count($this->active);
+        return count($this->waiting) + $this->multi->count();
     }
 
     #[\Override]
     public function waitForActivity(float $seconds): void
     {
-        if ($this->active === []) {
+        if ($this->multi->count() === 0) {
             return; // a waiting request starts at the next pump()
         }
-        $timeout = is_nan($seconds) ? 0.0 : max(0.0, min($seconds, self::MAX_WAIT_SECONDS));
+        $timeout = CurlSupport::waitSeconds($seconds, self::MAX_WAIT_SECONDS);
         $this->guarded(function () use ($timeout): void {
-            if (curl_multi_select($this->multi(), $timeout) === -1) {
-                usleep(1000);
-            }
+            $this->multi->select($timeout);
         });
     }
 
     /** Transfers in the multi handle (tests). */
     public function inTransfer(): int
     {
-        return count($this->active);
-    }
-
-    private function multi(): \CurlMultiHandle
-    {
-        return $this->multi ??= curl_multi_init();
+        return $this->multi->count();
     }
 
     /** @param \Closure(): void $work */
@@ -126,74 +124,50 @@ final class CurlHttpChannel implements HttpChannel
 
         try {
             $work();
-        } catch (\Throwable) {
-            // a side request must never reach the host (D32)
+        } catch (\Throwable $error) {
+            $this->swallowed($error); // a side request must never reach the host (D32)
         }
         restore_error_handler();
+    }
+
+    private function swallowed(\Throwable $error): void
+    {
+        if ($this->onSwallowed instanceof \Closure) {
+            ($this->onSwallowed)($error);
+        }
     }
 
     /** Starts waiting requests while slots are free; the next collect() runs their first curl_multi_exec(). */
     private function launch(): void
     {
-        while (count($this->active) < self::MAX_CONCURRENT && $this->waiting !== []) {
+        while ($this->multi->count() < self::MAX_CONCURRENT && $this->waiting !== []) {
             $next = array_shift($this->waiting);
-            $handle = curl_init();
-            if ($handle === false) {
-                $this->finish($next['onDone'], HttpResponse::failed('cURL error: curl_init() failed'));
-
-                continue;
-            }
-            $id = spl_object_id($handle);
+            $transfer = new HttpTransfer($next['onDone']);
 
             try {
-                curl_setopt_array($handle, $this->options($next['request'], $id));
-            } catch (\Throwable $error) {
-                // a URL with a NUL byte (ValueError): the request fails, the others go on
-                $this->finish($next['onDone'], HttpResponse::failed(ErrorText::of($error)));
-
-                continue;
+                $error = $this->multi->open($this->options($next['request'], $transfer), $transfer);
+            } catch (\Throwable $exception) {
+                $error = ErrorText::of($exception); // a URL with a NUL byte (ValueError): this request fails, the others go on
             }
-            // Recorded before the add: a signal drain that runs right after the add must see this transfer.
-            $this->active[$id] = ['handle' => $handle, 'onDone' => $next['onDone'], 'reason' => '', 'body' => ''];
-            $code = ($this->multiStatus)('curl_multi_add_handle', curl_multi_add_handle($this->multi(), $handle));
-            if ($code !== CURLM_OK) {
-                unset($this->active[$id]);
-                // PHP keeps the handle in its list of the multi handle even when libcurl refused it.
-                curl_multi_remove_handle($this->multi(), $handle);
-                $this->finish($next['onDone'], HttpResponse::failed(CurlSupport::multiError($code)));
+            if ($error !== null) {
+                $this->finish($transfer->onDone, HttpResponse::failed($error));
             }
         }
     }
 
-    /** Runs the transfers, then reads every transfer that this run finished and runs its callback. */
+    /** Runs the transfers, then runs the callback of every transfer that this run finished (or that a failed run dropped). */
     private function collect(): void
     {
-        $code = ($this->multiStatus)('curl_multi_exec', curl_multi_exec($this->multi(), $running));
-        if ($code !== CURLM_OK) {
-            // The multi handle cannot run its transfers: fail them, so that no flush waits for them forever.
-            $active = $this->active;
-            $this->active = [];
-            foreach ($active as $entry) {
-                curl_multi_remove_handle($this->multi(), $entry['handle']);
-                $this->finish($entry['onDone'], HttpResponse::failed(CurlSupport::multiError($code)));
-            }
-        }
-        while (true) {
-            /** @var array{msg: int, result: int, handle: \CurlHandle}|false $info the documented shape */
-            $info = curl_multi_info_read($this->multi());
-            if ($info === false) {
-                return;
-            }
-            $id = spl_object_id($info['handle']);
-            $entry = $this->active[$id] ?? null;
-            unset($this->active[$id]);
-            curl_multi_remove_handle($this->multi(), $info['handle']);
-            if ($entry !== null) {
-                $this->finish($entry['onDone'], $info['result'] === CURLE_OK
-                    ? new HttpResponse(curl_getinfo($info['handle'], CURLINFO_RESPONSE_CODE), $entry['reason'], $entry['body'])
-                    : HttpResponse::failed(CurlSupport::transferError($info['handle'], $info['result'])));
-            }
-        }
+        $this->multi->run(
+            function (HttpTransfer $transfer, \CurlHandle $handle, int $result): void {
+                $this->finish($transfer->onDone, $result === CURLE_OK
+                    ? new HttpResponse(curl_getinfo($handle, CURLINFO_RESPONSE_CODE), $transfer->reason, $transfer->body)
+                    : HttpResponse::failed(CurlSupport::transferError($handle, $result)));
+            },
+            function (HttpTransfer $transfer, string $error): void {
+                $this->finish($transfer->onDone, HttpResponse::failed($error));
+            },
+        );
     }
 
     /** @param \Closure(HttpResponse): void $onDone */
@@ -201,35 +175,39 @@ final class CurlHttpChannel implements HttpChannel
     {
         try {
             $onDone($response);
-        } catch (\Throwable) {
-            // our callbacks log and never throw; a broken one must not stop the others
+        } catch (\Throwable $error) {
+            $this->swallowed($error); // our callbacks log and never throw; a broken one must not stop the others
         }
     }
 
-    /** @return array<int, mixed> */
-    private function options(HttpRequest $request, int $id): array
+    /**
+     * The options of `$request`: the write and header functions first (`CurlSupport::postOptions()`). They hold only
+     * `$transfer`, so a finished handle frees it and no handle holds the channel.
+     *
+     * @return array<int, mixed>
+     */
+    private function options(HttpRequest $request, HttpTransfer $transfer): array
     {
         $headers = [];
         foreach ($request->headers as $name => $value) {
             $headers[] = $name . ': ' . $value;
         }
+        $capture = [
+            CURLOPT_WRITEFUNCTION => static function (\CurlHandle $handle, string $data) use ($transfer): int {
+                // Up to MAX_BODY_BYTES are kept; the rest is read and dropped.
+                $transfer->body .= substr($data, 0, self::MAX_BODY_BYTES - strlen($transfer->body));
 
-        return CurlSupport::postOptions($request->url, $request->body, $headers, $this->connectTimeoutSeconds, $this->totalTimeoutSeconds) + [
-            CURLOPT_HEADERFUNCTION => function (\CurlHandle $handle, string $line) use ($id): int {
-                if (isset($this->active[$id]) && preg_match(self::STATUS_LINE, $line, $match) === 1) {
-                    $this->active[$id]['reason'] = $match[1] ?? '';
+                return strlen($data); // a shorter return value would abort the transfer
+            },
+            CURLOPT_HEADERFUNCTION => static function (\CurlHandle $handle, string $line) use ($transfer): int {
+                if (preg_match(self::STATUS_LINE, $line, $match) === 1) {
+                    $transfer->reason = $match[1] ?? '';
                 }
 
                 return strlen($line);
             },
-            CURLOPT_WRITEFUNCTION => function (\CurlHandle $handle, string $data) use ($id): int {
-                if (isset($this->active[$id])) {
-                    // Up to MAX_BODY_BYTES are kept; the rest is read and dropped.
-                    $this->active[$id]['body'] .= substr($data, 0, self::MAX_BODY_BYTES - strlen($this->active[$id]['body']));
-                }
-
-                return strlen($data); // a shorter return value would abort the transfer
-            },
         ];
+
+        return CurlSupport::postOptions($capture, $request->url, $request->body, $headers, $this->connectTimeoutMs, $this->totalTimeoutMs);
     }
 }

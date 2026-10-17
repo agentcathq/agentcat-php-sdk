@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace AgentCat\Tests\Integration\Transport;
 
 use AgentCat\Internal\Logging\Log;
+use AgentCat\Internal\Support\ErrorText;
 use AgentCat\Internal\Transport\CurlHttpChannel;
+use AgentCat\Internal\Transport\CurlTransport;
 use AgentCat\Internal\Transport\HttpChannel;
 use AgentCat\Internal\Transport\HttpRequest;
 use AgentCat\Internal\Transport\HttpResponse;
@@ -22,6 +24,9 @@ final class CurlHttpChannelTest extends TestCase
     private static ?MockCollector $collector = null;
 
     private MemoryLogger $logger;
+
+    /** @var list<\Throwable> what the channels of this test swallowed (I2: the normal paths swallow nothing) */
+    private array $swallowed = [];
 
     #[\Override]
     public static function setUpBeforeClass(): void
@@ -47,13 +52,14 @@ final class CurlHttpChannelTest extends TestCase
     protected function tearDown(): void
     {
         Log::reset();
+        $this->assertSame([], array_map(ErrorText::of(...), $this->swallowed), 'a channel swallowed a throwable');
     }
 
     #[MaximumDuration(3000)]
     public function testAPostCarriesItsHeadersAndBodyAndReportsTheAnswer(): void
     {
         $url = $this->collector()->scenario([['status' => 404, 'body' => 'nope']]);
-        $channel = new CurlHttpChannel();
+        $channel = $this->channel();
         $responses = [];
         $channel->post(
             new HttpRequest($url . '/v1/traces', ['Content-Type' => 'application/json', 'x-api-key' => 'k'], '{"a":1}'),
@@ -86,8 +92,8 @@ final class CurlHttpChannelTest extends TestCase
     #[MaximumDuration(3000)]
     public function testARefusedConnectionAndATimeoutAreErrorsNotExceptions(): void
     {
-        $slow = $this->collector()->scenario([], ['status' => 200, 'delayMs' => 2000]);
-        $channel = new CurlHttpChannel(1.0, 0.3);
+        $slow = $this->collector()->scenario([], ['status' => 200, 'delayMs' => 1000]);
+        $channel = $this->channel(1.0, 0.3);
         $errors = [];
         $record = static function (HttpResponse $response) use (&$errors): void {
             $errors[] = $response->error;
@@ -110,7 +116,7 @@ final class CurlHttpChannelTest extends TestCase
     {
         $target = $this->collector()->scenario();
         $moved = $this->collector()->scenario([['status' => 301, 'body' => '', 'location' => $target . '/followed']]);
-        $channel = new CurlHttpChannel();
+        $channel = $this->channel();
         $responses = [];
         $record = static function (HttpResponse $response) use (&$responses): void {
             $responses[] = $response;
@@ -137,7 +143,7 @@ final class CurlHttpChannelTest extends TestCase
     public function testACallbackCanPostTheNextRequestOfASequence(): void
     {
         $url = $this->collector()->scenario();
-        $channel = new CurlHttpChannel();
+        $channel = $this->channel();
         $order = [];
         $channel->post(new HttpRequest($url . '/one', [], '1'), static function () use ($channel, $url, &$order): void {
             $order[] = 'one';
@@ -155,7 +161,7 @@ final class CurlHttpChannelTest extends TestCase
     public function testARequestThatACallbackPostsStartsInTheSamePump(): void
     {
         $url = $this->collector()->scenario();
-        $channel = new CurlHttpChannel();
+        $channel = $this->channel();
         $posted = new \ArrayObject();
         $channel->post(new HttpRequest($url . '/one', [], '1'), static function () use ($channel, $url, $posted): void {
             $channel->post(new HttpRequest($url . '/two', [], '2'), static function (): void {});
@@ -175,18 +181,29 @@ final class CurlHttpChannelTest extends TestCase
         $this->assertCount(2, $this->collector()->requests($url));
     }
 
-    /** A long-running worker keeps its channel: a finished transfer leaves no handle (and no reference cycle) behind. */
+    /**
+     * A long-running worker keeps its channel: a finished transfer leaves its handle in no multi handle (the request's
+     * callback is freed with it), and the channel is in no reference cycle.
+     */
     #[MaximumDuration(3000)]
     public function testAFinishedTransferLeavesNothingBehind(): void
     {
         $url = $this->collector()->scenario();
-        $channel = new CurlHttpChannel();
-        $channel->post(new HttpRequest($url . '/a', [], '{}'), static function (): void {});
+        $channel = $this->channel();
+        $statuses = [];
+        $onDone = static function (HttpResponse $response) use (&$statuses): void {
+            $statuses[] = $response->status;
+        };
+        $request = \WeakReference::create($onDone);
+        $channel->post(new HttpRequest($url . '/a', [], '{}'), $onDone);
+        unset($onDone);
+
         $this->assertTrue($this->drain($channel, 2.0));
+
+        $this->assertSame([202], $statuses);
+        $this->assertNull($request->get(), 'the finished handle let go of the request');
         $weak = \WeakReference::create($channel);
-
         unset($channel);
-
         $this->assertNull($weak->get(), 'freed without the cycle collector');
     }
 
@@ -194,7 +211,7 @@ final class CurlHttpChannelTest extends TestCase
     public function testTheResponseBodyIsCappedAt64KiB(): void
     {
         $url = $this->collector()->scenario([['status' => 500, 'body' => str_repeat('x', 70_000)]]);
-        $channel = new CurlHttpChannel();
+        $channel = $this->channel();
         $body = null;
         $channel->post(new HttpRequest($url . '/batch', [], '{}'), static function (HttpResponse $response) use (&$body): void {
             $body = $response->body;
@@ -205,12 +222,15 @@ final class CurlHttpChannelTest extends TestCase
         $this->assertSame(CurlHttpChannel::MAX_BODY_BYTES, strlen((string) $body));
     }
 
-    /** php -S hands the 12 requests to its workers unevenly (3 to 8 at once): 200 ms each drains in 0.6-1.2 s. */
-    #[MaximumDuration(3000)]
+    /**
+     * php -S hands the 12 requests to its workers unevenly (3 to 8 at once): 200 ms each drains in 0.6-1.2 s. Its 8
+     * workers cannot show the cap, so the channel's own count is checked on every pass.
+     */
+    #[MaximumDuration(6000)]
     public function testAtMostTenTransfersRunAtOnce(): void
     {
         $url = $this->collector()->scenario([], ['status' => 200, 'delayMs' => 200]);
-        $channel = new CurlHttpChannel();
+        $channel = $this->channel();
         for ($i = 0; $i < 12; ++$i) {
             $channel->post(new HttpRequest($url . '/r' . $i, [], '{}'), static function (): void {});
         }
@@ -219,7 +239,14 @@ final class CurlHttpChannelTest extends TestCase
 
         $this->assertSame(12, $channel->pending());
         $this->assertSame(CurlHttpChannel::MAX_CONCURRENT, $channel->inTransfer());
-        $this->assertTrue($this->drain($channel, 3.0));
+        $until = microtime(true) + 5.0;
+        while ($channel->pending() > 0) {
+            $this->assertLessThan($until, microtime(true), 'the requests did not finish');
+            $channel->waitForActivity(0.05);
+            $channel->pump();
+            $this->assertLessThanOrEqual(CurlHttpChannel::MAX_CONCURRENT, $channel->inTransfer());
+        }
+        $this->assertCount(12, $this->collector()->requests($url));
     }
 
     /** Ruling P11: a multi handle that cannot run fails its transfers, so a flush without a deadline cannot hang. */
@@ -227,7 +254,7 @@ final class CurlHttpChannelTest extends TestCase
     public function testAFailingExecFailsEveryTransferInsteadOfWaitingForever(): void
     {
         $url = $this->collector()->scenario();
-        $channel = new CurlHttpChannel(
+        $channel = $this->channel(
             multiStatus: static fn(string $function, int $code): int => $function === 'curl_multi_exec' ? CURLM_INTERNAL_ERROR : $code,
         );
         $errors = [];
@@ -248,7 +275,7 @@ final class CurlHttpChannelTest extends TestCase
     {
         $url = $this->collector()->scenario();
         $execs = new \ArrayObject();
-        $channel = new CurlHttpChannel(multiStatus: static function (string $function, int $code) use ($execs): int {
+        $channel = $this->channel(multiStatus: static function (string $function, int $code) use ($execs): int {
             if ($function !== 'curl_multi_exec') {
                 return $code;
             }
@@ -280,7 +307,7 @@ final class CurlHttpChannelTest extends TestCase
     {
         $url = $this->collector()->scenario();
         $adds = new \ArrayObject();
-        $channel = new CurlHttpChannel(multiStatus: static function (string $function, int $code) use ($adds): int {
+        $channel = $this->channel(multiStatus: static function (string $function, int $code) use ($adds): int {
             if ($function !== 'curl_multi_add_handle') {
                 return $code;
             }
@@ -289,24 +316,26 @@ final class CurlHttpChannelTest extends TestCase
             return count($adds) === 1 ? CURLM_INTERNAL_ERROR : $code;
         });
         $responses = [];
-        $record = static function (HttpResponse $response) use (&$responses): void {
+        $refused = static function (HttpResponse $response) use (&$responses): void {
             $responses[] = $response;
         };
-        $channel->post(new HttpRequest($url . '/refused', [], '{}'), $record);
-        $channel->post(new HttpRequest($url . '/sent', [], '{}'), $record);
+        $request = \WeakReference::create($refused);
+        $channel->post(new HttpRequest($url . '/refused', [], '{}'), $refused);
+        $channel->post(new HttpRequest($url . '/sent', [], '{}'), static function (HttpResponse $response) use (&$responses): void {
+            $responses[] = $response;
+        });
+        unset($refused);
 
         $this->assertTrue($this->drain($channel, 2.0));
 
         $this->assertCount(2, $responses);
         $this->assertSame(self::MULTI_ERROR, $responses[0]->error);
         $this->assertSame(202, $responses[1]->status);
-        // The refused handle left the multi handle again: it was never sent, and it holds the channel no longer.
+        // The refused handle left the multi handle again: it was never sent, and nothing holds its request any more.
         $requests = $this->collector()->requests($url);
         $this->assertCount(1, $requests);
         $this->assertSame('/sent', $requests[0]->path);
-        $weak = \WeakReference::create($channel);
-        unset($channel);
-        $this->assertNull($weak->get());
+        $this->assertNull($request->get());
     }
 
     /** `$onDone` runs once for every request: one that curl refuses to set up fails through its callback too. */
@@ -314,7 +343,7 @@ final class CurlHttpChannelTest extends TestCase
     public function testARequestCurlCannotSetUpFailsThroughItsCallback(): void
     {
         $url = $this->collector()->scenario();
-        $channel = new CurlHttpChannel();
+        $channel = $this->channel();
         $responses = [];
         $record = static function (HttpResponse $response) use (&$responses): void {
             $responses[] = $response;
@@ -334,11 +363,69 @@ final class CurlHttpChannelTest extends TestCase
         $this->assertCount(1, $this->collector()->requests($url));
     }
 
+    /**
+     * M2: curl_setopt_array() stops at the first option it rejects (libcurl takes no URL over 8 MB). Such a request
+     * fails through its callback and is never added; the options that take the response come first, so nothing of
+     * any response reaches STDOUT (the stdio MCP stream; PHPUnit fails a test that prints).
+     */
+    #[MaximumDuration(3000)]
+    public function testARequestWithARejectedOptionFailsAndPrintsNothing(): void
+    {
+        $url = $this->collector()->scenario([], ['status' => 200, 'body' => 'a response body']);
+        $channel = $this->channel();
+        $responses = [];
+        $record = static function (HttpResponse $response) use (&$responses): void {
+            $responses[] = $response;
+        };
+        $channel->post(new HttpRequest($url . '/' . str_repeat('a', 8_000_001), [], '{}'), $record);
+        $channel->post(new HttpRequest($url . '/next', [], '{}'), $record);
+
+        $this->assertTrue($this->drain($channel, 2.0));
+
+        $this->assertCount(2, $responses);
+        $this->assertSame('cURL error: curl_setopt_array() failed', $responses[0]->error);
+        $this->assertSame('a response body', $responses[1]->body);
+        $requests = $this->collector()->requests($url);
+        $this->assertCount(1, $requests);
+        $this->assertSame('/next', $requests[0]->path);
+    }
+
+    /** I2: a throwable inside a pump never reaches the caller; the seam sees it, and the next pump goes on. */
+    #[MaximumDuration(3000)]
+    public function testAThrowableInAPumpIsSwallowedAndTheTransfersGoOn(): void
+    {
+        $url = $this->collector()->scenario();
+        $execs = new \ArrayObject();
+        $channel = $this->channel(multiStatus: static function (string $function, int $code) use ($execs): int {
+            if ($function === 'curl_multi_exec') {
+                $execs[] = $code;
+                if (count($execs) === 1) {
+                    throw new \LogicException('a broken multi handle');
+                }
+            }
+
+            return $code;
+        });
+        $statuses = [];
+        $channel->post(new HttpRequest($url . '/a', [], '{}'), static function (HttpResponse $response) use (&$statuses): void {
+            $statuses[] = $response->status;
+        });
+
+        $channel->pump();
+
+        $this->assertSame(['LogicException: a broken multi handle'], array_map(ErrorText::of(...), $this->swallowed));
+        $this->swallowed = [];
+        $this->assertSame(1, $channel->inTransfer());
+        $this->assertTrue($this->drain($channel, 2.0));
+        $this->assertSame([202], $statuses);
+        $this->assertSame([], $this->logger->messages());
+    }
+
     #[MaximumDuration(3000)]
     public function testAThrowingCallbackDoesNotStopTheOthers(): void
     {
         $url = $this->collector()->scenario();
-        $channel = new CurlHttpChannel();
+        $channel = $this->channel();
         $statuses = [];
         $channel->post(new HttpRequest($url . '/a', [], '{}'), static function (): never {
             throw new \RuntimeException('a broken callback');
@@ -351,6 +438,8 @@ final class CurlHttpChannelTest extends TestCase
 
         $this->assertSame([202], $statuses);
         $this->assertSame([], $this->logger->messages());
+        $this->assertSame(['RuntimeException: a broken callback'], array_map(ErrorText::of(...), $this->swallowed));
+        $this->swallowed = [];
     }
 
     /** D32: a warning in a callback reaches neither the host's error handler nor `error_get_last()`. */
@@ -358,7 +447,7 @@ final class CurlHttpChannelTest extends TestCase
     public function testAWarningInACallbackStaysInsideTheChannel(): void
     {
         $url = $this->collector()->scenario();
-        $channel = new CurlHttpChannel();
+        $channel = $this->channel();
         $finished = new \ArrayObject();
         $channel->post(new HttpRequest($url . '/a', [], '{}'), static function () use ($finished): void {
             trigger_error('exporter warning', E_USER_WARNING);
@@ -386,8 +475,9 @@ final class CurlHttpChannelTest extends TestCase
     }
 
     /**
-     * Ruling P7: only a wait with a transfer in progress reaches the NaN guard. Without the guard, PHP 8.3 computes a
-     * 0.0 bound and PHP 8.4+ a NAN one (`max(0.0, NAN)`), which curl_multi_select() rejects with a ValueError.
+     * Ruling P7: only a wait with a transfer in progress reaches the NaN guard. Without the guard, PHP 8.4+ computes
+     * a NAN bound (`max(0.0, NAN)`), which curl_multi_select() rejects with a ValueError: tearDown() sees it swallowed.
+     * CurlSupportTest pins the bound itself.
      */
     #[MaximumDuration(3000)]
     public function testAWaitWithANanOrNegativeBoundReturnsAtOnceDuringATransfer(): void
@@ -396,7 +486,7 @@ final class CurlHttpChannelTest extends TestCase
         $this->assertNotFalse($server, 'no local server: ' . $errorMessage);
         $address = stream_socket_get_name($server, false);
         $this->assertIsString($address);
-        $channel = new CurlHttpChannel();
+        $channel = $this->channel();
         $errors = [];
         $channel->post(new HttpRequest('http://' . $address . '/v1/logs', [], '{}'), static function (HttpResponse $response) use (&$errors): void {
             $errors[] = $response->error;
@@ -429,6 +519,17 @@ final class CurlHttpChannelTest extends TestCase
         $this->assertTrue($this->drain($channel, 2.0));
         $this->assertCount(1, $errors);
         $this->assertMatchesRegularExpression('/\AcURL error \d+: /', (string) $errors[0]);
+    }
+
+    /** @param (\Closure(string, int): int)|null $multiStatus */
+    private function channel(
+        float $connectTimeoutSeconds = CurlTransport::CONNECT_TIMEOUT_SECONDS,
+        float $totalTimeoutSeconds = CurlTransport::TOTAL_TIMEOUT_SECONDS,
+        ?\Closure $multiStatus = null,
+    ): CurlHttpChannel {
+        return new CurlHttpChannel($connectTimeoutSeconds, $totalTimeoutSeconds, multiStatus: $multiStatus, onSwallowed: function (\Throwable $error): void {
+            $this->swallowed[] = $error;
+        });
     }
 
     private function drain(HttpChannel $channel, float $seconds): bool

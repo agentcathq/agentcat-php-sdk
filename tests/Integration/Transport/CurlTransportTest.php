@@ -16,6 +16,7 @@ use AgentCat\Internal\Transport\Transport;
 use AgentCat\Internal\Wire\WireEncoder;
 use AgentCat\Tests\Integration\Support\MockCollector;
 use AgentCat\Tests\Support\MemoryLogger;
+use AgentCat\Tests\Support\Thrown;
 use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
@@ -245,6 +246,53 @@ final class CurlTransportTest extends TestCase
             );
         }
         $this->assertStringStartsWith(self::GAVE_UP . 'cURL error 7: Failed to connect to 127.0.0.1 port ', $messages[4]);
+    }
+
+    /**
+     * curl_setopt_array() stops at the first option it rejects (libcurl takes no URL over 8 MB): the attempt fails
+     * and is retried; the handle is never added, so no response can reach STDOUT (PHPUnit fails a test that prints).
+     */
+    #[MaximumDuration(2000)]
+    public function testARejectedCurlOptionFailsTheAttempt(): void
+    {
+        $base = self::collector()->scenario();
+        $event = $this->event();
+        $delivery = Delivery::forEvent($event, ApiBaseUrl::endpoint($base) . str_repeat('a', 8_000_001), WireEncoder::encode($event));
+
+        $this->assertTrue($this->fast()->send($delivery, $this->deadline()));
+
+        $failed = self::FAILED . 'cURL error: curl_setopt_array() failed]';
+        $this->assertSame([$failed, $failed, $failed, $failed, self::GAVE_UP . 'cURL error: curl_setopt_array() failed'], $this->logger->messages());
+        $this->assertSame([], self::collector()->requests($base));
+    }
+
+    /** The option that captures the response comes first: a later rejected option cannot leave it unset. */
+    public function testTheResponseIsCapturedBeforeAnyOtherOption(): void
+    {
+        $options = (new CurlTransport())->curlOptions(new Delivery('https://x.test/v1/public/events/', '{}', 'evt_x', 'summary'));
+
+        $this->assertSame(CURLOPT_RETURNTRANSFER, array_key_first($options));
+    }
+
+    /** @return iterable<string, array{float, float}> */
+    public static function badTimeouts(): iterable
+    {
+        yield 'connect NAN' => [NAN, 10.0];
+        yield 'connect zero (curl: no timeout)' => [0.0, 10.0];
+        yield 'total negative' => [2.0, -1.0];
+        yield 'total INF' => [2.0, INF];
+    }
+
+    /** A timeout curl cannot take is a programming error; the queue builds the transport with the defaults. */
+    #[DataProvider('badTimeouts')]
+    public function testATimeoutCurlCannotTakeIsRejectedAtConstruction(float $connectTimeoutSeconds, float $totalTimeoutSeconds): void
+    {
+        $error = Thrown::by(
+            \InvalidArgumentException::class,
+            static fn(): CurlTransport => new CurlTransport(connectTimeoutSeconds: $connectTimeoutSeconds, totalTimeoutSeconds: $totalTimeoutSeconds),
+        );
+
+        $this->assertStringStartsWith('A curl timeout must round to 1 through 2147483647 milliseconds, got ', $error->getMessage());
     }
 
     #[MaximumDuration(2000)]
