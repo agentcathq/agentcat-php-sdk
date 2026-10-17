@@ -10,8 +10,9 @@ namespace AgentCat\Internal\Delivery;
  *
  * The global queue calls `install()` when it gets an event, so nothing happens at autoload. It installs once, only
  * under the CLI SAPI with ext-pcntl, and keeps the handler each signal had before. A signal that the application
- * ignores (`SIG_IGN`) stays ignored. When it installs a handler, `install()` also turns on
- * `pcntl_async_signals(true)`, which is process wide: from then on every PHP signal handler of the process runs
+ * ignores in PHP (`pcntl_signal(…, SIG_IGN)`) stays ignored; an ignore inherited from the parent process is not
+ * visible to PHP, so AgentCat installs its drain for that signal. When it installs a handler, `install()` also turns
+ * on `pcntl_async_signals(true)`, which is process wide: from then on every PHP signal handler of the process runs
  * between two opcodes, not at `pcntl_signal_dispatch()` or a tick.
  *
  * Each handler runs once (TypeScript `process.once`). It first gives the signal back to the earlier handler, so a
