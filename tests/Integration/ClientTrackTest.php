@@ -6,6 +6,8 @@ namespace AgentCat\Tests\Integration;
 
 use AgentCat\Client;
 use AgentCat\Event;
+use AgentCat\Exporters\OtlpExporter;
+use AgentCat\Exporters\PostHogExporter;
 use AgentCat\Identity;
 use AgentCat\Internal\ClientSeams;
 use AgentCat\Internal\Constants;
@@ -28,6 +30,7 @@ use AgentCat\Tests\Support\McpSdk\Tools;
 use AgentCat\Tests\Support\McpSdk\TrackingFixture;
 use AgentCat\Tests\Support\MemoryLogger;
 use AgentCat\Tests\Support\RecordingExporter;
+use AgentCat\Tests\Support\RecordingHttpChannel;
 use AgentCat\Tests\Support\RecordingTransport;
 use AgentCat\ToolCall;
 use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
@@ -103,6 +106,25 @@ final class ClientTrackTest extends TestCase
         ], $this->logger->messages());
         $this->assertSame(['echo', GetMoreTools::NAME], $this->names($this->harness($builder)->listTools()));
         $this->assertFalse(TrackedServers::incomplete());
+    }
+
+    #[Group('ac-06-14')]
+    public function testTheCompleteLineCountsTheExporters(): void
+    {
+        $queue = new EventQueue(transport: $this->transport, channel: new RecordingHttpChannel());
+        $client = new Client(ClientSeams::of($queue, static fn(): bool => true));
+        $builder = TrackingFixture::builder();
+        Tools::echo($builder);
+
+        $client->track($builder, self::PROJECT, new Options(exporters: [
+            'otlp' => new OtlpExporter('http://otlp.test'),
+            'ph' => new PostHogExporter('phc_x'),
+        ]));
+
+        $this->assertContains(
+            'AgentCat setup complete | project ' . self::PROJECT . ' | tracing=true context=true reportMissing=true exporters=2',
+            $this->logger->messages(),
+        );
     }
 
     #[Group('ac-01-4')]

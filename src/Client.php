@@ -18,6 +18,7 @@ use AgentCat\Internal\Support\ErrorText;
 use AgentCat\Internal\Support\TestMode;
 use AgentCat\Internal\Support\Values;
 use AgentCat\Internal\Tags\TagValidator;
+use AgentCat\Internal\Telemetry\TelemetryManager;
 use AgentCat\McpSdk\McpSdkAdapter;
 use Psr\Log\LoggerInterface;
 
@@ -39,6 +40,8 @@ final readonly class Client
     /** @var \Closure(): bool */
     private \Closure $enabled;
 
+    private bool $telemetry;
+
     /**
      * Creates a client that sends through the process-wide event queue. Call it without arguments. A
      * dependency-injection container that autowires it gets the same client.
@@ -50,6 +53,7 @@ final readonly class Client
         $this->publisher = new Publisher($seams->queue ?? EventQueue::global());
         $this->interceptor = new CallInterceptor($this->publisher);
         $this->enabled = $seams->enabled ?? TestMode::sdkEnabled(...);
+        $this->telemetry = $seams->telemetry ?? true;
     }
 
     /**
@@ -106,20 +110,24 @@ final readonly class Client
 
                 return $server;
             }
-            if ($projectId === '') {
+            if ($this->telemetry) {
+                TelemetryManager::install($this->publisher->queue(), $options->exporters); // first wins (TypeScript)
+            }
+            if ($projectId === '' && $options->exporters === null) {
                 Log::write('Warning: No projectId provided and no exporters configured. Events will not be sent anywhere.');
-            } elseif (preg_match(self::PROJECT_ID_PATTERN, $projectId) !== 1) {
+            } elseif ($projectId !== '' && preg_match(self::PROJECT_ID_PATTERN, $projectId) !== 1) {
                 Log::write(sprintf('WARN: Project ID "%s" does not match proj_ followed by 27 letters or digits; the AgentCat API drops its events', $projectId));
             }
             $state = new TrackedServer($projectId, $options, McpSdkAdapter::serverInfo($server), $this->publisher);
             McpSdkAdapter::install($server, $state, $this->publisher, $this->interceptor);
             TrackedServers::add($server, $state);
             Log::write(sprintf(
-                'AgentCat setup complete | project %s | tracing=%s context=%s reportMissing=%s exporters=0',
+                'AgentCat setup complete | project %s | tracing=%s context=%s reportMissing=%s exporters=%d',
                 $project,
                 $options->enableTracing ? 'true' : 'false',
                 $options->enableToolCallContext ? 'true' : 'false',
                 $options->enableReportMissing ? 'true' : 'false',
+                count($options->exporters ?? []),
             ));
 
             return $server;
@@ -228,8 +236,8 @@ final readonly class Client
      *
      * @param float|null $timeoutSeconds The longest wait in seconds; null waits until nothing is left to send.
      *
-     * @return bool True when nothing is left to send (every event delivered, or given up after its retries); false
-     *              when the timeout ended first.
+     * @return bool True when nothing is left to send (every event delivered, or given up after its retries, and no
+     *              exporter request left; diagnostics batches are not counted); false when the timeout ended first.
      */
     public function flush(?float $timeoutSeconds = null): bool
     {

@@ -8,6 +8,7 @@ use AgentCat\AgentCat;
 use AgentCat\Client;
 use AgentCat\CustomEvent;
 use AgentCat\Event;
+use AgentCat\Exporters\OtlpExporter;
 use AgentCat\Identity;
 use AgentCat\Internal\ClientSeams;
 use AgentCat\Internal\Delivery\EventQueue;
@@ -310,6 +311,26 @@ final class AgentCatFakeTest extends TestCase
         $harness->callTool('echo', ['msg' => 'hi']);
 
         $this->assertContains('eventTags callback error: RuntimeException: tags down', $fake->logs());
+    }
+
+    public function testExportersAreIgnoredByTheFake(): void
+    {
+        $fake = AgentCat::fake();
+        $builder = TrackingFixture::builder();
+        Tools::echo($builder);
+        AgentCat::track($builder, self::PROJECT, new Options(exporters: ['otlp' => new OtlpExporter('http://otlp.test')]));
+        $harness = new HttpHarness($builder->build());
+        $harness->initialize();
+
+        $harness->callTool('echo', ['msg' => 'hi']);
+
+        $fake->assertTrackedCount(1);
+        $events = $fake->events();
+        $this->assertCount(1, $events);
+        $this->assertSame('mcp:tools/call', $events[0]->eventType);
+        $logs = $fake->logs();
+        $this->assertContains('AgentCat setup complete | project ' . self::PROJECT . ' | tracing=true context=true reportMissing=true exporters=1', $logs);
+        $this->assertSame([], array_values(array_filter($logs, static fn(string $l): bool => str_contains($l, 'Initialized telemetry'))));
     }
 
     public function testTelemetryOnlyServersAreRecordedToo(): void

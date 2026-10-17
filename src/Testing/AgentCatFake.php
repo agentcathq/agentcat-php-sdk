@@ -36,6 +36,7 @@ final readonly class AgentCatFake
         $this->client = new Client(ClientSeams::of(
             new EventQueue(transport: new InstantTransport(), exporters: $this->sink),
             static fn(): bool => true,
+            telemetry: false,
         ));
         $this->log = FakeLog::attach($this->client);
     }
