@@ -33,7 +33,7 @@ $builder = Server::builder()
 AgentCat::track($builder, 'proj_' . str_repeat('e', 27), new Options(
     identify: static function (ToolCall $call) use ($markers): Identity {
         if (($call->headers['x-e2e-identify-sleep'] ?? '') === '1') {
-            usleep(1_000_000);
+            usleep(3_000_000);
             file_put_contents($markers . '/identify', sprintf('%.6F', microtime(true)));
         }
 

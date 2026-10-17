@@ -12,14 +12,19 @@ use Symfony\Component\Process\Process;
  * like PHP-FPM.
  *
  * Test classes start one in `setUpBeforeClass()` and stop it in `tearDownAfterClass()`. Like `MockCollector`, the
- * server runs under `tests/Integration/Support/watchdog.php`, which stops it when this process closes its stdin: on
- * `stop()`, and also when the test process dies without running any cleanup.
+ * server runs under `tests/Integration/Support/watchdog.php`, which stops it when this process closes its stdin, also
+ * when the test process dies without running any cleanup, and in any case after 120 s.
  */
 final class BuiltInServer
 {
     private const float START_TIMEOUT_SECONDS = 5.0;
 
     private const float STOP_TIMEOUT_SECONDS = 1.0;
+
+    /** Longer than any test class: the watchdog stops the server after that, even when this process hangs. */
+    private const int LIFETIME_SECONDS = 120;
+
+    private const int SIGKILL = 9;
 
     /** A new port is tried when the server exits at once (another process took the free port first). */
     private const int START_ATTEMPTS = 3;
@@ -68,13 +73,21 @@ final class BuiltInServer
         return 'http://127.0.0.1:' . $this->port;
     }
 
-    /** Closing stdin makes the watchdog stop the server; a kill is the last resort. */
+    /**
+     * Kills the watchdog's process group: the watchdog, `php -S` and its workers, also a worker that ignores SIGTERM
+     * or hangs. The watchdog still runs at that moment, so the group ID is still its own. Without ext-posix, closing
+     * stdin makes the watchdog stop the server, and a kill of the watchdog is the last resort.
+     */
     public function stop(): void
     {
         if ($this->stopped) {
             return;
         }
         $this->stopped = true;
+        $pid = $this->process->getPid();
+        if ($pid !== null && $this->process->isRunning() && function_exists('posix_kill')) {
+            posix_kill(-$pid, self::SIGKILL);
+        }
         $this->input->close();
         $deadline = microtime(true) + self::STOP_TIMEOUT_SECONDS;
         while ($this->process->isRunning() && microtime(true) < $deadline) {
@@ -94,9 +107,9 @@ final class BuiltInServer
         $process = new Process(
             [PHP_BINARY, __DIR__ . '/../../Integration/Support/watchdog.php', PHP_BINARY, '-d', 'output_buffering=0', '-S', '127.0.0.1:' . $port, $router],
             null,
-            ['PHP_CLI_SERVER_WORKERS' => '4', ...$env],
+            ['PHP_CLI_SERVER_WORKERS' => '4', 'AGENTCAT_WATCHDOG_TIMEOUT' => (string) self::LIFETIME_SECONDS, ...$env],
             $input,
-            null,
+            self::LIFETIME_SECONDS,
         );
         $process->start();
 

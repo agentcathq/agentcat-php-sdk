@@ -26,6 +26,14 @@ final class HttpEndToEndTest extends TestCase
 {
     private const float COLLECTOR_DEADLINE_SECONDS = 5.0;
 
+    /** The fixture's `identify` sleeps 3 s with `X-E2E-Identify-Sleep: 1`, before the delivery. */
+    private const float SLEEPING_HOOK_DEADLINE_SECONDS = 8.0;
+
+    private const float LOG_DEADLINE_SECONDS = 5.0;
+
+    /** The SDK's line for a failed delivery attempt; curl's error names the host and the port. */
+    private const string FAILED_DELIVERY = '/^.*Failed to send event evt_\w+, retrying\.\.\. \[Error: .*$/m';
+
     private const string REBUILT = 'Rebuilt injection registries on demand (tools/call before tools/list on this instance)';
 
     private static ?MockCollector $collector = null;
@@ -34,6 +42,9 @@ final class HttpEndToEndTest extends TestCase
 
     /** HOME (agentcat.log), sessions and markers of the server, under the test HOME (Ruling R8). */
     private static string $dir = '';
+
+    /** `AGENTCAT_API_URL` of the server: a closed port on 127.0.0.1, so a request without a collector stays local. */
+    private static string $fallbackUrl = '';
 
     /** The collector scenario of the current test. */
     private string $scenario = '';
@@ -50,8 +61,10 @@ final class HttpEndToEndTest extends TestCase
                 self::assertTrue(mkdir(self::$dir . $sub, 0o700));
             }
             self::$collector = MockCollector::start();
+            self::$fallbackUrl = MockCollector::closedPortUrl();
             self::$server = BuiltInServer::start(__DIR__ . '/Fixtures/http-server.php', [
                 'AGENTCAT_ENABLED' => 'true',
+                'AGENTCAT_API_URL' => self::$fallbackUrl,
                 'HOME' => self::$dir . '/home',
                 'AGENTCAT_E2E_SESSIONS' => self::$dir . '/sessions',
                 'AGENTCAT_E2E_MARKERS' => self::$dir . '/markers',
@@ -155,13 +168,14 @@ final class HttpEndToEndTest extends TestCase
     }
 
     /**
-     * Header conflict 6: the tool result does not wait for the hooks. The fixture's `identify` sleeps 1 s and then
-     * writes the marker; it runs in the shutdown delivery, after the response.
+     * Header conflict 6: the tool result does not wait for the hooks. The fixture's `identify` sleeps 3 s and then
+     * writes the marker; it runs in the shutdown delivery, after the response. The 2 s bound leaves room for a slow
+     * runner; the marker proves the order.
      */
     #[Group('ac-01-37')]
     #[Group('ac-02-48')]
     #[Group('ac-03-14')]
-    #[MaximumDuration(10000)]
+    #[MaximumDuration(15000)]
     public function testTheResponseDoesNotWaitForTheHooks(): void
     {
         $client = $this->client();
@@ -170,9 +184,9 @@ final class HttpEndToEndTest extends TestCase
 
         $answer = $client->callTool('echo', ['msg' => 'hi', 'session_id' => 'start'], $this->headers(['X-E2E-Identify-Sleep' => '1']));
 
-        $this->assertLessThan(0.8, $answer['receivedAt'] - $sentAt, 'the response arrived before the hook ran');
+        $this->assertLessThan(2.0, $answer['receivedAt'] - $sentAt, 'the response arrived before the hook ran');
         HttpHarness::result($answer['message']);
-        $event = $this->event();
+        $event = $this->event(self::SLEEPING_HOOK_DEADLINE_SECONDS);
         $this->assertSame('e2e-user', JsonAssert::at($event, 'identify_actor_given_id'));
         $marker = file_get_contents(self::$dir . '/markers/identify');
         $this->assertIsString($marker);
@@ -265,6 +279,23 @@ final class HttpEndToEndTest extends TestCase
         $this->assertSame($accept, JsonAssert::at($headers, 'accept'));
     }
 
+    /** A call without `X-E2E-Collector` falls back to `AGENTCAT_API_URL`, a closed local port: never the default API. */
+    #[MaximumDuration(10000)]
+    public function testWithoutACollectorHeaderTheEventGoesToTheLocalFallback(): void
+    {
+        $client = $this->client();
+        $client->initialize();
+        $offset = strlen($this->log());
+
+        HttpHarness::result($client->callTool('echo', ['msg' => 'hi', 'session_id' => 'start'])['message']);
+
+        $port = parse_url(self::$fallbackUrl, PHP_URL_PORT);
+        $this->assertIsInt($port);
+        $failure = $this->failedDelivery($offset);
+        $this->assertStringContainsString('127.0.0.1 port ' . $port, $failure, 'the delivery went to AGENTCAT_API_URL');
+        $this->assertStringNotContainsString('agentcat.com', substr($this->log(), $offset));
+    }
+
     private function client(): McpHttpClient
     {
         return new McpHttpClient($this->server()->baseUrl() . '/');
@@ -283,9 +314,9 @@ final class HttpEndToEndTest extends TestCase
     }
 
     /** Waits for the one event of this test's scenario and returns its decoded body. */
-    private function event(): \stdClass
+    private function event(float $deadlineSeconds = self::COLLECTOR_DEADLINE_SECONDS): \stdClass
     {
-        $deadline = microtime(true) + self::COLLECTOR_DEADLINE_SECONDS;
+        $deadline = microtime(true) + $deadlineSeconds;
         do {
             $requests = $this->collector()->requests($this->scenario);
             if ($requests !== []) {
@@ -306,10 +337,31 @@ final class HttpEndToEndTest extends TestCase
     /** How often the server's agentcat.log says that a request rebuilt the registries. */
     private function rebuildLines(): int
     {
+        return substr_count($this->log(), self::REBUILT);
+    }
+
+    /** Waits for the first failed delivery that the server's agentcat.log reports after byte `$offset`. */
+    private function failedDelivery(int $offset): string
+    {
+        $deadline = microtime(true) + self::LOG_DEADLINE_SECONDS;
+        do {
+            $written = substr($this->log(), $offset);
+            if (preg_match(self::FAILED_DELIVERY, $written, $match) === 1) {
+                return $match[0];
+            }
+            usleep(20_000);
+        } while (microtime(true) < $deadline);
+
+        self::fail('No failed delivery in agentcat.log: ' . $written);
+    }
+
+    /** The server's agentcat.log so far. */
+    private function log(): string
+    {
         $log = file_get_contents(self::$dir . '/home/agentcat.log');
         $this->assertIsString($log);
 
-        return substr_count($log, self::REBUILT);
+        return $log;
     }
 
     private function issued(string $sessionId): string
