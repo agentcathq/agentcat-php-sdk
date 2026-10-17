@@ -71,6 +71,7 @@ final class LogTest extends TestCase
         $logger = new class extends AbstractLogger {
             public int $calls = 0;
 
+            /** @param mixed[] $context */
             #[\Override]
             public function log($level, string|\Stringable $message, array $context = []): void
             {
@@ -93,6 +94,7 @@ final class LogTest extends TestCase
         $logger = new class extends AbstractLogger {
             public int $calls = 0;
 
+            /** @param mixed[] $context */
             #[\Override]
             public function log($level, string|\Stringable $message, array $context = []): void
             {

@@ -28,6 +28,7 @@ final class FileLogger extends AbstractLogger
         $this->versions = sprintf('[sdk=%s php=%s mcp=%s]', SdkVersion::get(), PHP_VERSION, SdkVersion::installed('mcp/sdk') ?? 'unknown');
     }
 
+    /** @param mixed[] $context */
     #[\Override]
     public function log($level, string|\Stringable $message, array $context = []): void
     {

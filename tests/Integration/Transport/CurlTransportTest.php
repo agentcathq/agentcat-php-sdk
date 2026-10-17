@@ -502,6 +502,7 @@ final class CurlTransportTest extends TestCase
             /** @var list<array{float, string}> */
             public array $lines = [];
 
+            /** @param mixed[] $context */
             #[\Override]
             public function log($level, string|\Stringable $message, array $context = []): void
             {

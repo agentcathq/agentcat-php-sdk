@@ -43,6 +43,7 @@
         "opis/json-schema": "^2.6",
         "php-cs-fixer/shim": "3.95.27",
         "phpat/phpat": "^0.12.5",
+        "phpdocumentor/type-resolver": "^1.10 || ^2.0",
         "phpstan/extension-installer": "^1.4.3",
         "phpstan/phpstan": "2.3.1",
         "phpstan/phpstan-deprecation-rules": "^2.0.5",
@@ -52,6 +53,7 @@
         "rector/rector": "2.7.0",
         "shipmonk/composer-dependency-analyser": "^1.8.4",
         "spaze/phpstan-disallowed-calls": "^4.15",
+        "symfony/polyfill-uuid": "^1.20",
         "symfony/process": "^7.4 || ^8.1",
         "symfony/uid": "^5.4.35 || ^6.4.3 || ^7.3 || ^8.0",
         "tomasvotruba/type-coverage": "^2.5.1"

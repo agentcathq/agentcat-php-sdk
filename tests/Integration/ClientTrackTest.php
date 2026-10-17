@@ -178,6 +178,7 @@ final class ClientTrackTest extends TestCase
             /** @param \Closure(): void $onStart */
             public function __construct(private readonly \Closure $onStart) {}
 
+            /** @param mixed[] $context */
             #[\Override]
             public function log($level, string|\Stringable $message, array $context = []): void
             {
