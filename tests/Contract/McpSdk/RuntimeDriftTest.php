@@ -16,7 +16,9 @@ use AgentCat\Options;
 use AgentCat\Tests\Support\JsonAssert;
 use AgentCat\Tests\Support\McpSdk\BuilderMembers;
 use AgentCat\Tests\Support\McpSdk\HttpHarness;
+use AgentCat\Tests\Support\McpSdk\NameService;
 use AgentCat\Tests\Support\McpSdk\RecordingTool;
+use AgentCat\Tests\Support\McpSdk\WiredTool;
 use AgentCat\Tests\Support\MemoryLogger;
 use AgentCat\Tests\Support\RecordingTransport;
 use AgentCat\Tests\Support\Thrown;
@@ -173,17 +175,17 @@ final class RuntimeDriftTest extends TestCase
 
     public function testAnUnreadableContainerFallsBackToTheLibraryDefault(): void
     {
-        $builder = $this->builder();
+        $builder = $this->builder()->addTool(WiredTool::class, name: 'wired');
         [, $harness] = $this->tracked($builder);
         BuilderMembers::remove('container')($builder);
         $harness->initialize();
         $harness->listTools();
 
         $first = $harness->callTool('echo', ['msg' => 'hi', 'session_id' => 'start']);
-        $second = $harness->callTool('echo', ['msg' => 'hi', 'session_id' => 'start']);
+        $second = $harness->callTool('wired', ['name' => 'Ada', 'session_id' => 'start']);
 
         $this->assertSame('ok', JsonAssert::at(HttpHarness::result($first), 'content', 1, 'text'));
-        $this->assertSame('ok', JsonAssert::at(HttpHarness::result($second), 'content', 1, 'text'));
+        $this->assertSame('wired Ada (' . NameService::class . ')', JsonAssert::at(HttpHarness::result($second), 'content', 1, 'text'), 'autowired like the library default');
         $this->assertTrue($this->queue->flush());
         $this->assertCount(2, $this->transport->deliveries, 'both calls are traced');
         $this->assertSame([self::COMPATIBILITY], $this->logger->messages());
