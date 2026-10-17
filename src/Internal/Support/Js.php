@@ -12,7 +12,7 @@ namespace AgentCat\Internal\Support;
 final class Js
 {
     /** ECMAScript WhiteSpace + LineTerminator. */
-    private const string WHITESPACE = '[\x{0009}-\x{000D}\x{0020}\x{00A0}\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}\x{FEFF}]';
+    public const string WHITESPACE = '[\x{0009}-\x{000D}\x{0020}\x{00A0}\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}\x{FEFF}]';
 
     /** JavaScript truthiness: false for null, false, 0, 0.0, '' and NaN; true otherwise (including [] and objects). */
     public static function truthy(mixed $value): bool
