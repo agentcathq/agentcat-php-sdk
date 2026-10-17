@@ -129,14 +129,15 @@ final class BuilderMembersTest extends TestCase
         yield 'parts lost requestHandlers' => [$parts([]), \ErrorException::class, 'Undefined array key "requestHandlers"'];
         yield 'requestHandlers retyped' => [$parts(['requestHandlers' => 'handlers']), \TypeError::class, 'must be of type ?array, string returned'];
         yield 'parts lost configuration' => [$parts(['requestHandlers' => []]), \ErrorException::class, 'Undefined array key "configuration"'];
-        yield 'referenceHandler removed' => [BuilderMembers::remove('referenceHandler'), \Error::class, 'Mcp\Server\Builder::$referenceHandler'];
-        yield 'container removed' => [BuilderMembers::remove('container'), \Error::class, 'Mcp\Server\Builder::$container'];
-        yield 'logger removed' => [BuilderMembers::remove('logger'), \Error::class, 'Mcp\Server\Builder::$logger'];
+        yield 'referenceHandler uninitialized' => [BuilderMembers::uninitialize('referenceHandler'), \Error::class, 'Mcp\Server\Builder::$referenceHandler'];
+        yield 'container uninitialized' => [BuilderMembers::uninitialize('container'), \Error::class, 'Mcp\Server\Builder::$container'];
+        yield 'logger uninitialized' => [BuilderMembers::uninitialize('logger'), \Error::class, 'Mcp\Server\Builder::$logger'];
     }
 
     /**
-     * A future mcp/sdk can rename, remove or retype a member. probe() reads every member under StrictErrors, so each
-     * kind of drift throws there instead of failing later on the request path.
+     * probe() reads every member under StrictErrors, so a member that cannot be read, or a `$parts` entry that is gone
+     * or holds another type than the accessor returns, throws there instead of failing later on the request path. PHP
+     * cannot remove a declared property: the cases change what `$parts` holds, or leave a member uninitialized.
      *
      * @param \Closure(Builder): void $drift
      * @param class-string<\Throwable> $class

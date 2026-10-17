@@ -81,7 +81,7 @@ final class RuntimeDriftTest extends TestCase
     public function testSignalsLeaveOutBuiltWhenPartsCannotBeRead(): void
     {
         $builder = Server::builder();
-        BuilderMembers::remove('parts')($builder);
+        BuilderMembers::uninitialize('parts')($builder);
 
         $this->assertSame(['mcpSdkBuilder'], McpSdkAdapter::signals($builder));
     }
@@ -116,10 +116,10 @@ final class RuntimeDriftTest extends TestCase
         $this->assertSame([], $warnings);
     }
 
-    public function testTheLoggerIsUnknownWhenItsMemberIsGone(): void
+    public function testTheLoggerIsUnknownWhenItsMemberCannotBeRead(): void
     {
         $builder = Server::builder()->setLogger(new NullLogger());
-        BuilderMembers::remove('logger')($builder);
+        BuilderMembers::uninitialize('logger')($builder);
 
         $this->assertNull(McpSdkAdapter::logger($builder));
     }
@@ -208,7 +208,7 @@ final class RuntimeDriftTest extends TestCase
     {
         $builder = $this->builder()->addTool(WiredTool::class, name: 'wired');
         [, $harness] = $this->tracked($builder);
-        BuilderMembers::remove('container')($builder);
+        BuilderMembers::uninitialize('container')($builder);
         $harness->initialize();
         $harness->listTools();
 

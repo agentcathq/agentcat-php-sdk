@@ -79,7 +79,10 @@ final class BuilderAccess
         return $read($builder);
     }
 
-    /** Reads every member once with warnings as exceptions: a renamed, removed or retyped member throws here. */
+    /**
+     * Reads every member once with warnings as exceptions: a renamed or removed member throws here. A retyped one
+     * need not: the contract tests check the declared type of each member.
+     */
     public static function probe(Builder $builder): void
     {
         StrictErrors::run(static function () use ($builder): void {

@@ -169,9 +169,9 @@ final class ClientTrackTest extends TestCase
     {
         $builder = TrackingFixture::builder();
         Tools::echo($builder);
-        // The member disappears after the probe passed, while AgentCat logs its start line: install() then fails.
+        // The member becomes unreadable after the probe, while AgentCat logs its start line: install() then fails.
         $remove = static function () use ($builder): void {
-            BuilderMembers::remove('referenceHandler')($builder);
+            BuilderMembers::uninitialize('referenceHandler')($builder);
         };
         $logger = new class ($remove) extends AbstractLogger {
             /** @var list<string> */
