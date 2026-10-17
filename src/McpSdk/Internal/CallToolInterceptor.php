@@ -62,7 +62,6 @@ final readonly class CallToolInterceptor implements RequestHandlerInterface
             $this->reader,
         );
 
-        // @phpstan-ignore argument.type (PHPStan 2.3 compares the invariant TResult with equals(), which is false for Response<mixed> against itself; McpCallSeam is CallSeam<Response<mixed>|Error>)
         return $this->interceptor->intercept($this->server, $seam);
     }
 }

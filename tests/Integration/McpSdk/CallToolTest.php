@@ -16,9 +16,11 @@ use AgentCat\Tests\Support\McpSdk\CustomerHandler;
 use AgentCat\Tests\Support\McpSdk\GreetingTool;
 use AgentCat\Tests\Support\McpSdk\HttpHarness;
 use AgentCat\Tests\Support\McpSdk\McpSdkVersion;
+use AgentCat\Tests\Support\McpSdk\NameService;
 use AgentCat\Tests\Support\McpSdk\Tools;
 use AgentCat\Tests\Support\McpSdk\TrackingFixture;
 use AgentCat\ToolCall;
+use Mcp\Capability\Attribute\CompletionProvider;
 use Mcp\Capability\Registry\Container;
 use Mcp\Capability\Registry\ElementReference;
 use Mcp\Capability\Registry\ReferenceHandler;
@@ -457,20 +459,55 @@ final class CallToolTest extends TestCase
         $this->assertSame('{"content":[{"type":"text","text":"mine"}],"isError":false}', $this->json($this->fixture->event()->response));
     }
 
-    /** Review Focus 3: a container set after track() still builds the tool handlers. */
-    public function testAContainerSetAfterTrackResolvesTheToolHandlers(): void
+    /** @return iterable<string, array{bool}> */
+    public static function containerMoments(): iterable
+    {
+        yield 'set before track()' => [true];
+        yield 'set after track() (Review Focus 3)' => [false];
+    }
+
+    /** The customer's container builds the tool handlers, whenever it was set. */
+    #[DataProvider('containerMoments')]
+    public function testTheCustomersContainerResolvesTheToolHandlers(bool $beforeTrack): void
     {
         $builder = TrackingFixture::builder()->addTool(GreetingTool::class, name: 'greet');
-        $this->fixture->track($builder);
         $container = new Container();
         $container->set(GreetingTool::class, new GreetingTool('hello'));
-        $builder->setContainer($container);
+        if ($beforeTrack) {
+            $builder->setContainer($container);
+        }
+        $this->fixture->track($builder);
+        if (!$beforeTrack) {
+            $builder->setContainer($container);
+        }
         $harness = $this->fixture->harness($builder);
 
         $result = HttpHarness::result($harness->callTool('greet', ['name' => 'Ada', 'session_id' => self::SESSION]));
 
         $this->assertSame(['hello, Ada'], $this->texts($result));
         $this->assertSame('greet', $this->fixture->event()->resourceName);
+    }
+
+    /** Without a customer container, AgentCat and mcp/sdk share one, so a class has one instance as before. */
+    public function testAToolHandlerThatIsAlsoACompletionProviderHasOneInstance(): void
+    {
+        $builder = TrackingFixture::builder()
+            ->addTool(NameService::class, name: 'name')
+            ->addPrompt(
+                static fn(#[CompletionProvider(provider: NameService::class)] string $name): array => [['role' => 'user', 'content' => $name]],
+                name: 'greeting',
+            );
+        $this->fixture->track($builder);
+        $harness = $this->fixture->harness($builder);
+
+        $tool = $this->texts(HttpHarness::result($harness->callTool('name', ['name' => 'Ada', 'session_id' => self::SESSION])));
+        $completion = HttpHarness::result($harness->request('completion/complete', [
+            'ref' => ['type' => 'ref/prompt', 'name' => 'greeting'],
+            'argument' => ['name' => 'name', 'value' => 'A'],
+        ]));
+
+        $this->assertCount(1, $tool);
+        $this->assertSame($tool, JsonAssert::at($completion, 'completion', 'values'));
     }
 
     /** Review Focus 5: each event of a long-lived server keeps its own handles and identity. */

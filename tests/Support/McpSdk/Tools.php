@@ -82,6 +82,15 @@ final class Tools
         return $tool;
     }
 
+    /** `refuses`: answers an error result without throwing. */
+    public static function refuses(Builder $builder): RecordingTool
+    {
+        $tool = new RecordingTool(static fn(): CallToolResult => CallToolResult::error([new TextContent('not allowed')]));
+        $builder->add(new Tool(name: 'refuses', title: null, inputSchema: self::NO_ARGUMENTS, description: 'Refuses', annotations: null), $tool);
+
+        return $tool;
+    }
+
     /** `boom`: throws a `RuntimeException` caused by a `LogicException`, which mcp/sdk answers with -32603. */
     public static function boom(Builder $builder): RecordingTool
     {

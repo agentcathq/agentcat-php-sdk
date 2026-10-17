@@ -25,6 +25,7 @@ use Mcp\Capability\Registry\ReferenceHandlerInterface;
 use Mcp\Schema\Implementation;
 use Mcp\Server;
 use Mcp\Server\Builder;
+use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -129,15 +130,33 @@ final class McpSdkAdapter
     {
         $delegates = new Delegates($builder); // one per Builder, shared by AgentCat's handlers
         $stash = new ThrowableStash();
+        if (!BuilderAccess::container($builder) instanceof ContainerInterface) {
+            // The default build() would create, set here so that AgentCat's handlers and the library's share it.
+            $builder->setContainer(new Container());
+        }
         $custom = BuilderAccess::referenceHandler($builder);
-        // The default handler is built at the first call, from the container set by then (build() reads the same slot).
         $inner = $custom instanceof ReferenceHandlerInterface
             ? static fn(): ReferenceHandlerInterface => $custom
-            : static fn(): ReferenceHandlerInterface => new ReferenceHandler(BuilderAccess::container($builder) ?? new Container());
+            : static fn(): ReferenceHandlerInterface => new ReferenceHandler(self::container($builder));
         $builder->setReferenceHandler(new CapturingReferenceHandler($inner, $stash));
         $list = new ListToolsInterceptor($server, $delegates, $publisher);
         $builder->addRequestHandler($list);
         $builder->addRequestHandler(new CallToolInterceptor($server, $delegates, $list, $interceptor, $publisher, $stash, new RequestReader()));
+    }
+
+    /**
+     * The container the Builder holds at the first call, which build() also used. When it cannot be read (C6), the
+     * drift is logged once per Builder and a fresh default container keeps the tools working.
+     */
+    private static function container(Builder $builder): ?ContainerInterface
+    {
+        try {
+            return StrictErrors::run(static fn(): ?ContainerInterface => BuilderAccess::container($builder));
+        } catch (\Throwable) {
+            Drift::report($builder);
+
+            return new Container();
+        }
     }
 
     private static function incompatible(string $reason, ?\Throwable $previous = null): \UnexpectedValueException

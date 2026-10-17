@@ -37,6 +37,7 @@ final class CallErrorsTest extends TestCase
     #[Group('ac-05-E5')]
     public function testAToolCallExceptionIsAnErrorResultAndTheEventKeepsTheException(): void
     {
+        $twin = HttpHarness::result($this->fixture->harness($this->builder())->callTool('fails', []));
         $harness = $this->tracked();
 
         $result = HttpHarness::result($harness->callTool('fails', ['session_id' => 'start']));
@@ -44,10 +45,26 @@ final class CallErrorsTest extends TestCase
         $event = $this->fixture->event();
         $this->assertTrue(JsonAssert::at($result, 'isError'));
         $this->assertSame([$this->issued($event->sessionId), 'no luck'], $this->texts($result));
+        $this->assertSameAsTheTwinAfterTheIssuedBlock($twin, $result);
         $this->assertTrue($event->isError);
         $this->assertSame(\Mcp\Exception\ToolCallException::class, JsonAssert::at($event->error, 'type'));
         $this->assertSame('no luck', JsonAssert::at($event->error, 'message'));
         $this->assertNotSame([], JsonAssert::at($event->error, 'frames'), 'the stashed exception wins over the result text');
+    }
+
+    public function testAnErrorResultWithoutAnExceptionIsAnErrorEvent(): void
+    {
+        $twin = HttpHarness::result($this->fixture->harness($this->builder())->callTool('refuses', []));
+        $harness = $this->tracked();
+
+        $result = HttpHarness::result($harness->callTool('refuses', ['session_id' => 'start']));
+
+        $event = $this->fixture->event();
+        $this->assertSame([$this->issued($event->sessionId), 'not allowed'], $this->texts($result));
+        $this->assertSameAsTheTwinAfterTheIssuedBlock($twin, $result);
+        $this->assertTrue($event->isError);
+        $this->assertSame('{"message":"not allowed","platform":"php"}', $this->json($event->error), 'from the result text: nothing was thrown');
+        $this->assertSame($this->json($twin), $this->json($event->response));
     }
 
     #[Group('ac-02-24')]
@@ -148,6 +165,7 @@ final class CallErrorsTest extends TestCase
         Tools::echo($builder);
         Tools::fails($builder);
         Tools::boom($builder);
+        Tools::refuses($builder);
 
         return $builder;
     }
@@ -155,6 +173,15 @@ final class CallErrorsTest extends TestCase
     private function issued(string $sessionId): string
     {
         return implode("\n", [Constants::MINT_BACK_HEADER_ISSUED, 'session_id: ' . $sessionId, Constants::MINT_BACK_ISSUED_BODY]);
+    }
+
+    /** The tracked answer is the untracked one with the issued block first. */
+    private function assertSameAsTheTwinAfterTheIssuedBlock(\stdClass $twin, \stdClass $result): void
+    {
+        $content = $result->content ?? null;
+        $this->assertIsArray($content);
+        $this->assertSame($this->json($twin->content ?? null), $this->json(array_slice($content, 1)));
+        $this->assertSame($twin->isError ?? null, $result->isError ?? null);
     }
 
     /** @return list<mixed> */

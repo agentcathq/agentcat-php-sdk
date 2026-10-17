@@ -54,6 +54,9 @@ final readonly class RequestReader
 
         $params = $request->jsonSerialize()['params'] ?? [];
         $params['arguments'] = (object) $request->arguments; // integer keys stay keys (N8); empty arguments are {}
+        if ($meta !== null) {
+            $params['_meta'] = (object) $meta; // a sent `_meta: {}` stays {}
+        }
         $extra = new \stdClass();
         if ($transportSessionId !== null) {
             $extra->sessionId = $transportSessionId;

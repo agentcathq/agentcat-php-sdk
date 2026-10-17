@@ -13,6 +13,7 @@ use AgentCat\McpSdk\Internal\CallToolInterceptor;
 use AgentCat\McpSdk\Internal\ListToolsInterceptor;
 use AgentCat\McpSdk\McpSdkAdapter;
 use AgentCat\Options;
+use AgentCat\Tests\Support\JsonAssert;
 use AgentCat\Tests\Support\McpSdk\BuilderMembers;
 use AgentCat\Tests\Support\McpSdk\HttpHarness;
 use AgentCat\Tests\Support\McpSdk\RecordingTool;
@@ -40,6 +41,8 @@ final class RuntimeDriftTest extends TestCase
 
     private MemoryLogger $logger;
 
+    private RecordingTransport $transport;
+
     private EventQueue $queue;
 
     #[\Override]
@@ -47,7 +50,8 @@ final class RuntimeDriftTest extends TestCase
     {
         $this->logger = new MemoryLogger();
         Log::setLogger($this->logger);
-        $this->queue = new EventQueue(transport: new RecordingTransport());
+        $this->transport = new RecordingTransport();
+        $this->queue = new EventQueue(transport: $this->transport);
     }
 
     #[\Override]
@@ -164,6 +168,24 @@ final class RuntimeDriftTest extends TestCase
         $this->assertObjectHasProperty('result', $answer);
         $this->assertNull($server->registry, 'nothing to rebuild from');
         $this->assertSame(['queueLength' => 1, 'activeRequests' => 0], $this->queue->stats(), 'the call is still traced');
+        $this->assertSame([self::COMPATIBILITY], $this->logger->messages());
+    }
+
+    public function testAnUnreadableContainerFallsBackToTheLibraryDefault(): void
+    {
+        $builder = $this->builder();
+        [, $harness] = $this->tracked($builder);
+        BuilderMembers::remove('container')($builder);
+        $harness->initialize();
+        $harness->listTools();
+
+        $first = $harness->callTool('echo', ['msg' => 'hi', 'session_id' => 'start']);
+        $second = $harness->callTool('echo', ['msg' => 'hi', 'session_id' => 'start']);
+
+        $this->assertSame('ok', JsonAssert::at(HttpHarness::result($first), 'content', 1, 'text'));
+        $this->assertSame('ok', JsonAssert::at(HttpHarness::result($second), 'content', 1, 'text'));
+        $this->assertTrue($this->queue->flush());
+        $this->assertCount(2, $this->transport->deliveries, 'both calls are traced');
         $this->assertSame([self::COMPATIBILITY], $this->logger->messages());
     }
 

@@ -93,7 +93,7 @@ final class RequestContextTest extends TestCase
         $this->assertObjectNotHasProperty('sessionId', $this->extra($modern));
     }
 
-    public function testExtraHasTheTypeScriptKeysInOrderAndNoRequestInfoOnTheCommandLine(): void
+    public function testExtraHasTheD34KeysInOrderAndNoRequestInfoOnTheCommandLine(): void
     {
         $harness = $this->tracked();
 
@@ -152,6 +152,17 @@ final class RequestContextTest extends TestCase
         $this->assertFalse($context->continuation);
     }
 
+    public function testAnEmptyMetaIsRecordedAsAnEmptyObject(): void
+    {
+        $harness = $this->tracked();
+
+        $harness->callTool('echo', ['msg' => 'hi'], []);
+
+        $parameters = $this->fixture->event()->parameters;
+        $this->assertSame('{}', $this->json(JsonAssert::at($parameters, 'request', 'params', '_meta')));
+        $this->assertSame('{}', $this->json(JsonAssert::at($parameters, 'extra', '_meta')));
+    }
+
     public function testTheReaderKeepsIntegerArgumentKeysAndEmptyArgumentsAsAnObject(): void
     {
         $reader = new RequestReader(static fn(): ?HttpContext => null);
@@ -159,11 +170,13 @@ final class RequestContextTest extends TestCase
 
         $listed = $reader->read(CallToolRequest::fromArray(['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/call', 'params' => ['name' => 'echo', 'arguments' => ['zero', 'one']]]), $session);
         $empty = $reader->read((new CallToolRequest('echo', []))->withId(2), $session);
+        $emptyMeta = $reader->read((new CallToolRequest('echo', []))->withId(3)->withMeta([]), $session);
 
         $this->assertSame('{"0":"zero","1":"one"}', $this->json(JsonAssert::at($listed->request, 'params', 'arguments')), 'N8');
         $this->assertSame(['zero', 'one'], $listed->toolCall->arguments);
         $this->assertSame('{"method":"tools/call","params":{"name":"echo","arguments":{}}}', $this->json($empty->request));
         $this->assertSame(['sessionId', 'requestId'], $this->keys($empty->extra), 'no _meta when none was sent');
+        $this->assertSame('{"method":"tools/call","params":{"name":"echo","arguments":{},"_meta":{}}}', $this->json($emptyMeta->request));
     }
 
     public function testTheModernEraReadsTheRequestMeta(): void

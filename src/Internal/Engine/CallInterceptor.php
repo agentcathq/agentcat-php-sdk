@@ -37,9 +37,13 @@ final readonly class CallInterceptor
     }
 
     /**
-     * @template TResult
+     * `TSeam` lets PHPStan infer `TResult` from the seam's declared ancestor instead of comparing the two (PHPStan
+     * 2.3 does not match an invariant `CallSeam<Response<mixed>|…>` against itself).
      *
-     * @param CallSeam<TResult> $seam
+     * @template TResult
+     * @template TSeam of CallSeam<TResult>
+     *
+     * @param TSeam $seam
      *
      * @return TResult
      */
