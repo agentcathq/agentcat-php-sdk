@@ -12,7 +12,10 @@ use AgentCat\Internal\Json\Json;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Pipeline\EventProcessor;
 use AgentCat\Internal\Pipeline\QueuedEvent;
+use AgentCat\Internal\Transport\CurlHttpChannel;
 use AgentCat\Internal\Transport\CurlTransport;
+use AgentCat\Internal\Transport\HttpChannel;
+use AgentCat\Internal\Transport\HttpRequest;
 use AgentCat\Internal\Transport\RetryPolicy;
 use AgentCat\Tests\Integration\Support\MockCollector;
 use AgentCat\Tests\Support\JsonAssert;
@@ -147,6 +150,44 @@ final class EventQueueDeliveryTest extends TestCase
         $this->assertSame(['Shutting down with 2 events still in queue'], $this->logger->messages());
         $this->assertSame(['queueLength' => 2, 'activeRequests' => 5], $queue->stats());
         $this->assertEqualsWithDelta(5.0, EventQueue::SHUTDOWN_TIMEOUT_SECONDS, PHP_FLOAT_EPSILON);
+    }
+
+    /**
+     * Review Focus 1: an exporter endpoint that hangs, on a server whose AgentCat API works. `pump()` returns at once,
+     * the event is delivered, and `shutdown()` waits for the export only until its budget, then abandons it.
+     */
+    #[Group('ac-06-63')]
+    #[MaximumDuration(5000)]
+    public function testASlowExportEndpointNeverHoldsTheEventsBack(): void
+    {
+        $events = $this->collector()->scenario();
+        $slow = $this->collector()->scenario([], ['status' => 200, 'delayMs' => 3000]);
+        $channel = new CurlHttpChannel();
+        $exporter = new readonly class ($channel, $slow) implements ExporterSink {
+            public function __construct(private HttpChannel $channel, private string $url) {}
+
+            #[\Override]
+            public function export(Event $event): void
+            {
+                $this->channel->post(new HttpRequest($this->url . '/v1/traces', [], '{}'), static function (): void {});
+            }
+        };
+        $queue = new EventQueue(new EventProcessor(), new CurlTransport(new RetryPolicy([0.01, 0.02, 0.04])), $exporter, null, 0.3, null, $channel);
+        $queue->configure($events);
+        $queue->add(new QueuedEvent($this->event('slow-export')));
+
+        $start = hrtime(true);
+        $queue->pump();
+        $this->assertLessThan(1.0, (hrtime(true) - $start) / 1e9, 'pump() at handler entry never waits');
+
+        $start = hrtime(true);
+        $queue->shutdown();
+        $elapsed = (hrtime(true) - $start) / 1e9;
+
+        $this->assertGreaterThanOrEqual(0.29, $elapsed, 'shutdown() waits for the export, up to its budget');
+        $this->assertLessThan(1.5, $elapsed, 'the shutdown budget (0.3 s here) bounds the slow export');
+        $this->assertCount(1, $this->collector()->requests($events), 'the event is delivered');
+        $this->assertSame(1, $channel->pending(), 'the slow export is abandoned');
     }
 
     private function collector(): MockCollector

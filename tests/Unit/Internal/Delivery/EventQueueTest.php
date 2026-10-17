@@ -12,11 +12,17 @@ use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Pipeline\EventProcessor;
 use AgentCat\Internal\Pipeline\QueuedEvent;
 use AgentCat\Internal\Pipeline\Sanitizer;
+use AgentCat\Internal\Transport\CurlHttpChannel;
 use AgentCat\Internal\Transport\Delivery;
+use AgentCat\Internal\Transport\HttpChannel;
+use AgentCat\Internal\Transport\HttpRequest;
+use AgentCat\Internal\Transport\HttpResponse;
 use AgentCat\Internal\Wire\WireEncoder;
 use AgentCat\Tests\Support\JsonAssert;
 use AgentCat\Tests\Support\MemoryLogger;
+use AgentCat\Tests\Support\RecordingCompanion;
 use AgentCat\Tests\Support\RecordingExporter;
+use AgentCat\Tests\Support\RecordingHttpChannel;
 use AgentCat\Tests\Support\RecordingTransport;
 use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
 use PHPUnit\Framework\Attributes\Group;
@@ -723,6 +729,282 @@ final class EventQueueTest extends TestCase
         $this->assertSame(['queueLength' => 1, 'activeRequests' => 5], $queue->stats());
     }
 
+    #[Group('ac-06-63')]
+    public function testFlushWaitsForTheSideChannelAndRunsItsCallbacks(): void
+    {
+        $channel = new RecordingHttpChannel();
+        $answered = [];
+        $queue = new EventQueue(transport: new RecordingTransport(), exporters: $this->posting($channel, static function (HttpResponse $r) use (&$answered): void {
+            $answered[] = $r->status;
+        }), channel: $channel);
+        $queue->add(new QueuedEvent(new Event(eventType: 'mcp:tools/call', resourceName: 'a')));
+
+        $this->assertTrue($queue->flush());
+
+        $this->assertSame(['http://exporter.test/a'], $channel->urls());
+        $this->assertSame([200], $answered);
+    }
+
+    #[Group('ac-06-63')]
+    public function testFlushReportsFalseWhileASideRequestIsStillPending(): void
+    {
+        $channel = new RecordingHttpChannel(complete: false);
+        $queue = new EventQueue(transport: new RecordingTransport(), exporters: $this->posting($channel), channel: $channel);
+        $queue->add(new QueuedEvent(new Event(eventType: 'mcp:tools/call', resourceName: 'a')));
+
+        $this->assertFalse($queue->flush(1.0));
+        $this->assertSame(1, $channel->pending());
+        $this->assertTrue($queue->hasWork());
+    }
+
+    /** Neither side waits on the other's sockets: 10 ms on the transport, then 10 ms on the channel, up to the deadline. */
+    #[Group('ac-06-63')]
+    public function testFlushWaitsInShortSlicesWhileASideRequestIsPending(): void
+    {
+        $transport = new RecordingTransport();
+        $channel = new RecordingHttpChannel(complete: false);
+        $queue = new EventQueue(transport: $transport, channel: $channel);
+        $channel->post(new HttpRequest('http://exporter.test/a', [], '{}'), static function (): void {});
+
+        $this->assertFalse($queue->flush(0.1));
+
+        $this->assertEqualsWithDelta(0.1, $transport->now(), 1e-9, 'the last slice ends at the deadline');
+        $this->assertGreaterThanOrEqual(10, $transport->waits);
+        $this->assertLessThanOrEqual(11, $transport->waits);
+        $this->assertSame(array_fill(0, $transport->waits, 0.01), $channel->waits);
+    }
+
+    #[Group('ac-06-63')]
+    public function testShutdownFinishesTheCompanionsAfterTheEventsAndDrivesTheirRequests(): void
+    {
+        $channel = new RecordingHttpChannel();
+        $order = [];
+        $queue = new EventQueue(transport: new RecordingTransport(), exporters: $this->posting($channel, static function () use (&$order): void {
+            $order[] = 'export answered';
+        }), channel: $channel);
+        $queue->attach(new RecordingCompanion(static function () use ($channel, &$order): void {
+            $order[] = 'finish';
+            $channel->post(new HttpRequest('http://collector.test/v1/logs', [], '{}'), static function () use (&$order): void {
+                $order[] = 'diagnostics answered';
+            });
+        }));
+        $queue->add(new QueuedEvent(new Event(projectId: 'proj_x', eventType: 'mcp:tools/call', resourceName: 'a')));
+
+        $queue->shutdown();
+
+        $this->assertSame(['export answered', 'finish', 'diagnostics answered'], $order);
+    }
+
+    public function testPumpTicksTheCompanionsAndPumpsTheSideChannel(): void
+    {
+        $channel = new RecordingHttpChannel();
+        $queue = new EventQueue(transport: new RecordingTransport(), channel: $channel);
+        $companion = new RecordingCompanion();
+        $queue->attach($companion);
+        $answered = 0;
+        $channel->post(new HttpRequest('http://exporter.test/a', [], '{}'), static function () use (&$answered): void {
+            ++$answered;
+        });
+
+        $queue->pump();
+
+        $this->assertSame(['tick'], $companion->calls);
+        $this->assertSame(1, $answered);
+        $this->assertSame(0, $channel->pending());
+    }
+
+    public function testAThrowingCompanionNeverStopsThePass(): void
+    {
+        $channel = new RecordingHttpChannel();
+        $queue = new EventQueue(transport: new RecordingTransport(), channel: $channel);
+        $failing = new RecordingCompanion(tickFailure: new \RuntimeException('x'));
+        $plain = new RecordingCompanion();
+        $queue->attach($failing);
+        $queue->attach($plain);
+        $answered = 0;
+        $channel->post(new HttpRequest('http://exporter.test/a', [], '{}'), static function () use (&$answered): void {
+            ++$answered;
+        });
+
+        $queue->pump();
+
+        $this->assertSame(['tick'], $failing->calls);
+        $this->assertSame(['tick'], $plain->calls);
+        $this->assertSame(1, $answered, 'the side channel still runs');
+        $this->assertSame([], $this->logger->messages());
+    }
+
+    public function testAThrowingSideChannelNeverStopsTheQueue(): void
+    {
+        $transport = new RecordingTransport();
+        $channel = new RecordingHttpChannel();
+        $queue = new EventQueue(transport: $transport, channel: $channel);
+        $channel->post(new HttpRequest('http://exporter.test/a', [], '{}'), static fn(): never => throw new \RuntimeException('callback'));
+        $queue->add(new QueuedEvent($this->event()));
+
+        $queue->pump();
+
+        $this->assertCount(1, $transport->deliveries);
+        $this->assertSame([], $this->logger->messages());
+        $this->assertTrue($queue->flush());
+    }
+
+    /** The C2 setup of a shutdown after the shared deadline: the companions' turn never comes. */
+    #[Group('ac-03-9')]
+    public function testCompanionsAreNotFinishedOnceTheSharedDeadlineHasPassed(): void
+    {
+        $transport = new RecordingTransport(complete: false);
+        $queue = new EventQueue(transport: $transport, shutdownTimeoutSeconds: 1.0);
+        $companion = new RecordingCompanion();
+        $queue->attach($companion);
+        $queue->add(new QueuedEvent($this->event()));
+
+        $queue->shutdown(); // the held event uses the whole budget
+        $queue->shutdown();
+
+        $this->assertSame(['tick', 'tick'], $companion->calls, 'no finish, and nothing after the deadline');
+        $this->assertEqualsWithDelta(1.0, $transport->now(), PHP_FLOAT_EPSILON);
+    }
+
+    /** `finish()` is the last call a companion gets in a shutdown: the pass after it drives the channel only. */
+    #[Group('ac-03-9')]
+    public function testShutdownFinishesEachCompanionOnceAfterDeliveringEverything(): void
+    {
+        $transport = new RecordingTransport();
+        $queue = new EventQueue(transport: $transport);
+        $first = new RecordingCompanion();
+        $second = new RecordingCompanion();
+        $queue->attach($first);
+        $queue->attach($second);
+        $queue->add(new QueuedEvent($this->event()));
+
+        $queue->shutdown();
+
+        $this->assertSame(['tick', 'finish'], $first->calls);
+        $this->assertSame(['tick', 'finish'], $second->calls);
+        $this->assertCount(1, $transport->deliveries);
+        $this->assertSame([], $this->logger->messages());
+    }
+
+    public function testAThrowingFinishNeverStopsTheShutdown(): void
+    {
+        $channel = new RecordingHttpChannel();
+        $queue = new EventQueue(transport: new RecordingTransport(), channel: $channel);
+        $failing = new RecordingCompanion(static fn(): never => throw new \RuntimeException('finish'));
+        $posting = new RecordingCompanion(static function () use ($channel): void {
+            $channel->post(new HttpRequest('http://collector.test/v1/logs', [], '{}'), static function (): void {});
+        });
+        $queue->attach($failing);
+        $queue->attach($posting);
+
+        $queue->shutdown();
+
+        $this->assertSame(['tick', 'finish'], $failing->calls);
+        $this->assertSame(['tick', 'finish'], $posting->calls);
+        $this->assertSame(['http://collector.test/v1/logs'], $channel->urls());
+        $this->assertSame(0, $channel->pending(), 'the last request was driven');
+        $this->assertSame([], $this->logger->messages());
+    }
+
+    public function testHasWorkIsFalseWhenNothingIsLeft(): void
+    {
+        $queue = new EventQueue(transport: new RecordingTransport(), channel: new RecordingHttpChannel());
+        $queue->attach(new RecordingCompanion());
+
+        $this->assertFalse($queue->hasWork());
+    }
+
+    public function testHasWorkCountsEventsSideRequestsAndCompanions(): void
+    {
+        $waiting = new EventQueue(transport: new RecordingTransport());
+        $waiting->add(new QueuedEvent($this->event()));
+        $this->assertTrue($waiting->hasWork(), 'an event waits');
+
+        $inDelivery = new EventQueue(transport: new RecordingTransport(complete: false));
+        $inDelivery->add(new QueuedEvent($this->event()));
+        $inDelivery->pump();
+        $this->assertSame(['queueLength' => 0, 'activeRequests' => 1], $inDelivery->stats());
+        $this->assertTrue($inDelivery->hasWork(), 'an event in delivery');
+
+        $channel = new RecordingHttpChannel(complete: false);
+        $side = new EventQueue(transport: new RecordingTransport(), channel: $channel);
+        $channel->post(new HttpRequest('http://exporter.test/a', [], '{}'), static function (): void {});
+        $this->assertTrue($side->hasWork(), 'a side request is pending');
+
+        $buffering = new RecordingCompanion();
+        $companions = new EventQueue(transport: new RecordingTransport());
+        $companions->attach(new RecordingCompanion());
+        $companions->attach($buffering);
+        $this->assertFalse($companions->hasWork());
+        $buffering->work = true;
+        $this->assertTrue($companions->hasWork(), 'a companion has work');
+    }
+
+    public function testHasWorkIsTrueWhenACheckThrows(): void
+    {
+        $queue = new EventQueue(transport: new RecordingTransport(failure: new \RuntimeException('down')));
+
+        $this->assertTrue($queue->hasWork());
+        $this->assertSame([], $this->logger->messages());
+    }
+
+    public function testArmRunsTheDeliveryTriggersWithoutAnEvent(): void
+    {
+        $count = 0;
+        $queue = new EventQueue(transport: new RecordingTransport(), onEnqueue: static function () use (&$count): void {
+            ++$count;
+        });
+
+        $queue->arm();
+        $queue->arm();
+
+        $this->assertSame(2, $count);
+        $this->assertSame(['queueLength' => 0, 'activeRequests' => 0], $queue->stats());
+        $this->assertFalse($queue->hasWork());
+        $this->assertSame([], $this->logger->messages());
+    }
+
+    #[Group('ac-03-13')]
+    public function testArmLogsAFailingRegistrar(): void
+    {
+        $queue = new EventQueue(transport: new RecordingTransport(), onEnqueue: static fn(): never => throw new \RuntimeException('no'));
+
+        $queue->arm();
+
+        $this->assertSame(['Failed to register AgentCat event delivery as a background task: RuntimeException: no'], $this->logger->messages());
+    }
+
+    public function testArmWithoutARegistrarDoesNothing(): void
+    {
+        $queue = new EventQueue(transport: new RecordingTransport());
+
+        $queue->arm();
+
+        $this->assertFalse($queue->hasWork());
+        $this->assertSame([], $this->logger->messages());
+    }
+
+    public function testExporterSinkIsTheOneGivenThenTheOneSet(): void
+    {
+        $first = new RecordingExporter();
+        $second = new RecordingExporter();
+        $queue = new EventQueue(transport: new RecordingTransport(), exporters: $first);
+
+        $this->assertSame($first, $queue->exporterSink());
+
+        $queue->setExporterSink($second);
+
+        $this->assertSame($second, $queue->exporterSink());
+    }
+
+    public function testChannelIsTheOneGivenElseACurlChannel(): void
+    {
+        $channel = new RecordingHttpChannel();
+
+        $this->assertSame($channel, (new EventQueue(transport: new RecordingTransport(), channel: $channel))->channel());
+        $this->assertInstanceOf(CurlHttpChannel::class, (new EventQueue(transport: new RecordingTransport()))->channel());
+    }
+
     private function event(string $resourceName = 'tool', ?string $projectId = 'proj_test'): Event
     {
         return new Event(projectId: $projectId, eventType: 'mcp:tools/call', resourceName: $resourceName);
@@ -735,5 +1017,24 @@ final class EventQueueTest extends TestCase
             static fn(Delivery $delivery): mixed => JsonAssert::at(Json::decode($delivery->body), 'resource_name'),
             $transport->deliveries,
         );
+    }
+
+    /**
+     * An exporter sink that posts one side request per event, like an exporter does.
+     *
+     * @param (\Closure(HttpResponse): void)|null $onDone
+     */
+    private function posting(HttpChannel $channel, ?\Closure $onDone = null): ExporterSink
+    {
+        return new readonly class ($channel, $onDone) implements ExporterSink {
+            /** @param (\Closure(HttpResponse): void)|null $onDone */
+            public function __construct(private HttpChannel $channel, private ?\Closure $onDone) {}
+
+            #[\Override]
+            public function export(Event $event): void
+            {
+                $this->channel->post(new HttpRequest('http://exporter.test/' . $event->resourceName, [], '{}'), $this->onDone ?? static function (): void {});
+            }
+        };
     }
 }

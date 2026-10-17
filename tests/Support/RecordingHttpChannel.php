@@ -14,6 +14,9 @@ final class RecordingHttpChannel implements HttpChannel
     /** @var list<HttpRequest> */
     public array $requests = [];
 
+    /** @var list<float> the `$seconds` of every waitForActivity() call */
+    public array $waits = [];
+
     /** @var list<array{index: int, onDone: \Closure(HttpResponse): void}> */
     private array $held = [];
 
@@ -51,7 +54,10 @@ final class RecordingHttpChannel implements HttpChannel
     }
 
     #[\Override]
-    public function waitForActivity(float $seconds): void {}
+    public function waitForActivity(float $seconds): void
+    {
+        $this->waits[] = $seconds;
+    }
 
     /** @return list<string> the URLs, in post order */
     public function urls(): array
