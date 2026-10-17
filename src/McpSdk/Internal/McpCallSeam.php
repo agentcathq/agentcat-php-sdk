@@ -106,14 +106,16 @@ final class McpCallSeam implements CallSeam
     public function replace(mixed $result, \stdClass $tree): Response|Error
     {
         // A JSON-RPC error is never decorated (header conflict 3).
-        return $result instanceof Response ? new Response($result->getId(), new WireResult($tree)) : $result;
+        return $result instanceof Response
+            ? new Response($result->getId(), new WireCallToolResult(Trees::callToolResult($result->result), $tree))
+            : $result;
     }
 
-    /** @return Response<WireResult> */
+    /** @return Response<WireCallToolResult> */
     #[\Override]
     public function answer(\stdClass $tree): Response
     {
-        return new Response($this->request->getId(), new WireResult($tree));
+        return new Response($this->request->getId(), new WireCallToolResult(Trees::callToolResult($tree), $tree));
     }
 
     #[\Override]
@@ -125,6 +127,6 @@ final class McpCallSeam implements CallSeam
         }
         $answer = $delegate->handle((new ListToolsRequest())->withId('agentcat-rebuild'), $this->session);
 
-        return $answer instanceof Response ? (Trees::listing($answer->result)[1] ?? null) : null;
+        return $answer instanceof Response ? (Trees::listing($answer->result)[2] ?? null) : null;
     }
 }

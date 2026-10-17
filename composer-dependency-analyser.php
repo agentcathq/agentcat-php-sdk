@@ -13,4 +13,6 @@ return (new Configuration())
     // mcp/sdk is optional (01 AC-90): a dev dependency and a suggestion, used only by the adapter.
     ->ignoreErrorsOnPackageAndPath('mcp/sdk', __DIR__ . '/src/McpSdk', [ErrorType::DEV_DEPENDENCY_IN_PROD])
     // Psr\Container\ContainerInterface arrives with mcp/sdk; the adapter only passes it through.
-    ->ignoreErrorsOnPackageAndPath('psr/container', __DIR__ . '/src/McpSdk', [ErrorType::SHADOW_DEPENDENCY]);
+    ->ignoreErrorsOnPackageAndPath('psr/container', __DIR__ . '/src/McpSdk', [ErrorType::SHADOW_DEPENDENCY])
+    // Psr\EventDispatcher\EventDispatcherInterface arrives with mcp/sdk; the test double stands in for a customer's dispatcher.
+    ->ignoreErrorsOnPackageAndPath('psr/event-dispatcher', __DIR__ . '/tests/Support/McpSdk/RecordingDispatcher.php', [ErrorType::SHADOW_DEPENDENCY]);

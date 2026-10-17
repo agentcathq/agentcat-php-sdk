@@ -6,6 +6,7 @@ namespace AgentCat\McpSdk\Internal;
 
 use AgentCat\Internal\Json\Json;
 use AgentCat\Internal\Wire\WireEncoder;
+use Mcp\Schema\Result\CallToolResult;
 use Mcp\Schema\Result\ListToolsResult;
 
 /**
@@ -59,10 +60,10 @@ final class Trees
     }
 
     /**
-     * The wire tree of a `tools/list` result and its tools, or null when the result is not a `ListToolsResult` whose
-     * `tools` is a JSON array on the wire. The listing and the registry rebuild read the same tools this way.
+     * A `tools/list` result, its wire tree and the tree's tools, or null when the result is not a `ListToolsResult`
+     * whose `tools` is a JSON array on the wire. The listing and the registry rebuild read the same tools this way.
      *
-     * @return array{\stdClass, list<mixed>}|null
+     * @return array{ListToolsResult, \stdClass, list<mixed>}|null
      *
      * @throws \JsonException for a value JSON cannot carry
      */
@@ -76,6 +77,36 @@ final class Trees
             return null;
         }
 
-        return [$tree, $tree->tools];
+        return [$result, $tree, $tree->tools];
+    }
+
+    /**
+     * A tool result as the library's type: the result itself when it is a `CallToolResult`, else what
+     * `CallToolResult::fromArray()` reads from its tree (the way the mcp/sdk client reads an answer), or a result with
+     * no content when the tree is not a tool result. Never throws.
+     */
+    public static function callToolResult(mixed $result): CallToolResult
+    {
+        if ($result instanceof CallToolResult) {
+            return $result;
+        }
+        try {
+            /** @var array{content: array<mixed>, isError?: bool, _meta?: array<string, mixed>, structuredContent?: mixed} $data fromArray() checks it */
+            $data = self::arrays(self::of($result));
+
+            return CallToolResult::fromArray($data);
+        } catch (\Throwable) {
+            return new CallToolResult([]);
+        }
+    }
+
+    /** A tree with its objects as associative arrays, the way mcp/sdk reads decoded JSON. */
+    private static function arrays(mixed $tree): mixed
+    {
+        if ($tree instanceof \stdClass) {
+            $tree = get_object_vars($tree);
+        }
+
+        return is_array($tree) ? array_map(self::arrays(...), $tree) : $tree;
     }
 }

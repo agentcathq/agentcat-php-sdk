@@ -57,14 +57,14 @@ final readonly class ListToolsInterceptor implements RequestHandlerInterface
             if ($listing === null) {
                 return $response; // another answer, or no tool list on the wire
             }
-            [$tree, $listed] = $listing;
+            [$original, $tree, $listed] = $listing;
             $tools = ToolListing::apply($this->server, $listed);
             if ($tools === null) {
                 return $response;
             }
             $tree->tools = $tools;
 
-            return new Response($response->getId(), new WireResult($tree));
+            return new Response($response->getId(), new WireListToolsResult($original, $tree));
         } catch (\Throwable $e) {
             Log::write('Warning: AgentCat tool-list injection failed; serving the original tool list unmodified - ' . ErrorText::message($e));
 

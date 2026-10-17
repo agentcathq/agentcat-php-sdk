@@ -12,11 +12,13 @@ use PHPUnit\Framework\TestCase;
 
 final class ManifestTest extends TestCase
 {
-    public function testTheManifestListsExactlyTheMembersAgentCatReads(): void
+    public function testTheManifestListsExactlyTheMembersAgentCatDependsOn(): void
     {
-        // A new private member must change this list, so a reviewer sees it.
+        // A new private member or extended class must change this list, so a reviewer sees it.
         $this->assertSame(
             [
+                'Mcp\Schema\Result\CallToolResult::__construct(array $content, bool $isError = false, mixed $structuredContent = null, ?array $meta = null)',
+                'Mcp\Schema\Result\ListToolsResult::__construct(array $tools, ?string $nextCursor = null)',
                 'Mcp\Server\Builder::$container',
                 'Mcp\Server\Builder::$logger',
                 'Mcp\Server\Builder::$parts',
