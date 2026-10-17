@@ -401,6 +401,39 @@ final class ListToolsTest extends TestCase
         $this->assertSame($twin->nextCursor ?? null, $result->nextCursor ?? null);
     }
 
+    public function testMembersALaterLibraryAddsToTheListingAreKept(): void
+    {
+        $listing = $this->listing(['tools' => [self::tool('x')], 'nextCursor' => 'c', '_meta' => ['source' => 'customer']]);
+        $twin = $this->customerListing(false, $listing);
+
+        $result = $this->customerListing(true, $listing);
+
+        $this->assertSame(['x', GetMoreTools::NAME], $this->names($result));
+        $this->assertSame(['tools', 'nextCursor', '_meta'], $this->keys($result));
+        $this->assertSame($twin->nextCursor, $result->nextCursor);
+        $this->assertEquals($twin->_meta, $result->_meta);
+    }
+
+    /** @return iterable<string, array{array<string, mixed>}> */
+    public static function listingsWithoutAToolList(): iterable
+    {
+        yield 'no tools member' => [['items' => [self::tool('x')]]];
+        yield 'tools is an object' => [['tools' => ['x' => self::tool('x')]]];
+    }
+
+    /** @param array<string, mixed> $members */
+    #[DataProvider('listingsWithoutAToolList')]
+    public function testAListingWithoutAToolListOnTheWirePassesUnchanged(array $members): void
+    {
+        $listing = $this->listing($members);
+        $twin = $this->customerListing(false, $listing);
+
+        $result = $this->customerListing(true, $listing);
+
+        $this->assertEquals($twin, $result);
+        $this->assertSame([], $this->logger->messages());
+    }
+
     public function testAFailedInjectionServesTheOriginalListing(): void
     {
         $tool = new class ('flaky', null, ['type' => 'object', 'properties' => [], 'required' => []], null, null) extends Tool {
@@ -441,6 +474,42 @@ final class ListToolsTest extends TestCase
 
         $this->assertSame(['queueLength' => 0, 'activeRequests' => 1], $this->queue->stats());
         $this->assertCount(1, $this->transport->deliveries);
+    }
+
+    /** The listing a server gets when a customer handler added after install() answers `tools/list`. */
+    private function customerListing(bool $tracked, ListToolsResult $answer): \stdClass
+    {
+        $builder = $this->builder();
+        if ($tracked) {
+            $this->track($builder);
+        }
+        $builder->addRequestHandler(new CustomerHandler(ListToolsRequest::class, static fn(): ListToolsResult => $answer));
+
+        return $this->harness($builder)->listTools();
+    }
+
+    /**
+     * A `ListToolsResult` whose wire members are exactly these, standing in for a later mcp/sdk whose result has
+     * more members (for example `_meta`) or another shape.
+     *
+     * @param array<string, mixed> $members
+     */
+    private function listing(array $members): ListToolsResult
+    {
+        return new class ($members) extends ListToolsResult {
+            /** @param array<string, mixed> $members */
+            public function __construct(private readonly array $members)
+            {
+                parent::__construct([]);
+            }
+
+            /** @return array<string, mixed> */
+            #[\Override] // @phpstan-ignore method.childReturnType (stands in for a later ListToolsResult with other members)
+            public function jsonSerialize(): array
+            {
+                return $this->members;
+            }
+        };
     }
 
     private function builder(): Builder

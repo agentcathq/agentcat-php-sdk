@@ -9,7 +9,6 @@ use AgentCat\Internal\Support\StrictErrors;
 use Mcp\Capability\Registry\ReferenceHandlerInterface;
 use Mcp\Schema\Implementation;
 use Mcp\Server\Builder;
-use Mcp\Server\Handler\Request\RequestHandlerInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
 
@@ -23,7 +22,7 @@ use Psr\Log\LoggerInterface;
 final class BuilderAccess
 {
     /**
-     * @return list<RequestHandlerInterface<mixed>>|null the handlers build() assembled, AgentCat's included
+     * @return array<mixed>|null the handlers build() assembled, AgentCat's included; the entries are not checked here
      *
      * @phpstan-impure
      */

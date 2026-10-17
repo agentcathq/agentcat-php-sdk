@@ -26,6 +26,8 @@ use PHPUnit\Framework\TestCase;
 
 final class DelegatesTest extends TestCase
 {
+    private const string COMPATIBILITY = 'AgentCat SDK Compatibility: AgentCat supports mcp/sdk 0.8.1+ (pass the Mcp\Server\Builder to AgentCat::track() before build()).';
+
     private MemoryLogger $logger;
 
     #[\Override]
@@ -52,12 +54,21 @@ final class DelegatesTest extends TestCase
         $delegates = new Delegates($builder);
         $request = new ListToolsRequest();
 
-        $this->assertTrue($delegates->available());
         $this->assertSame($self, $delegates->after($before, $request));
         $this->assertSame($after, $delegates->after($self, $request));
         $this->assertInstanceOf(ListToolsHandler::class, $delegates->after($after, $request));
-        $this->assertNull($delegates->after($this->lister(), $request), 'a handler that is not in the list has no next one');
         $this->assertSame([], $this->logger->messages());
+    }
+
+    public function testACallerMissingFromTheListHasNoNextHandlerAndIsReportedOnce(): void
+    {
+        $builder = Server::builder();
+        $builder->build();
+        $delegates = new Delegates($builder);
+
+        $this->assertNull($delegates->after($this->lister(), new ListToolsRequest()));
+        $this->assertNull($delegates->after($this->lister(), new ListToolsRequest()));
+        $this->assertSame([self::COMPATIBILITY], $this->logger->messages());
     }
 
     public function testNotFoundIsTheLibrarysAnswerWhenNoHandlerSupportsTheRequest(): void
@@ -69,7 +80,7 @@ final class DelegatesTest extends TestCase
         $this->assertSame(7, $error->getId());
     }
 
-    public function testTheInterceptorAnswersNotFoundWhenNoHandlerFollowsIt(): void
+    public function testTheInterceptorStepsAsideWhenNoHandlerFollowsIt(): void
     {
         $builder = Server::builder();
         $builder->build();
@@ -80,9 +91,11 @@ final class DelegatesTest extends TestCase
         );
         $request = (new ListToolsRequest())->withId(3);
 
-        $this->assertTrue($interceptor->supports($request));
+        $this->assertFalse($interceptor->supports($request), 'the library answers instead');
         $this->assertFalse($interceptor->supports((new CallToolRequest('echo', []))->withId(4)));
+        // A caller that ignores supports() gets the library's own answer for a request nobody handles.
         $this->assertEquals(Delegates::notFound($request), $interceptor->handle($request, new Session(new InMemorySessionStore())));
+        $this->assertSame([self::COMPATIBILITY], $this->logger->messages());
     }
 
     private function lister(): CustomerHandler

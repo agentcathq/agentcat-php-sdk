@@ -6,6 +6,7 @@ namespace AgentCat\Tests\Contract\McpSdk;
 
 use AgentCat\McpSdk\Internal\Access\BuilderAccess;
 use AgentCat\Tests\Contract\PrivateMemberManifest;
+use AgentCat\Tests\Support\McpSdk\BuilderMembers;
 use AgentCat\Tests\Support\Thrown;
 use Mcp\Capability\Registry\Container;
 use Mcp\Capability\Registry\ReferenceHandler;
@@ -101,7 +102,7 @@ final class BuilderMembersTest extends TestCase
         $this->assertTrue(BuilderAccess::isBuilt($builder));
         $handlers = BuilderAccess::requestHandlers($builder);
         $this->assertNotNull($handlers);
-        $this->assertNotSame([], array_filter($handlers, static fn(RequestHandlerInterface $handler): bool => $handler instanceof CallToolHandler));
+        $this->assertNotSame([], array_filter($handlers, static fn(mixed $handler): bool => $handler instanceof CallToolHandler));
         $this->assertSame('contract', BuilderAccess::serverInfo($builder)?->name);
         $this->assertSame('1.2.3', BuilderAccess::serverInfo($builder)?->version);
     }
@@ -128,9 +129,9 @@ final class BuilderMembersTest extends TestCase
         yield 'parts lost requestHandlers' => [$parts([]), \ErrorException::class, 'Undefined array key "requestHandlers"'];
         yield 'requestHandlers retyped' => [$parts(['requestHandlers' => 'handlers']), \TypeError::class, 'must be of type ?array, string returned'];
         yield 'parts lost configuration' => [$parts(['requestHandlers' => []]), \ErrorException::class, 'Undefined array key "configuration"'];
-        yield 'referenceHandler removed' => [self::remove('referenceHandler'), \Error::class, 'Mcp\Server\Builder::$referenceHandler'];
-        yield 'container removed' => [self::remove('container'), \Error::class, 'Mcp\Server\Builder::$container'];
-        yield 'logger removed' => [self::remove('logger'), \Error::class, 'Mcp\Server\Builder::$logger'];
+        yield 'referenceHandler removed' => [BuilderMembers::remove('referenceHandler'), \Error::class, 'Mcp\Server\Builder::$referenceHandler'];
+        yield 'container removed' => [BuilderMembers::remove('container'), \Error::class, 'Mcp\Server\Builder::$container'];
+        yield 'logger removed' => [BuilderMembers::remove('logger'), \Error::class, 'Mcp\Server\Builder::$logger'];
     }
 
     /**
@@ -149,17 +150,5 @@ final class BuilderMembersTest extends TestCase
         $error = Thrown::by($class, static fn() => BuilderAccess::probe($builder));
         $this->assertSame($error::class, $class);
         $this->assertStringContainsString($message, $error->getMessage());
-    }
-
-    /** @return \Closure(Builder): void that unsets the member, as if a new mcp/sdk release had dropped it (RuntimeDriftTest uses it too) */
-    public static function remove(string $member): \Closure
-    {
-        return static function (Builder $builder) use ($member): void {
-            // @phpstan-ignore disallowed.method (simulates a removed member: PHP has no public way to unset a private property)
-            $unset = \Closure::bind(static function (Builder $b) use ($member): void {
-                unset($b->{$member}); // @phpstan-ignore property.dynamicName (the data provider names the member)
-            }, null, Builder::class);
-            $unset($builder);
-        };
     }
 }

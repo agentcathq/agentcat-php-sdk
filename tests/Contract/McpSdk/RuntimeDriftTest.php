@@ -8,8 +8,10 @@ use AgentCat\Internal\Delivery\EventQueue;
 use AgentCat\Internal\Engine\Publisher;
 use AgentCat\Internal\Engine\TrackedServer;
 use AgentCat\Internal\Logging\Log;
+use AgentCat\McpSdk\Internal\ListToolsInterceptor;
 use AgentCat\McpSdk\McpSdkAdapter;
 use AgentCat\Options;
+use AgentCat\Tests\Support\McpSdk\BuilderMembers;
 use AgentCat\Tests\Support\McpSdk\HttpHarness;
 use AgentCat\Tests\Support\McpSdk\RecordingTool;
 use AgentCat\Tests\Support\MemoryLogger;
@@ -66,7 +68,7 @@ final class RuntimeDriftTest extends TestCase
     public function testSignalsLeaveOutBuiltWhenPartsCannotBeRead(): void
     {
         $builder = Server::builder();
-        BuilderMembersTest::remove('parts')($builder);
+        BuilderMembers::remove('parts')($builder);
 
         $this->assertSame(['mcpSdkBuilder'], McpSdkAdapter::signals($builder));
     }
@@ -74,7 +76,7 @@ final class RuntimeDriftTest extends TestCase
     public function testTheLoggerIsUnknownWhenItsMemberIsGone(): void
     {
         $builder = Server::builder()->setLogger(new NullLogger());
-        BuilderMembersTest::remove('logger')($builder);
+        BuilderMembers::remove('logger')($builder);
 
         $this->assertNull(McpSdkAdapter::logger($builder));
     }
@@ -85,20 +87,29 @@ final class RuntimeDriftTest extends TestCase
         yield 'parts lost requestHandlers' => [static fn(array $parts): array => array_diff_key($parts, ['requestHandlers' => true])];
         yield 'requestHandlers retyped' => [static fn(array $parts): array => ['requestHandlers' => 'handlers'] + $parts];
         yield 'parts no longer kept' => [static fn(): ?array => null];
+        yield 'AgentCat handler not in the list' => [static fn(array $parts): array => self::withHandlers($parts, static fn(array $handlers): array => array_values(array_filter(
+            $handlers,
+            static fn(mixed $handler): bool => !$handler instanceof ListToolsInterceptor,
+        )))];
+        yield 'library handlers no longer after AgentCat' => [static fn(array $parts): array => self::withHandlers($parts, static fn(array $handlers): array => array_values(array_filter(
+            $handlers,
+            static fn(mixed $handler): bool => $handler instanceof ListToolsInterceptor,
+        )))];
+        yield 'entries are not handler objects' => [static fn(array $parts): array => self::withHandlers($parts, static fn(array $handlers): array => array_map(
+            static fn(mixed $handler): mixed => $handler instanceof ListToolsInterceptor || !is_object($handler) ? $handler : $handler::class,
+            $handlers,
+        ))];
     }
 
     /** @param \Closure(array<array-key, mixed>): ?array<array-key, mixed> $drift */
     #[DataProvider('handlerDrift')]
-    public function testUnreadableHandlersLeaveTheListingToTheLibrary(\Closure $drift): void
+    public function testChangedHandlersLeaveTheListingToTheLibrary(\Closure $drift): void
     {
         $twin = new HttpHarness($this->builder()->build());
         $twin->initialize();
         $expected = $twin->listTools();
         $builder = $this->builder();
-        $publisher = new Publisher(new EventQueue(transport: new RecordingTransport()));
-        $server = new TrackedServer('proj_aaaaaaaaaaaaaaaaaaaaaaaaaaa', new Options(), McpSdkAdapter::serverInfo($builder));
-        McpSdkAdapter::install($builder, $server, $publisher);
-        $harness = new HttpHarness($builder->build());
+        [$server, $harness] = $this->tracked($builder);
         $this->setParts($builder, $drift($this->parts($builder)));
         $harness->initialize();
 
@@ -109,6 +120,46 @@ final class RuntimeDriftTest extends TestCase
         $this->assertEquals($expected, $second);
         $this->assertNull($server->registry);
         $this->assertSame([self::COMPATIBILITY], $this->logger->messages());
+    }
+
+    public function testTheHandlerListReadAtTheFirstRequestIsKept(): void
+    {
+        $builder = $this->builder();
+        [, $harness] = $this->tracked($builder);
+        $harness->initialize();
+        $first = $harness->listTools();
+
+        $this->setParts($builder, null);
+        $second = $harness->listTools();
+
+        $this->assertEquals($first, $second);
+        $this->assertCount(2, $this->list($second->tools ?? null), 'echo and get_more_tools');
+        $this->assertSame([], $this->logger->messages());
+    }
+
+    public function testTwoDriftsOnOneBuilderLogOneLine(): void
+    {
+        $builder = $this->builder();
+        [$server, $harness] = $this->tracked($builder);
+        $this->setParts($builder, array_diff_key($this->parts($builder), ['requestHandlers' => true, 'configuration' => true]));
+        $harness->initialize();
+
+        $harness->listTools();
+
+        $this->assertSame([null, null], $server->serverInfo());
+        $this->assertSame([self::COMPATIBILITY], $this->logger->messages());
+    }
+
+    public function testEveryBuilderReportsItsOwnDrift(): void
+    {
+        foreach ([$this->builder(), $this->builder()] as $builder) {
+            [, $harness] = $this->tracked($builder);
+            $this->setParts($builder, null);
+            $harness->initialize();
+            $harness->listTools();
+        }
+
+        $this->assertSame([self::COMPATIBILITY, self::COMPATIBILITY], $this->logger->messages());
     }
 
     /** @return iterable<string, array{\Closure(array<array-key, mixed>): array<array-key, mixed>}> */
@@ -132,12 +183,48 @@ final class RuntimeDriftTest extends TestCase
         $this->assertSame([self::COMPATIBILITY], $this->logger->messages());
     }
 
+    /**
+     * Tracks the Builder and builds it. The harness is not initialized yet.
+     *
+     * @return array{TrackedServer, HttpHarness}
+     */
+    private function tracked(Builder $builder): array
+    {
+        $publisher = new Publisher(new EventQueue(transport: new RecordingTransport()));
+        $server = new TrackedServer('proj_aaaaaaaaaaaaaaaaaaaaaaaaaaa', new Options(), McpSdkAdapter::serverInfo($builder));
+        McpSdkAdapter::install($builder, $server, $publisher);
+
+        return [$server, new HttpHarness($builder->build())];
+    }
+
+    /**
+     * @param array<array-key, mixed> $parts
+     * @param \Closure(array<array-key, mixed>): array<array-key, mixed> $change
+     *
+     * @return array<array-key, mixed>
+     */
+    private static function withHandlers(array $parts, \Closure $change): array
+    {
+        $handlers = $parts['requestHandlers'] ?? null;
+        self::assertIsArray($handlers);
+
+        return ['requestHandlers' => $change($handlers)] + $parts;
+    }
+
     private function builder(): Builder
     {
         return Server::builder()->setServerInfo('drift', '1.0.0')->add(
             new Tool(name: 'echo', title: null, inputSchema: ['type' => 'object', 'properties' => ['msg' => ['type' => 'string']], 'required' => ['msg']], description: null, annotations: null),
             new RecordingTool(),
         );
+    }
+
+    /** @return list<mixed> */
+    private function list(mixed $value): array
+    {
+        $this->assertIsList($value);
+
+        return $value;
     }
 
     /** @return array<array-key, mixed> */

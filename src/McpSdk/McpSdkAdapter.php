@@ -12,6 +12,7 @@ use AgentCat\Internal\Support\ErrorText;
 use AgentCat\Internal\Support\StrictErrors;
 use AgentCat\McpSdk\Internal\Access\BuilderAccess;
 use AgentCat\McpSdk\Internal\Delegates;
+use AgentCat\McpSdk\Internal\Drift;
 use AgentCat\McpSdk\Internal\ListToolsInterceptor;
 use Mcp\Schema\Implementation;
 use Mcp\Server;
@@ -91,18 +92,13 @@ final class McpSdkAdapter
 
     /**
      * Reads the server name and version when an event is published: build() sets them. When they cannot be read
-     * (C6), logs one compatibility line and reports them unknown from then on.
+     * (C6), they are unknown, and the drift is logged once per Builder.
      *
      * @return \Closure(): array{0: ?string, 1: ?string}
      */
     public static function serverInfo(Builder $builder): \Closure
     {
-        $drifted = false;
-
-        return static function () use ($builder, &$drifted): array {
-            if ($drifted) {
-                return [null, null];
-            }
+        return static function () use ($builder): array {
             try {
                 return StrictErrors::run(static function () use ($builder): array {
                     $info = BuilderAccess::serverInfo($builder);
@@ -110,8 +106,7 @@ final class McpSdkAdapter
                     return $info instanceof Implementation ? [$info->name, $info->version] : [null, null];
                 });
             } catch (\Throwable) {
-                $drifted = true;
-                Log::write(self::COMPATIBILITY_LINE);
+                Drift::report($builder);
 
                 return [null, null];
             }
@@ -121,7 +116,8 @@ final class McpSdkAdapter
     /** Registers AgentCat's request handlers. They run before the library's own (02 §1.4). */
     public static function install(Builder $builder, TrackedServer $server, Publisher $publisher): void
     {
-        $builder->addRequestHandler(new ListToolsInterceptor($server, new Delegates($builder), $publisher));
+        $delegates = new Delegates($builder); // one per Builder, shared by AgentCat's handlers
+        $builder->addRequestHandler(new ListToolsInterceptor($server, $delegates, $publisher));
     }
 
     private static function incompatible(string $reason, ?\Throwable $previous = null): \UnexpectedValueException

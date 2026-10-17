@@ -36,7 +36,8 @@ final readonly class ListToolsInterceptor implements RequestHandlerInterface
     #[\Override]
     public function supports(Request $request): bool
     {
-        return $request instanceof ListToolsRequest && $this->delegates->available();
+        // Without a handler to delegate to (mcp/sdk internals changed), the library answers on its own.
+        return $request instanceof ListToolsRequest && $this->delegates->after($this, $request) instanceof RequestHandlerInterface;
     }
 
     /** @return Response<mixed>|Error */
@@ -53,18 +54,17 @@ final readonly class ListToolsInterceptor implements RequestHandlerInterface
             return $response;
         }
         try {
-            $tools = ToolListing::apply($this->server, Trees::tools($response->result->tools));
+            $tree = Trees::of($response->result); // the library's own wire tree: AgentCat changes only its `tools`
+            if (!$tree instanceof \stdClass || !isset($tree->tools) || !is_array($tree->tools) || !array_is_list($tree->tools)) {
+                return $response; // no tool list on the wire
+            }
+            $tools = ToolListing::apply($this->server, $tree->tools);
             if ($tools === null) {
                 return $response;
             }
-            $body = new \stdClass();
-            $body->tools = $tools;
-            $cursor = $response->result->nextCursor;
-            if (!in_array($cursor, [null, '', '0'], true)) { // ListToolsResult::jsonSerialize() uses PHP truthiness
-                $body->nextCursor = $cursor;
-            }
+            $tree->tools = $tools;
 
-            return new Response($response->getId(), new WireResult($body));
+            return new Response($response->getId(), new WireResult($tree));
         } catch (\Throwable $e) {
             Log::write('Warning: AgentCat tool-list injection failed; serving the original tool list unmodified - ' . ErrorText::message($e));
 
