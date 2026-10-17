@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AgentCat\Tests\Unit;
 
+use AgentCat\Event;
 use AgentCat\Identity;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Options;
@@ -81,6 +82,45 @@ final class OptionsTest extends TestCase
         $this->assertInstanceOf(\Closure::class, $options->identify);
         $this->assertNull(($options->identify)(new ToolCall('t', [])));
         $this->assertEquals(new Identity('u'), ($options->identify)(new ToolCall('known', [])));
+        $this->assertSame([], $this->logger->messages());
+    }
+
+    public function testFromArrayAcceptsEveryOptionWithAValidValue(): void
+    {
+        $resolveSessionId = static fn(ToolCall $call): ?string => null;
+        $identify = static fn(ToolCall $call): ?Identity => null;
+        $redactSensitiveInformation = static fn(string $text): string => $text;
+        $redactEvent = static fn(Event $event): Event => $event;
+        $eventTags = static fn(ToolCall $call): array => ['k' => 'v'];
+        $eventProperties = static fn(ToolCall $call): mixed => ['p' => 1];
+
+        $options = Options::fromArray([
+            'enableReportMissing' => false,
+            'enableTracing' => false,
+            'enableToolCallContext' => false,
+            'customContextDescription' => 'Why you call this tool',
+            'enableAgentTracking' => true,
+            'resolveSessionId' => $resolveSessionId,
+            'identify' => $identify,
+            'redactSensitiveInformation' => $redactSensitiveInformation,
+            'redactEvent' => $redactEvent,
+            'apiBaseUrl' => 'https://api.example.test',
+            'eventTags' => $eventTags,
+            'eventProperties' => $eventProperties,
+        ]);
+
+        $this->assertFalse($options->enableReportMissing);
+        $this->assertFalse($options->enableTracing);
+        $this->assertFalse($options->enableToolCallContext);
+        $this->assertSame('Why you call this tool', $options->customContextDescription);
+        $this->assertTrue($options->enableAgentTracking);
+        $this->assertSame($resolveSessionId, $options->resolveSessionId);
+        $this->assertSame($identify, $options->identify);
+        $this->assertSame($redactSensitiveInformation, $options->redactSensitiveInformation);
+        $this->assertSame($redactEvent, $options->redactEvent);
+        $this->assertSame('https://api.example.test', $options->apiBaseUrl);
+        $this->assertSame($eventTags, $options->eventTags);
+        $this->assertSame($eventProperties, $options->eventProperties);
         $this->assertSame([], $this->logger->messages());
     }
 

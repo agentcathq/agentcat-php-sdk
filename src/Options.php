@@ -26,11 +26,11 @@ final readonly class Options
      * @param bool $enableAgentTracking Add the `agent_id` parameter to your tools, to tell agents apart.
      * @param \Closure(ToolCall): (string|null)|null $resolveSessionId Returns the session ID for a call, or null to let AgentCat choose.
      * @param \Closure(ToolCall): (Identity|null)|null $identify Returns who made a call, or null for an anonymous call.
-     * @param \Closure(string): string|null $redactSensitiveInformation Rewrites every string of an event before it is sent.
+     * @param (\Closure(string): string)|null $redactSensitiveInformation Rewrites every string of an event before it is sent.
      * @param \Closure(Event): (Event|null)|null $redactEvent Changes an event before it is sent, or returns null to drop it.
      * @param string|null $apiBaseUrl Base URL of the AgentCat API; null uses the default.
      * @param \Closure(ToolCall): (array<array-key, mixed>|null)|null $eventTags Returns extra tags (string keys and values) for a call.
-     * @param \Closure(ToolCall): mixed|null $eventProperties Returns extra JSON-encodable properties for a call.
+     * @param (\Closure(ToolCall): mixed)|null $eventProperties Returns extra JSON-encodable properties for a call.
      */
     public function __construct(
         public bool $enableReportMissing = true,
@@ -50,8 +50,8 @@ final readonly class Options
     /**
      * Builds options from an array with the argument names as keys (camelCase only).
      *
-     * An unknown key, or a value of the wrong type, logs one warning and the default is used.
-     * A callable that is not a closure is converted to one.
+     * An unknown key, or a value of the wrong type, logs one warning and the default is used. The bool options
+     * reject an explicit null too. A callable that is not a closure is converted to one.
      *
      * @param array<array-key, mixed> $config
      */
@@ -108,6 +108,7 @@ final readonly class Options
     /**
      * The helper cannot know the signature of each hook. It declares a closure type that PHPStan accepts for every
      * hook parameter; the constructor documents the real signature of each hook.
+     * It is private and its result only feeds the constructor, so the `never` return type reaches no caller.
      *
      * @param array<array-key, mixed> $config
      *
