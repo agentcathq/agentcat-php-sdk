@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AgentCat\Tests\Integration\McpSdk;
 
 use AgentCat\Internal\Delivery\EventQueue;
+use AgentCat\Internal\Engine\CallInterceptor;
 use AgentCat\Internal\Engine\Publisher;
 use AgentCat\Internal\Engine\TrackedServer;
 use AgentCat\Internal\Json\Json;
@@ -90,7 +91,7 @@ final class ListingGoldenTest extends TestCase
             $builder->add(Tool::fromArray($tool), new RecordingTool());
         }
         $publisher = new Publisher(new EventQueue(transport: new RecordingTransport()));
-        McpSdkAdapter::install($builder, new TrackedServer('proj_aaaaaaaaaaaaaaaaaaaaaaaaaaa', $options, McpSdkAdapter::serverInfo($builder)), $publisher);
+        McpSdkAdapter::install($builder, new TrackedServer('proj_aaaaaaaaaaaaaaaaaaaaaaaaaaa', $options, McpSdkAdapter::serverInfo($builder)), $publisher, new CallInterceptor($publisher));
         $harness = new HttpHarness($builder->build());
         $harness->initialize();
 

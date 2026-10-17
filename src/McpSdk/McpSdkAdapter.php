@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AgentCat\McpSdk;
 
+use AgentCat\Internal\Engine\CallInterceptor;
 use AgentCat\Internal\Engine\Publisher;
 use AgentCat\Internal\Engine\TrackedServer;
 use AgentCat\Internal\Logging\Log;
@@ -11,9 +12,16 @@ use AgentCat\Internal\SdkVersion;
 use AgentCat\Internal\Support\ErrorText;
 use AgentCat\Internal\Support\StrictErrors;
 use AgentCat\McpSdk\Internal\Access\BuilderAccess;
+use AgentCat\McpSdk\Internal\CallToolInterceptor;
+use AgentCat\McpSdk\Internal\CapturingReferenceHandler;
 use AgentCat\McpSdk\Internal\Delegates;
 use AgentCat\McpSdk\Internal\Drift;
 use AgentCat\McpSdk\Internal\ListToolsInterceptor;
+use AgentCat\McpSdk\Internal\RequestReader;
+use AgentCat\McpSdk\Internal\ThrowableStash;
+use Mcp\Capability\Registry\Container;
+use Mcp\Capability\Registry\ReferenceHandler;
+use Mcp\Capability\Registry\ReferenceHandlerInterface;
 use Mcp\Schema\Implementation;
 use Mcp\Server;
 use Mcp\Server\Builder;
@@ -113,11 +121,23 @@ final class McpSdkAdapter
         };
     }
 
-    /** Registers AgentCat's request handlers. They run before the library's own (02 §1.4). */
-    public static function install(Builder $builder, TrackedServer $server, Publisher $publisher): void
+    /**
+     * Wraps the reference handler, then registers AgentCat's request handlers, which run before the library's own
+     * (02 §1.4).
+     */
+    public static function install(Builder $builder, TrackedServer $server, Publisher $publisher, CallInterceptor $interceptor): void
     {
         $delegates = new Delegates($builder); // one per Builder, shared by AgentCat's handlers
-        $builder->addRequestHandler(new ListToolsInterceptor($server, $delegates, $publisher));
+        $stash = new ThrowableStash();
+        $custom = BuilderAccess::referenceHandler($builder);
+        // The default handler is built at the first call, from the container set by then (build() reads the same slot).
+        $inner = $custom instanceof ReferenceHandlerInterface
+            ? static fn(): ReferenceHandlerInterface => $custom
+            : static fn(): ReferenceHandlerInterface => new ReferenceHandler(BuilderAccess::container($builder) ?? new Container());
+        $builder->setReferenceHandler(new CapturingReferenceHandler($inner, $stash));
+        $list = new ListToolsInterceptor($server, $delegates, $publisher);
+        $builder->addRequestHandler($list);
+        $builder->addRequestHandler(new CallToolInterceptor($server, $delegates, $list, $interceptor, $publisher, $stash, new RequestReader()));
     }
 
     private static function incompatible(string $reason, ?\Throwable $previous = null): \UnexpectedValueException

@@ -5,11 +5,15 @@ declare(strict_types=1);
 namespace AgentCat\Tests\Integration\McpSdk;
 
 use AgentCat\Internal\Delivery\EventQueue;
+use AgentCat\Internal\Engine\CallInterceptor;
 use AgentCat\Internal\Engine\Publisher;
 use AgentCat\Internal\Engine\TrackedServer;
 use AgentCat\Internal\Logging\Log;
+use AgentCat\McpSdk\Internal\CallToolInterceptor;
 use AgentCat\McpSdk\Internal\Delegates;
 use AgentCat\McpSdk\Internal\ListToolsInterceptor;
+use AgentCat\McpSdk\Internal\RequestReader;
+use AgentCat\McpSdk\Internal\ThrowableStash;
 use AgentCat\Options;
 use AgentCat\Tests\Support\McpSdk\CustomerHandler;
 use AgentCat\Tests\Support\MemoryLogger;
@@ -95,6 +99,34 @@ final class DelegatesTest extends TestCase
         $this->assertFalse($interceptor->supports((new CallToolRequest('echo', []))->withId(4)));
         // A caller that ignores supports() gets the library's own answer for a request nobody handles.
         $this->assertEquals(Delegates::notFound($request), $interceptor->handle($request, new Session(new InMemorySessionStore())));
+        $this->assertSame([self::COMPATIBILITY], $this->logger->messages());
+    }
+
+    public function testTheCallInterceptorStepsAsideWhenNoHandlerFollowsIt(): void
+    {
+        $builder = Server::builder();
+        $builder->build();
+        $server = new TrackedServer('proj', new Options(), static fn(): array => [null, null]);
+        $delegates = new Delegates($builder); // the interceptors are not in this Builder's handlers
+        $publisher = new Publisher(new EventQueue(transport: new RecordingTransport()));
+        $interceptor = new CallToolInterceptor(
+            $server,
+            $delegates,
+            new ListToolsInterceptor($server, $delegates, $publisher),
+            new CallInterceptor($publisher),
+            $publisher,
+            new ThrowableStash(),
+            new RequestReader(),
+        );
+        $call = (new CallToolRequest('echo', []))->withId(4);
+        $list = (new ListToolsRequest())->withId(5);
+        $session = new Session(new InMemorySessionStore());
+
+        $this->assertFalse($interceptor->supports($call), 'the library answers instead');
+        $this->assertFalse($interceptor->supports($list));
+        // A caller that ignores supports() gets the library's own answer for a request nobody handles.
+        $this->assertEquals(Delegates::notFound($call), $interceptor->handle($call, $session));
+        $this->assertEquals(Delegates::notFound($list), $interceptor->handle($list, $session));
         $this->assertSame([self::COMPATIBILITY], $this->logger->messages());
     }
 

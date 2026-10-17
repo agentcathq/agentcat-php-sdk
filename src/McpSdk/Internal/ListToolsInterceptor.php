@@ -13,7 +13,6 @@ use Mcp\Schema\JsonRpc\Error;
 use Mcp\Schema\JsonRpc\Request;
 use Mcp\Schema\JsonRpc\Response;
 use Mcp\Schema\Request\ListToolsRequest;
-use Mcp\Schema\Result\ListToolsResult;
 use Mcp\Server\Handler\Request\RequestHandlerInterface;
 use Mcp\Server\Session\SessionInterface;
 
@@ -50,15 +49,16 @@ final readonly class ListToolsInterceptor implements RequestHandlerInterface
             return Delegates::notFound($request);
         }
         $response = $delegate->handle($request, $session); // throws and JSON-RPC errors pass unchanged (02 AC-10)
-        if (!$response instanceof Response || !$response->result instanceof ListToolsResult) {
+        if (!$response instanceof Response) {
             return $response;
         }
         try {
-            $tree = Trees::of($response->result); // the library's own wire tree: AgentCat changes only its `tools`
-            if (!$tree instanceof \stdClass || !isset($tree->tools) || !is_array($tree->tools) || !array_is_list($tree->tools)) {
-                return $response; // no tool list on the wire
+            $listing = Trees::listing($response->result); // the library's own wire tree: AgentCat changes only its `tools`
+            if ($listing === null) {
+                return $response; // another answer, or no tool list on the wire
             }
-            $tools = ToolListing::apply($this->server, $tree->tools);
+            [$tree, $listed] = $listing;
+            $tools = ToolListing::apply($this->server, $listed);
             if ($tools === null) {
                 return $response;
             }

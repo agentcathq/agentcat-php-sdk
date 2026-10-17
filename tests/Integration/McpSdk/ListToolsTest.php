@@ -7,6 +7,7 @@ namespace AgentCat\Tests\Integration\McpSdk;
 use AgentCat\Event;
 use AgentCat\Internal\Constants;
 use AgentCat\Internal\Delivery\EventQueue;
+use AgentCat\Internal\Engine\CallInterceptor;
 use AgentCat\Internal\Engine\Publisher;
 use AgentCat\Internal\Engine\ToolListInjector;
 use AgentCat\Internal\Engine\TrackedServer;
@@ -520,7 +521,7 @@ final class ListToolsTest extends TestCase
     private function track(Builder $builder, Options $options = new Options()): TrackedServer
     {
         $server = new TrackedServer(self::PROJECT, $options, McpSdkAdapter::serverInfo($builder));
-        McpSdkAdapter::install($builder, $server, $this->publisher);
+        McpSdkAdapter::install($builder, $server, $this->publisher, new CallInterceptor($this->publisher));
 
         return $server;
     }

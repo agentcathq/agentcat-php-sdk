@@ -35,6 +35,12 @@ final class HttpHarness
         $this->factory = new Psr17Factory();
     }
 
+    /** The `Mcp-Session-Id` the server issued at `initialize()`; null before. */
+    public function sessionId(): ?string
+    {
+        return $this->sessionId;
+    }
+
     /** Sends `initialize` and `notifications/initialized`; returns the `initialize` result. */
     public function initialize(string $clientName = 'harness-client', string $clientVersion = '1.0.0', string $protocolVersion = '2025-06-18'): \stdClass
     {

@@ -7,7 +7,9 @@ namespace AgentCat\Tests\Unit\McpSdk;
 use AgentCat\McpSdk\Internal\Trees;
 use AgentCat\Tests\Support\Thrown;
 use Mcp\Schema\Content\TextContent;
+use Mcp\Schema\JsonRpc\ResultInterface;
 use Mcp\Schema\Result\CallToolResult;
+use Mcp\Schema\Result\ListToolsResult;
 use Mcp\Schema\Tool;
 use PHPUnit\Framework\TestCase;
 
@@ -91,14 +93,34 @@ final class TreesTest extends TestCase
         $this->assertSame('text', Trees::result('text'));
     }
 
-    public function testToolsAreAListOfTrees(): void
+    public function testAListingIsTheWireTreeAndItsTools(): void
     {
         $tool = new Tool(name: 'echo', title: null, inputSchema: ['type' => 'object', 'properties' => [], 'required' => []], description: null, annotations: null);
 
-        $tools = Trees::tools(['echo' => $tool, 'again' => $tool]);
+        $listing = Trees::listing(new ListToolsResult(['echo' => $tool, 'again' => $tool], 'c'));
 
+        $this->assertNotNull($listing);
+        [$tree, $tools] = $listing;
+        $this->assertSame(['tools', 'nextCursor'], array_keys(get_object_vars($tree)));
         $this->assertCount(2, $tools);
+        $this->assertSame($tree->tools, $tools);
         $this->assertEquals((object) ['name' => 'echo', 'inputSchema' => (object) ['type' => 'object', 'properties' => new \stdClass(), 'required' => []]], $tools[0]);
-        $this->assertSame([], Trees::tools([]));
+        $this->assertSame([], Trees::listing(new ListToolsResult([]))[1] ?? null);
+    }
+
+    public function testOnlyAToolListingIsAListing(): void
+    {
+        $other = new class implements ResultInterface {
+            /** @return array<string, mixed> */
+            #[\Override]
+            public function jsonSerialize(): array
+            {
+                return ['tools' => []];
+            }
+        };
+
+        $this->assertNull(Trees::listing(new CallToolResult([new TextContent('x')])));
+        $this->assertNull(Trees::listing($other), 'a tools member is not enough');
+        $this->assertNull(Trees::listing(null));
     }
 }

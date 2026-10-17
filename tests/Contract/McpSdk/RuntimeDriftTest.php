@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace AgentCat\Tests\Contract\McpSdk;
 
 use AgentCat\Internal\Delivery\EventQueue;
+use AgentCat\Internal\Engine\CallInterceptor;
 use AgentCat\Internal\Engine\Publisher;
 use AgentCat\Internal\Engine\TrackedServer;
 use AgentCat\Internal\Logging\Log;
+use AgentCat\McpSdk\Internal\CallToolInterceptor;
 use AgentCat\McpSdk\Internal\ListToolsInterceptor;
 use AgentCat\McpSdk\McpSdkAdapter;
 use AgentCat\Options;
@@ -20,6 +22,7 @@ use AgentCat\Tests\Support\Thrown;
 use Mcp\Schema\Tool;
 use Mcp\Server;
 use Mcp\Server\Builder;
+use Mcp\Server\Handler\Request\ListToolsHandler;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -28,7 +31,7 @@ use Psr\Log\NullLogger;
 /**
  * `BuilderAccess::probe()` runs at track(), before build() fills `Builder::$parts`, so it cannot check what the
  * built parts hold. When a future mcp/sdk changes them, the request path logs one compatibility line and leaves
- * the server to the library (README §4.5 rule 4).
+ * the server to the library (README §4.5 rule 4): `tools/list` and `tools/call` alike.
  */
 #[Group('contract')]
 final class RuntimeDriftTest extends TestCase
@@ -37,11 +40,14 @@ final class RuntimeDriftTest extends TestCase
 
     private MemoryLogger $logger;
 
+    private EventQueue $queue;
+
     #[\Override]
     protected function setUp(): void
     {
         $this->logger = new MemoryLogger();
         Log::setLogger($this->logger);
+        $this->queue = new EventQueue(transport: new RecordingTransport());
     }
 
     #[\Override]
@@ -87,16 +93,16 @@ final class RuntimeDriftTest extends TestCase
         yield 'parts lost requestHandlers' => [static fn(array $parts): array => array_diff_key($parts, ['requestHandlers' => true])];
         yield 'requestHandlers retyped' => [static fn(array $parts): array => ['requestHandlers' => 'handlers'] + $parts];
         yield 'parts no longer kept' => [static fn(): ?array => null];
-        yield 'AgentCat handler not in the list' => [static fn(array $parts): array => self::withHandlers($parts, static fn(array $handlers): array => array_values(array_filter(
+        yield 'AgentCat handlers not in the list' => [static fn(array $parts): array => self::withHandlers($parts, static fn(array $handlers): array => array_values(array_filter(
             $handlers,
-            static fn(mixed $handler): bool => !$handler instanceof ListToolsInterceptor,
+            static fn(mixed $handler): bool => !self::ours($handler),
         )))];
         yield 'library handlers no longer after AgentCat' => [static fn(array $parts): array => self::withHandlers($parts, static fn(array $handlers): array => array_values(array_filter(
             $handlers,
-            static fn(mixed $handler): bool => $handler instanceof ListToolsInterceptor,
+            self::ours(...),
         )))];
         yield 'entries are not handler objects' => [static fn(array $parts): array => self::withHandlers($parts, static fn(array $handlers): array => array_map(
-            static fn(mixed $handler): mixed => $handler instanceof ListToolsInterceptor || !is_object($handler) ? $handler : $handler::class,
+            static fn(mixed $handler): mixed => self::ours($handler) || !is_object($handler) ? $handler : $handler::class,
             $handlers,
         ))];
     }
@@ -119,6 +125,45 @@ final class RuntimeDriftTest extends TestCase
         $this->assertEquals($expected, $first);
         $this->assertEquals($expected, $second);
         $this->assertNull($server->registry);
+        $this->assertSame([self::COMPATIBILITY], $this->logger->messages());
+    }
+
+    /** @param \Closure(array<array-key, mixed>): ?array<array-key, mixed> $drift */
+    #[DataProvider('handlerDrift')]
+    public function testChangedHandlersLeaveTheCallToTheLibrary(\Closure $drift): void
+    {
+        $twin = new HttpHarness($this->builder()->build());
+        $twin->initialize();
+        $expected = $twin->callTool('echo', ['msg' => 'hi', 'session_id' => 'start']);
+        $builder = $this->builder();
+        [, $harness] = $this->tracked($builder);
+        $this->setParts($builder, $drift($this->parts($builder)));
+        $harness->initialize();
+
+        $first = $harness->callTool('echo', ['msg' => 'hi', 'session_id' => 'start']);
+        $second = $harness->callTool('echo', ['msg' => 'hi', 'session_id' => 'start']);
+
+        $this->assertEquals($expected, $first);
+        $this->assertEquals($expected->result ?? null, $second->result ?? null);
+        $this->assertSame(['queueLength' => 0, 'activeRequests' => 0], $this->queue->stats(), 'no event');
+        $this->assertSame([self::COMPATIBILITY], $this->logger->messages());
+    }
+
+    public function testACallWithoutAListHandlerAfterAgentCatStripsHeuristically(): void
+    {
+        $builder = $this->builder();
+        [$server, $harness] = $this->tracked($builder);
+        $this->setParts($builder, self::withHandlers($this->parts($builder), static fn(array $handlers): array => array_values(array_filter(
+            $handlers,
+            static fn(mixed $handler): bool => !$handler instanceof ListToolsHandler,
+        ))));
+        $harness->initialize();
+
+        $answer = $harness->callTool('echo', ['msg' => 'hi', 'session_id' => 'start']);
+
+        $this->assertObjectHasProperty('result', $answer);
+        $this->assertNull($server->registry, 'nothing to rebuild from');
+        $this->assertSame(['queueLength' => 1, 'activeRequests' => 0], $this->queue->stats(), 'the call is still traced');
         $this->assertSame([self::COMPATIBILITY], $this->logger->messages());
     }
 
@@ -190,9 +235,9 @@ final class RuntimeDriftTest extends TestCase
      */
     private function tracked(Builder $builder): array
     {
-        $publisher = new Publisher(new EventQueue(transport: new RecordingTransport()));
+        $publisher = new Publisher($this->queue);
         $server = new TrackedServer('proj_aaaaaaaaaaaaaaaaaaaaaaaaaaa', new Options(), McpSdkAdapter::serverInfo($builder));
-        McpSdkAdapter::install($builder, $server, $publisher);
+        McpSdkAdapter::install($builder, $server, $publisher, new CallInterceptor($publisher));
 
         return [$server, new HttpHarness($builder->build())];
     }
@@ -209,6 +254,11 @@ final class RuntimeDriftTest extends TestCase
         self::assertIsArray($handlers);
 
         return ['requestHandlers' => $change($handlers)] + $parts;
+    }
+
+    private static function ours(mixed $handler): bool
+    {
+        return $handler instanceof ListToolsInterceptor || $handler instanceof CallToolInterceptor;
     }
 
     private function builder(): Builder

@@ -6,6 +6,7 @@ namespace AgentCat\McpSdk\Internal;
 
 use AgentCat\Internal\Json\Json;
 use AgentCat\Internal\Wire\WireEncoder;
+use Mcp\Schema\Result\ListToolsResult;
 
 /**
  * Turns mcp/sdk values (associative arrays, `\JsonSerializable` schema objects) into the SDK's JSON trees, where
@@ -58,17 +59,23 @@ final class Trees
     }
 
     /**
-     * The trees of a `tools/list` result's tools, as a list.
+     * The wire tree of a `tools/list` result and its tools, or null when the result is not a `ListToolsResult` whose
+     * `tools` is a JSON array on the wire. The listing and the registry rebuild read the same tools this way.
      *
-     * @param array<mixed> $tools
-     *
-     * @return list<mixed>
+     * @return array{\stdClass, list<mixed>}|null
      *
      * @throws \JsonException for a value JSON cannot carry
      */
-    public static function tools(array $tools): array
+    public static function listing(mixed $result): ?array
     {
-        /** @var list<mixed> a PHP list encodes as a JSON array, which decodes as a list */
-        return self::of(array_values($tools));
+        if (!$result instanceof ListToolsResult) {
+            return null;
+        }
+        $tree = self::of($result);
+        if (!$tree instanceof \stdClass || !isset($tree->tools) || !is_array($tree->tools) || !array_is_list($tree->tools)) {
+            return null;
+        }
+
+        return [$tree, $tree->tools];
     }
 }
