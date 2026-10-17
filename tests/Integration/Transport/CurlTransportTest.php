@@ -990,6 +990,24 @@ final class CurlTransportTest extends TestCase
         $this->assertCount(2, self::collector()->requests($base));
     }
 
+    /** `start()` starts the attempt: its first curl_multi_exec() runs at once, not at the next pump. */
+    #[MaximumDuration(1000)]
+    public function testStartRunsTheFirstTransferStep(): void
+    {
+        $base = self::collector()->scenario();
+        $calls = new \ArrayObject();
+        $transport = new CurlTransport(multiStatus: static function (string $function, int $code) use ($calls): int {
+            $calls[] = $function;
+
+            return $code;
+        });
+
+        $transport->start($this->delivery($base));
+
+        $this->assertSame(['curl_multi_add_handle', 'curl_multi_exec'], $calls->getArrayCopy());
+        $this->assertTrue($transport->drain($this->deadline())); // leave no request behind in the collector
+    }
+
     public function testPumpBeforeTheFirstDeliveryRunsNoCurl(): void
     {
         $execs = new \ArrayObject();

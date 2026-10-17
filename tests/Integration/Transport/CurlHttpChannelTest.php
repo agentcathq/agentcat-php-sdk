@@ -284,22 +284,28 @@ final class CurlHttpChannelTest extends TestCase
             return count($execs) === 1 ? CURLM_INTERNAL_ERROR : $code;
         });
         $errors = [];
-        $record = static function (HttpResponse $response) use (&$errors): void {
+        $failed = static function (HttpResponse $response) use (&$errors): void {
             $errors[] = $response->error;
         };
-        $channel->post(new HttpRequest($url . '/a', [], '{}'), $record);
-        $channel->post(new HttpRequest($url . '/b', [], '{}'), $record);
+        $requests = [\WeakReference::create($failed)];
+        $channel->post(new HttpRequest($url . '/a', [], '{}'), $failed);
+        $channel->post(new HttpRequest($url . '/b', [], '{}'), $failed);
+        unset($failed);
 
         $channel->pump();
         $this->assertSame(0, $channel->pending());
-        $channel->post(new HttpRequest($url . '/c', [], '{}'), $record);
+        $channel->post(new HttpRequest($url . '/c', [], '{}'), static function (HttpResponse $response) use (&$errors): void {
+            $errors[] = $response->error;
+        });
         $this->assertTrue($this->drain($channel, 2.0));
 
         $this->assertSame([self::MULTI_ERROR, self::MULTI_ERROR, null], $errors);
-        // One curl_multi_exec() opens the connections but sends nothing; the failed handles left the multi handle.
-        $requests = $this->collector()->requests($url);
-        $this->assertCount(1, $requests);
-        $this->assertSame('/c', $requests[0]->path);
+        // One curl_multi_exec() opens the connections but sends nothing. The failed handles left the multi handle:
+        // they were never sent, and nothing holds their requests any more (either check alone loses a race).
+        $received = $this->collector()->requests($url);
+        $this->assertCount(1, $received);
+        $this->assertSame('/c', $received[0]->path);
+        $this->assertNull($requests[0]->get());
     }
 
     #[MaximumDuration(3000)]
