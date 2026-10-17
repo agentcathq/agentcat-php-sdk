@@ -9,13 +9,15 @@ use AgentCat\Event;
 use AgentCat\Internal\ClientSeams;
 use AgentCat\Internal\Constants;
 use AgentCat\Internal\Delivery\EventQueue;
+use AgentCat\Testing\Internal\FakeLog;
 use AgentCat\Testing\Internal\InstantTransport;
 use AgentCat\Testing\Internal\RecordingSink;
 use PHPUnit\Framework\Assert;
 
 /**
  * The test double of AgentCat for your own test suite: `AgentCat::fake()` returns one. It records every event
- * (after hooks, redaction and truncation) and sends nothing over the network.
+ * (after hooks, redaction and truncation) and sends nothing over the network. While it is the shared client, AgentCat
+ * logs to its `logs()` only: not to `$HOME/agentcat.log`, and not to the PSR-3 logger of a Builder.
  *
  * Assertions use PHPUnit when it is loaded and throw `\AssertionError` otherwise.
  */
@@ -25,6 +27,8 @@ final readonly class AgentCatFake
 
     private Client $client;
 
+    private FakeLog $log;
+
     public function __construct()
     {
         $this->sink = new RecordingSink();
@@ -32,6 +36,7 @@ final readonly class AgentCatFake
             new EventQueue(transport: new InstantTransport(), exporters: $this->sink),
             static fn(): bool => true,
         ));
+        $this->log = FakeLog::attach($this->client);
     }
 
     /** The client that records. `AgentCat::fake()` already installed it with `AgentCat::setClient()`. */
@@ -51,6 +56,20 @@ final readonly class AgentCatFake
         $this->client->flush();
 
         return $this->sink->events;
+    }
+
+    /**
+     * The messages AgentCat logged while this fake was the shared client, in order and without the timestamp of the
+     * log file: useful to see hook errors and setup warnings in a test. Calling it runs the hooks that are still
+     * waiting, so their errors are in the list.
+     *
+     * @return list<string>
+     */
+    public function logs(): array
+    {
+        $this->client->flush();
+
+        return $this->log->messages;
     }
 
     /**

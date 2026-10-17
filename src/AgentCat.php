@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace AgentCat;
 
+use AgentCat\Internal\Logging\Log;
 use AgentCat\Testing\AgentCatFake;
+use AgentCat\Testing\Internal\FakeLog;
 
 /**
  * The AgentCat entry point: `AgentCat::track($builder, 'proj_…')` before `$builder->build()`.
@@ -102,6 +104,9 @@ final class AgentCat
      * Starts recording for your test suite: installs a client that records every event and sends nothing, and
      * returns the fake to assert on. Restore the real client with `AgentCat::setClient(null)` in `tearDown()`.
      *
+     * While the fake is the shared client, AgentCat logs to the fake's `logs()` only, and adopts no Builder's PSR-3
+     * logger. `setClient()` brings back the log routing from before the first `fake()`.
+     *
      * Call it before the server is tracked: a Builder tracked earlier keeps the client that tracked it.
      *
      * The fake records whatever `AGENTCAT_ENABLED` says, so a CI that sets `AGENTCAT_ENABLED=false` still works. Test
@@ -123,10 +128,16 @@ final class AgentCat
 
     /**
      * Replaces the shared client, for example with one from your dependency-injection container. Null goes back to
-     * a new default client.
+     * a new default client. Replacing the client of a fake brings back the log routing from before the first
+     * `fake()`.
      */
     public static function setClient(?Client $client): void
     {
         self::$client = $client;
+        Log::endDiversion();
+        $fakeLog = $client instanceof Client ? FakeLog::of($client) : null;
+        if ($fakeLog instanceof FakeLog) {
+            Log::divert($fakeLog); // a fake's client: AgentCat logs to the fake only
+        }
     }
 }

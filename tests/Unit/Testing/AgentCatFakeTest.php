@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace AgentCat\Tests\Unit\Testing;
 
 use AgentCat\AgentCat;
+use AgentCat\Client;
 use AgentCat\CustomEvent;
 use AgentCat\Event;
 use AgentCat\Identity;
+use AgentCat\Internal\ClientSeams;
 use AgentCat\Internal\Delivery\EventQueue;
 use AgentCat\Internal\Engine\TrackedServers;
 use AgentCat\Internal\Logging\Log;
@@ -18,6 +20,7 @@ use AgentCat\Tests\Support\McpSdk\HttpHarness;
 use AgentCat\Tests\Support\McpSdk\Tools;
 use AgentCat\Tests\Support\McpSdk\TrackingFixture;
 use AgentCat\Tests\Support\MemoryLogger;
+use AgentCat\Tests\Support\RecordingTransport;
 use AgentCat\Tests\Support\Thrown;
 use AgentCat\ToolCall;
 use Mcp\Server\Builder;
@@ -33,12 +36,18 @@ final class AgentCatFakeTest extends TestCase
 
     private MemoryLogger $logger;
 
+    /** The test's own `$HOME`, from `freshHome()`; removed in `tearDown()`. */
+    private ?string $freshHome = null;
+
+    private string $home = '';
+
     #[\Override]
     protected function setUp(): void
     {
         $this->environment = Environment::clear('AGENTCAT_ENABLED', 'AGENTCAT_API_URL', 'MCPCAT_API_URL', 'AGENTCAT_PROJECT_ID');
         $this->logger = new MemoryLogger();
         Log::setLogger($this->logger);
+        $this->home = $this->home();
     }
 
     #[\Override]
@@ -49,6 +58,13 @@ final class AgentCatFakeTest extends TestCase
         EventQueue::setGlobal(null);
         Log::reset();
         $this->environment->restore();
+        putenv('HOME=' . $this->home);
+        if ($this->freshHome !== null) {
+            if (is_file($this->freshHome . '/agentcat.log')) {
+                unlink($this->freshHome . '/agentcat.log');
+            }
+            rmdir($this->freshHome);
+        }
     }
 
     /** D31, Review Focus 1: PHPUnit is loaded and `AGENTCAT_ENABLED` is unset. */
@@ -151,8 +167,87 @@ final class AgentCatFakeTest extends TestCase
         $this->trackedHarness()->callTool('echo', ['msg' => 'hi']);
 
         $fake->assertTrackedCount(1);
-        $this->assertSame([], array_filter($this->logger->messages(), static fn(string $m): bool => str_contains($m, 'Failed to send event')));
+        $this->assertNotSame([], $fake->logs());
+        $this->assertSame([], array_filter($fake->logs(), static fn(string $m): bool => str_contains($m, 'Failed to send event')));
         putenv('AGENTCAT_API_URL');
+    }
+
+    /** A customer suite chose no logger: under the fake, nothing goes to `$HOME/agentcat.log`. */
+    public function testAFakeOnlyTestWritesNoLogFile(): void
+    {
+        Log::reset();
+        $home = $this->freshHome();
+        $fake = AgentCat::fake();
+
+        $this->trackedHarness()->callTool('echo', ['msg' => 'hi']);
+        AgentCat::publishCustomEvent('s-1', self::PROJECT, new CustomEvent(message: 'm'));
+
+        $fake->assertTrackedCount(1);
+        $this->assertFileDoesNotExist($home . '/agentcat.log');
+        $this->assertSame([
+            'AgentCat setup started | project ' . self::PROJECT . ' | sdk mcp-sdk/builder | signals mcpSdkBuilder',
+            'AgentCat setup complete | project ' . self::PROJECT . ' | tracing=true context=true reportMissing=true exporters=0',
+            'Rebuilt injection registries on demand (tools/call before tools/list on this instance)',
+            "Published custom event for session s-1 with type 'agentcat:custom'",
+        ], $fake->logs());
+    }
+
+    public function testLogsHoldTheLinesOfTheTimeTheFakeWasTheSharedClient(): void
+    {
+        Log::write('before');
+        $first = AgentCat::fake();
+        Log::write('first');
+        $second = AgentCat::fake();
+        Log::write('second');
+        AgentCat::setClient(null);
+        Log::write('after');
+
+        $this->assertSame(['first'], $first->logs());
+        $this->assertSame(['second'], $second->logs(), 'a second fake starts its own logs');
+        $this->assertSame(['before', 'after'], $this->logger->messages(), 'the routing from before the first fake is back');
+    }
+
+    /** D38: the first Builder logger adopted gets every later line, but not while a fake is the shared client. */
+    public function testABuildersLoggerTrackedUnderTheFakeGetsNoAgentCatLine(): void
+    {
+        Log::reset();
+        $home = $this->freshHome();
+        $customers = new MemoryLogger();
+        $fake = AgentCat::fake();
+        $builder = TrackingFixture::builder()->setLogger($customers);
+
+        AgentCat::track($builder, self::PROJECT);
+        AgentCat::publishCustomEvent($builder, self::PROJECT, new CustomEvent(sessionId: 'ses_1'));
+        AgentCat::setClient(null);
+
+        $this->assertSame([], $customers->messages());
+        $this->assertCount(3, $fake->logs());
+        $later = new MemoryLogger();
+        Log::adopt($later);
+        Log::write('after the fake');
+        $this->assertSame(['after the fake'], $later->messages(), 'adoption resumes after the fake');
+        $this->assertFileDoesNotExist($home . '/agentcat.log');
+    }
+
+    public function testReplacingTheFakeByAnotherClientRestoresTheRouting(): void
+    {
+        $fake = AgentCat::fake();
+        AgentCat::setClient(new Client(ClientSeams::of(new EventQueue(transport: new RecordingTransport()), static fn(): bool => true)));
+
+        Log::write('after');
+
+        $this->assertSame([], $fake->logs());
+        $this->assertSame(['after'], $this->logger->messages());
+    }
+
+    public function testLogsRunTheWaitingHooksFirst(): void
+    {
+        $fake = AgentCat::fake();
+        $harness = $this->trackedHarness(new Options(eventTags: static fn(): never => throw new \RuntimeException('tags down')));
+
+        $harness->callTool('echo', ['msg' => 'hi']);
+
+        $this->assertContains('eventTags callback error: RuntimeException: tags down', $fake->logs());
     }
 
     public function testTelemetryOnlyServersAreRecordedToo(): void
@@ -250,6 +345,16 @@ final class AgentCatFakeTest extends TestCase
         $this->assertStringEndsWith('AssertionFailedError', $failure::class);
 
         return $failure->getMessage();
+    }
+
+    /** Points `$HOME` at a new, empty directory for this test. */
+    private function freshHome(): string
+    {
+        $this->freshHome = $this->home . '/fake-' . bin2hex(random_bytes(4));
+        mkdir($this->freshHome);
+        putenv('HOME=' . $this->freshHome);
+
+        return $this->freshHome;
     }
 
     private function home(): string
