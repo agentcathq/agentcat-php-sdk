@@ -10,6 +10,7 @@ use AgentCat\Internal\Pipeline\StringRedactor;
 use AgentCat\Tests\Support\Samples\PlainThing;
 use AgentCat\Tests\Support\Samples\SerializableThing;
 use AgentCat\Tests\Support\Samples\UnitStatus;
+use AgentCat\Tests\Support\Samples\VisibilityThing;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
@@ -378,6 +379,14 @@ final class StringRedactorTest extends TestCase
         $this->expectException(\RangeException::class);
 
         StringRedactor::redact(new Event(parameters: new SerializableThing(returnSelf: true)), $this->mask());
+    }
+
+    public function testNonPublicPropertiesOfAnArrayCastObjectAreSkipped(): void
+    {
+        $out = StringRedactor::redact(new Event(parameters: (object) (array) new VisibilityThing()), $this->mask());
+
+        $this->assertSame(['name'], array_keys((array) $out->parameters));
+        $this->assertEquals(Json::decode('{"name":"[REDACTED-1]"}'), $out->parameters);
     }
 
     public function testIntegerObjectKeysBecomeStringProperties(): void

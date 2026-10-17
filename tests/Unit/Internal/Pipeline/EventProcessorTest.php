@@ -18,6 +18,7 @@ use AgentCat\Internal\Wire\WireEncoder;
 use AgentCat\Tests\Support\JsonAssert;
 use AgentCat\Tests\Support\MemoryLogger;
 use AgentCat\Tests\Support\Samples\EndlessSerializable;
+use AgentCat\Tests\Support\Samples\VisibilityThing;
 use AgentCat\Tests\Support\Samples\WrappedValue;
 use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -235,13 +236,63 @@ final class EventProcessorTest extends TestCase
 
     public function testAnErrorFromAStageIsCaughtToo(): void
     {
-        $p = ["\0bad" => 'x'];
+        $p = ['x' => new class implements \JsonSerializable {
+            #[\Override]
+            public function jsonSerialize(): never
+            {
+                throw new \Error('not serializable');
+            }
+        }];
 
         $out = (new EventProcessor())->process(new QueuedEvent(new Event(properties: $p)));
 
         $this->assertNull($out);
-        $this->assertCount(1, $this->logger->messages());
-        $this->assertStringStartsWith('Failed to truncate event: ', $this->logger->messages()[0]);
+        $this->assertSame(['Failed to truncate event: Error: not serializable'], $this->logger->messages());
+    }
+
+    /** @return iterable<string, array{array<string, mixed>, list<string|int>, (\Closure(string): string)|null}> fields, wire path of the object, redactor */
+    public static function arrayCastProvider(): iterable
+    {
+        $array = (array) new VisibilityThing();
+        $object = (object) (array) new VisibilityThing();
+        $same = static fn(string $s): string => $s;
+
+        yield 'properties' => [['properties' => $array], ['properties'], null];
+        yield 'parameters' => [['parameters' => $array], ['parameters'], null];
+        yield 'response' => [['response' => $array], ['response'], null];
+        yield 'identifyActorData' => [['identifyActorData' => $array], ['identify_data'], null];
+        yield 'error' => [['error' => $array], ['error'], null];
+        yield 'properties object' => [['properties' => $object], ['properties'], null];
+        yield 'parameters object' => [['parameters' => $object], ['parameters'], null];
+        yield 'structuredContent object' => [['response' => ['structuredContent' => $object]], ['response', 'structuredContent'], null];
+        yield 'parameters object with a redactor' => [['parameters' => $object], ['parameters'], $same];
+        yield 'properties in the last resort' => [['properties' => ['blob' => str_repeat('x', 120000), 'o' => $object]], ['properties', 'o'], null];
+    }
+
+    /**
+     * `(array) $object` keys of protected and private properties start with a NUL byte, which PHP refuses as a
+     * property name. They are skipped like any non-public property, and the event is still sent.
+     *
+     * @param array<string, mixed> $fields
+     * @param list<string|int> $path
+     * @param (\Closure(string): string)|null $redactor
+     */
+    #[Group('review-focus-3')]
+    #[DataProvider('arrayCastProvider')]
+    #[MaximumDuration(500)]
+    public function testArrayCastOfAnObjectIsSentWithItsPublicPropertiesOnly(array $fields, array $path, ?\Closure $redactor): void
+    {
+        $event = new Event(projectId: 'proj_1');
+        EventFields::assign($event, $fields);
+
+        $out = (new EventProcessor())->process(new QueuedEvent($event, null, $redactor));
+
+        $this->assertInstanceOf(Event::class, $out);
+        $this->assertSame([], $this->logger->messages());
+        $body = WireEncoder::encode($out);
+        $this->assertStringNotContainsString('secret', $body);
+        $this->assertStringNotContainsString('count', $body);
+        $this->assertEquals(Json::decode('{"name":"n"}'), JsonAssert::at(Json::decode($body), ...$path));
     }
 
     /** @return iterable<string, array{string, string}> field, and the one line the stage that meets it first writes */

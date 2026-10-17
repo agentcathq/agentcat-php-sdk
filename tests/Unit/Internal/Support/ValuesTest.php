@@ -7,6 +7,7 @@ namespace AgentCat\Tests\Unit\Internal\Support;
 use AgentCat\Internal\Support\Values;
 use AgentCat\Tests\Support\Samples\PlainThing;
 use AgentCat\Tests\Support\Samples\UnitStatus;
+use AgentCat\Tests\Support\Samples\VisibilityThing;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -38,6 +39,15 @@ final class ValuesTest extends TestCase
     {
         $this->assertSame(['a' => 1], Values::entries(['a' => 1]));
         $this->assertSame(['visible' => 'v', 'next' => null], Values::entries(new PlainThing()));
+    }
+
+    /** `(array) $object` keys of protected and private properties start with a NUL byte; they are not public. */
+    public function testEntriesSkipKeysThatStartWithANulByte(): void
+    {
+        $this->assertSame(['name' => 'n'], Values::entries((array) new VisibilityThing()));
+        $this->assertSame(['name' => 'n'], Values::entries((object) (array) new VisibilityThing()));
+        $this->assertSame([0 => 'a', '' => 'b', "k\0" => 'c', 'z' => 'd'], Values::entries([0 => 'a', '' => 'b', "\0" => 'x', "k\0" => 'c', "\0k" => 'y', 'z' => 'd']));
+        $this->assertSame([1, 2], Values::entries([1, 2]));
     }
 
     public function testHasAndGet(): void

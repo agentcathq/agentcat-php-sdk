@@ -56,7 +56,6 @@ final class Truncator
      * @throws \UnexpectedValueException when the size cannot be measured, `error.message` is not a string
      *                                   or `error.frames` is neither a list nor a string
      * @throws \RuntimeException when the last resort meets a closure
-     * @throws \Error when an array key starts with a NUL byte (PHP rejects it as a property name)
      */
     public static function truncate(Event $event): Event
     {

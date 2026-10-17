@@ -29,13 +29,23 @@ final class Values
     /**
      * JS `Object.entries`: array entries, or the public properties of an object (called from outside its scope).
      *
+     * Keys that start with a NUL byte are left out: `(array) $object` names protected and private properties that
+     * way (`"\0*\0name"`, `"\0Class\0name"`), and PHP refuses them as property names.
+     *
      * @param array<array-key, mixed>|object $value
      *
      * @return array<array-key, mixed>
      */
     public static function entries(array|object $value): array
     {
-        return is_array($value) ? $value : get_object_vars($value);
+        $entries = is_array($value) ? $value : get_object_vars($value);
+        foreach ($entries as $key => $unused) {
+            if (is_string($key) && str_starts_with($key, "\0")) {
+                unset($entries[$key]);
+            }
+        }
+
+        return $entries;
     }
 
     /**

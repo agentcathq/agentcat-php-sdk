@@ -12,6 +12,7 @@ use AgentCat\Tests\Support\Samples\EndlessSerializable;
 use AgentCat\Tests\Support\Samples\PlainThing;
 use AgentCat\Tests\Support\Samples\SerializableThing;
 use AgentCat\Tests\Support\Samples\UnitStatus;
+use AgentCat\Tests\Support\Samples\VisibilityThing;
 use AgentCat\Tests\Support\Samples\WrappedValue;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
@@ -314,6 +315,15 @@ final class NormalizerTest extends TestCase
         $this->assertSame(str_repeat('é', 5) . '...', Normalizer::normalize(str_repeat('é', 6), 10, 100, 5));
         $this->assertSame('abcde', Normalizer::normalize('abcde', 10, 100, 5));
         $this->assertSame('abcde...', Normalizer::normalize('abcdef', 10, 100, 5));
+    }
+
+    #[Group('ac-05-T17')]
+    public function testNonPublicKeysOfAnArrayCastAreSkippedAndNotCounted(): void
+    {
+        $this->assertEquals((object) ['name' => 'n'], Normalizer::normalize((array) new VisibilityThing()));
+        $this->assertEquals((object) ['name' => 'n'], Normalizer::normalize((object) (array) new VisibilityThing()));
+        $r = Normalizer::normalize(['a' => 1, "\0*\0x" => 2, "\0C\0y" => 3, 'b' => 4], 10, 2);
+        $this->assertSame('{"a":1,"b":4}', json_encode($r));
     }
 
     #[Group('review-focus-3')]

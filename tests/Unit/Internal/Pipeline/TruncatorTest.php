@@ -15,6 +15,7 @@ use AgentCat\Tests\Support\JsonAssert;
 use AgentCat\Tests\Support\Samples\LateSerializable;
 use AgentCat\Tests\Support\Samples\PlainThing;
 use AgentCat\Tests\Support\Samples\SerializableThing;
+use AgentCat\Tests\Support\Samples\VisibilityThing;
 use AgentCat\Tests\Support\Samples\WrappedValue;
 use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -543,6 +544,22 @@ final class TruncatorTest extends TestCase
         $this->assertStringContainsString('kind', $body);
         $this->assertStringNotContainsString('hidden', $body);
         $this->assertStringContainsString('active', $body);
+    }
+
+    #[MaximumDuration(2000)]
+    public function testLastResortSkipsNonPublicKeysOfAnArrayCast(): void
+    {
+        $r = Truncator::truncate(new Event(properties: [
+            'blob' => $this->x(120000),
+            'object' => (object) (array) new VisibilityThing(),
+            'array' => (array) new VisibilityThing(),
+        ]));
+
+        $this->assertInstanceOf(\stdClass::class, JsonAssert::at($r->properties, 'object'));
+        $this->assertSame(['name'], array_keys((array) JsonAssert::at($r->properties, 'object')));
+        $body = Json::decode(WireEncoder::encode($r));
+        $this->assertEquals(Json::decode('{"name":"n"}'), JsonAssert::at($body, 'properties', 'object'));
+        $this->assertEquals(Json::decode('{"name":"n"}'), JsonAssert::at($body, 'properties', 'array'));
     }
 
     public function testBackReferenceThrowsCircularStructure(): void

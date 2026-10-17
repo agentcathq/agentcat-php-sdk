@@ -53,7 +53,7 @@ final class WireValue
         if (is_array($value)) {
             return array_is_list($value)
                 ? array_map(static fn(mixed $item): mixed => self::walk($item, $ancestors, $depth + 1), $value)
-                : self::object($value, $ancestors, $depth);
+                : self::object(Values::entries($value), $ancestors, $depth);
         }
         if (!is_object($value)) {
             return Values::resourceMarker($value);

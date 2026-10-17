@@ -25,7 +25,6 @@ final class Normalizer
 
     /**
      * @throws \Throwable      whatever a `jsonSerialize()` method throws
-     * @throws \Error          when an array key starts with a NUL byte (PHP rejects it as a property name)
      * @throws \RangeException when the value nests deeper than 512 levels (JS `Maximum call stack size exceeded`)
      */
     public static function normalize(mixed $input, int $depth = 10, int $maxBreadth = 100, int $maxStringLength = 32_768): mixed
@@ -81,7 +80,7 @@ final class Normalizer
 
             return array_is_list($value)
                 ? self::visitArray($value, $remainingDepth - 1, $maxBreadth, $maxStringLength, $memo, $nesting + 1)
-                : self::visitObject($value, $remainingDepth - 1, $maxBreadth, $maxStringLength, $memo, $nesting + 1);
+                : self::visitObject(Values::entries($value), $remainingDepth - 1, $maxBreadth, $maxStringLength, $memo, $nesting + 1);
         }
         if (isset($memo[$value])) {
             return self::CIRCULAR;

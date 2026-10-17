@@ -10,6 +10,7 @@ use AgentCat\Tests\Support\Samples\BackedStatus;
 use AgentCat\Tests\Support\Samples\PlainThing;
 use AgentCat\Tests\Support\Samples\SerializableThing;
 use AgentCat\Tests\Support\Samples\UnitStatus;
+use AgentCat\Tests\Support\Samples\VisibilityThing;
 use PHPUnit\Framework\TestCase;
 
 final class WireValueTest extends TestCase
@@ -35,6 +36,12 @@ final class WireValueTest extends TestCase
         $this->assertNull(WireValue::from($closure));
         $this->assertSame([1, null, 2], WireValue::from([1, $closure, 2]));
         $this->assertEquals((object) ['a' => 1], WireValue::from(['a' => 1, 'f' => $closure]));
+    }
+
+    public function testNonPublicKeysOfAnArrayCastAreSkipped(): void
+    {
+        $this->assertEquals((object) ['name' => 'n'], WireValue::from((array) new VisibilityThing()));
+        $this->assertEquals((object) ['name' => 'n'], WireValue::from((object) (array) new VisibilityThing()));
     }
 
     public function testArrayShapes(): void
