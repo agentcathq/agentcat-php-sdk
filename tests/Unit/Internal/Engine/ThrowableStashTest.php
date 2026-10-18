@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace AgentCat\Tests\Unit\McpSdk;
+namespace AgentCat\Tests\Unit\Internal\Engine;
 
-use AgentCat\McpSdk\Internal\ThrowableStash;
+use AgentCat\Internal\Engine\ThrowableStash;
 use PHPUnit\Framework\TestCase;
 
 final class ThrowableStashTest extends TestCase

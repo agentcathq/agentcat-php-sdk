@@ -319,7 +319,7 @@ final class LogTest extends TestCase
         Log::write('hello');
 
         $this->assertSame([LogLine::prefix() . ' hello'], $this->withoutTime($lines));
-        $this->assertMatchesRegularExpression('/\A\[sdk=\S+ php=\S+ mcp=\S+\]\z/', LogLine::prefix());
+        $this->assertMatchesRegularExpression('/\A\[sdk=\S+ php=\S+ mcp=\S+(?: laravel-mcp=\S+)?\]\z/', LogLine::prefix());
     }
 
     /** D38: lines that go to the PSR-3 logger of the tracked server reach the sink too. */

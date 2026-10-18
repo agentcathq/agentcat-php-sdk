@@ -10,6 +10,7 @@ use AgentCat\CustomEvent;
 use AgentCat\Event;
 use AgentCat\Internal\ClientSeams;
 use AgentCat\Internal\Delivery\EventQueue;
+use AgentCat\Internal\Engine\Libraries;
 use AgentCat\Internal\Engine\TrackedServers;
 use AgentCat\Internal\Json\Json;
 use AgentCat\Internal\Logging\Log;
@@ -23,8 +24,6 @@ use PHPUnit\Framework\TestCase;
 
 final class AgentCatTest extends TestCase
 {
-    private const string MATRIX = 'AgentCat supports mcp/sdk 0.8.1+ (pass the Mcp\Server\Builder to AgentCat::track() before build()).';
-
     private Environment $environment;
 
     private MemoryLogger $logger;
@@ -93,8 +92,8 @@ final class AgentCatTest extends TestCase
         $this->assertSame($object, AgentCat::track($object, 'proj_x'));
 
         $this->assertSame([
-            'AgentCat SDK Compatibility: unrecognized server shape | signals (none). ' . self::MATRIX,
-            'Warning: Failed to track server - UnexpectedValueException: AgentCat SDK compatibility error: server object does not match any supported MCP SDK shape. ' . self::MATRIX,
+            'AgentCat SDK Compatibility: unrecognized server shape | signals (none). ' . Libraries::supportMatrix(),
+            'Warning: Failed to track server - UnexpectedValueException: AgentCat SDK compatibility error: server object does not match any supported MCP SDK shape. ' . Libraries::supportMatrix(),
         ], $this->logger->messages());
     }
 

@@ -7,6 +7,7 @@ namespace AgentCat\McpSdk\Internal;
 use AgentCat\Internal\Engine\CallContext;
 use AgentCat\Internal\Engine\CallSeam;
 use AgentCat\Internal\Engine\Observed;
+use AgentCat\Internal\Engine\ThrowableStash;
 use Mcp\Schema\JsonRpc\Error;
 use Mcp\Schema\JsonRpc\Response;
 use Mcp\Schema\Request\CallToolRequest;

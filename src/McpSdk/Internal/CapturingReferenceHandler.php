@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AgentCat\McpSdk\Internal;
 
+use AgentCat\Internal\Engine\ThrowableStash;
 use Mcp\Capability\Registry\ElementReference;
 use Mcp\Capability\Registry\ReferenceHandlerInterface;
 use Mcp\Capability\Registry\ToolReference;

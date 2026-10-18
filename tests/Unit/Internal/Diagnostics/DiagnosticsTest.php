@@ -91,7 +91,7 @@ final class DiagnosticsTest extends TestCase
         $record = JsonAssert::at($body, 'resourceLogs', 0, 'scopeLogs', 0, 'logRecords', 0);
         $this->assertSame(13, JsonAssert::at($record, 'severityNumber'));
         $this->assertSame('WARN', JsonAssert::at($record, 'severityText'));
-        $this->assertMatchesRegularExpression('/\A\[\d{4}-\d\d\-\d\dT\d\d:\d\d:\d\d\.\d{3}Z\] \[sdk=\S+ php=\S+ mcp=\S+\] Warning: something\z/', $this->text($record));
+        $this->assertMatchesRegularExpression('/\A\[\d{4}-\d\d\-\d\dT\d\d:\d\d:\d\d\.\d{3}Z\] \[sdk=\S+ php=\S+ mcp=\S+(?: laravel-mcp=\S+)?\] Warning: something\z/', $this->text($record));
         $this->assertSame('1792163096821000000', JsonAssert::at($record, 'timeUnixNano'));
         $this->assertSame(Json::encodeJs(DiagnosticsAttributes::record()), Json::encodeJs(JsonAssert::at($record, 'attributes')));
         $this->assertSame(1, $this->armed, 'the first line registers the shutdown delivery');

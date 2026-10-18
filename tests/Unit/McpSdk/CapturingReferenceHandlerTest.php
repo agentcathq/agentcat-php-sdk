@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace AgentCat\Tests\Unit\McpSdk;
 
+use AgentCat\Internal\Engine\ThrowableStash;
 use AgentCat\McpSdk\Internal\CapturingReferenceHandler;
-use AgentCat\McpSdk\Internal\ThrowableStash;
 use AgentCat\Tests\Support\Thrown;
 use Mcp\Capability\Registry\ElementReference;
 use Mcp\Capability\Registry\ReferenceHandlerInterface;

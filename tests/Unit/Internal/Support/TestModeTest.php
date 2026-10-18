@@ -179,6 +179,26 @@ final class TestModeTest extends TestCase
         ], $this->logger->messages(), 'once per process');
     }
 
+    /** @return iterable<string, array{mixed, ?bool}> */
+    public static function words(): iterable
+    {
+        foreach ([true, 1, 'true', ' YES ', 'on', '1'] as $i => $value) {
+            yield 'on ' . $i => [$value, true];
+        }
+        foreach ([false, 0, 'false', 'No', ' off', '0'] as $i => $value) {
+            yield 'off ' . $i => [$value, false];
+        }
+        foreach ([null, '', '  ', 'maybe', 2, 1.0, []] as $i => $value) {
+            yield 'neither ' . $i => [$value, null];
+        }
+    }
+
+    #[DataProvider('words')]
+    public function testTheEnabledWords(mixed $value, ?bool $expected): void
+    {
+        $this->assertSame($expected, TestMode::word($value));
+    }
+
     public function testResetReportsAnOtherValueAgain(): void
     {
         putenv('AGENTCAT_ENABLED=maybe');

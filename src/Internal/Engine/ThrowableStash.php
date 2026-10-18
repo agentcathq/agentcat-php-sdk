@@ -2,11 +2,12 @@
 
 declare(strict_types=1);
 
-namespace AgentCat\McpSdk\Internal;
+namespace AgentCat\Internal\Engine;
 
 /**
- * The exception a tool threw, kept for the request it ran for. mcp/sdk catches tool exceptions and answers with an
- * error result or a JSON-RPC error; the event needs the exception itself (05 E5). Entries go away with their request.
+ * The exception a tool threw, kept for the request it ran for. The MCP libraries catch tool exceptions and answer
+ * with an error result or a JSON-RPC error; the event needs the exception itself (05 E5). Entries go away with their
+ * request.
  *
  * @internal
  */

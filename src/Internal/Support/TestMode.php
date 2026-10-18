@@ -55,13 +55,27 @@ final class TestMode
      */
     public static function sdkEnabled(?\Closure $classLoaded = null): bool
     {
-        $value = self::normalized('AGENTCAT_ENABLED');
+        return self::word(Env::get('AGENTCAT_ENABLED') ?? '') ?? self::byDefault(self::normalized('AGENTCAT_ENABLED'), $classLoaded);
+    }
 
-        return match ($value) {
+    /**
+     * The D44 words: `true`, `1`, `yes`, `on` (trimmed, any case), bool true and int 1 are true; `false`, `0`, `no`,
+     * `off`, bool false and int 0 are false. Anything else, blank included, is null.
+     */
+    public static function word(mixed $value): ?bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+        if ($value === 1 || $value === 0) {
+            return $value === 1;
+        }
+
+        return is_string($value) ? match (strtolower(trim($value))) {
             'true', '1', 'yes', 'on' => true,
             'false', '0', 'no', 'off' => false,
-            default => self::byDefault($value, $classLoaded),
-        };
+            default => null,
+        } : null;
     }
 
     /** Whether the class is loaded already. It never autoloads: an installed but unused PHPUnit does not count. */
