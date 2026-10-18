@@ -79,6 +79,8 @@ final class MockCollector
      * The requests a scenario received so far, in arrival order (`n`).
      *
      * @return list<\stdClass> each with `n`, `method`, `path`, `headers`, `body`, `start` and `end`
+     *
+     * @phpstan-impure the collector writes the log while the test runs
      */
     public function requests(string $baseUrl): array
     {

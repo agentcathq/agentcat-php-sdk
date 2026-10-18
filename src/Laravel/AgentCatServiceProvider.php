@@ -7,6 +7,7 @@ namespace AgentCat\Laravel;
 use AgentCat\AgentCat;
 use AgentCat\Client;
 use AgentCat\Internal\Support\TestMode;
+use AgentCat\Laravel\Internal\AfterRequest;
 use AgentCat\Laravel\Internal\ServerTracker;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Support\ServiceProvider;
@@ -40,5 +41,6 @@ final class AgentCatServiceProvider extends ServiceProvider
                 $tracker->track($server, $app);
             });
         }
+        AfterRequest::register($this->app); // callbacks only: nothing runs at boot
     }
 }
