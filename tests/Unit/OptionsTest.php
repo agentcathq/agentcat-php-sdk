@@ -14,6 +14,7 @@ use AgentCat\Internal\Logging\Log;
 use AgentCat\Options;
 use AgentCat\Tests\Support\MemoryLogger;
 use AgentCat\ToolCall;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
@@ -261,16 +262,72 @@ final class OptionsTest extends TestCase
 
     public function testFromArrayRejectsWrongTelemetryOptionTypes(): void
     {
-        $options = Options::fromArray(['exporters' => 'otlp', 'disableDiagnostics' => 'yes', 'disableSignalHandlers' => 1]);
+        $options = Options::fromArray(['exporters' => 'otlp', 'disableSignalHandlers' => 1]);
 
         $this->assertNull($options->exporters);
-        $this->assertFalse($options->disableDiagnostics);
         $this->assertFalse($options->disableSignalHandlers);
         $this->assertSame([
             'WARN: AgentCat option "exporters" must be array or null, got string; the default is used',
-            'WARN: AgentCat option "disableDiagnostics" must be bool, got string; the default is used',
             'WARN: AgentCat option "disableSignalHandlers" must be bool, got int; the default is used',
         ], $this->logger->messages());
+    }
+
+    /**
+     * A4: the opt-out reads what a framework config file gives it, Laravel's `env()` strings included (`env()` turns
+     * only `true`/`false`/`(true)`/`(false)` into bools, so `1` in `.env` arrives as `'1'`). The `DISABLE_DIAGNOSTICS`
+     * words, trimmed, in any case.
+     *
+     * @return iterable<string, array{mixed, bool}>
+     */
+    public static function diagnosticsSwitches(): iterable
+    {
+        yield 'true' => [true, true];
+        yield 'false' => [false, false];
+        yield "'true'" => ['true', true];
+        yield "'1'" => ['1', true];
+        yield "'yes'" => ['yes', true];
+        yield "'on'" => ['on', true];
+        yield "'TRUE'" => ['TRUE', true];
+        yield "'Yes'" => ['Yes', true];
+        yield "' on ' (trimmed)" => [' on ', true];
+        yield 'int 1' => [1, true];
+        yield "'false'" => ['false', false];
+        yield "'0'" => ['0', false];
+        yield "'no'" => ['no', false];
+        yield "'off'" => ['off', false];
+        yield "'OFF'" => ['OFF', false];
+        yield "'' (an empty .env value)" => ['', false];
+        yield "' ' (blank)" => [' ', false];
+        yield 'int 0' => [0, false];
+    }
+
+    #[DataProvider('diagnosticsSwitches')]
+    public function testFromArrayReadsDisableDiagnosticsLikeTheEnvironmentVariable(mixed $value, bool $disabled): void
+    {
+        $this->assertSame($disabled, Options::fromArray(['disableDiagnostics' => $value])->disableDiagnostics);
+        $this->assertSame([], $this->logger->messages());
+    }
+
+    /** @return iterable<string, array{mixed, string}> */
+    public static function unreadableDiagnosticsSwitches(): iterable
+    {
+        yield 'a typo' => ['ture', 'string'];
+        yield 'another word' => ['disabled', 'string'];
+        yield 'int 2' => [2, 'int'];
+        yield 'float 1.0' => [1.0, 'float'];
+        yield "null (env() of a missing variable)" => [null, 'null'];
+        yield 'an array' => [[], 'array'];
+    }
+
+    /** A4: a privacy opt-out fails closed: a value it cannot read logs the usual line and turns diagnostics off. */
+    #[DataProvider('unreadableDiagnosticsSwitches')]
+    public function testFromArrayTurnsDiagnosticsOffForAValueItCannotRead(mixed $value, string $type): void
+    {
+        $this->assertTrue(Options::fromArray(['disableDiagnostics' => $value])->disableDiagnostics);
+        $this->assertSame(
+            ['WARN: AgentCat option "disableDiagnostics" must be bool, got ' . $type . '; the default is used'],
+            $this->logger->messages(),
+        );
     }
 
     public function testFromArrayKeepsAnEmptyExporterListAndAnExplicitNull(): void

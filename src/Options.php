@@ -8,6 +8,7 @@ use AgentCat\Exporters\DatadogExporter;
 use AgentCat\Exporters\OtlpExporter;
 use AgentCat\Exporters\PostHogExporter;
 use AgentCat\Exporters\SentryExporter;
+use AgentCat\Internal\Diagnostics\DiagnosticsSwitch;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Telemetry\ExporterConfigs;
 
@@ -74,6 +75,10 @@ final readonly class Options
      * An unknown key, or a value of the wrong type, logs one warning and the default is used. The bool options
      * reject an explicit null too. A callable that is not a closure is converted to one.
      *
+     * `disableDiagnostics` also takes what an `.env` file gives: int 1 or 0, and the words of `DISABLE_DIAGNOSTICS`
+     * (`true`, `1`, `yes`, `on` turn diagnostics off; `false`, `0`, `no`, `off` and blank keep them on; trimmed, any
+     * case). Any other value, null included, logs the warning and turns diagnostics off: an opt-out fails closed.
+     *
      * @param array<array-key, mixed> $config
      */
     public static function fromArray(array $config): self
@@ -98,7 +103,7 @@ final readonly class Options
             eventTags: self::closure($config, 'eventTags'),
             eventProperties: self::closure($config, 'eventProperties'),
             exporters: self::exporters($config),
-            disableDiagnostics: self::bool($config, 'disableDiagnostics', false),
+            disableDiagnostics: self::disableDiagnostics($config),
             disableSignalHandlers: self::bool($config, 'disableSignalHandlers', false),
         );
     }
@@ -115,6 +120,21 @@ final readonly class Options
         self::reject($key, 'bool', $config[$key]);
 
         return $default;
+    }
+
+    /** @param array<array-key, mixed> $config */
+    private static function disableDiagnostics(array $config): bool
+    {
+        if (!array_key_exists('disableDiagnostics', $config)) {
+            return false;
+        }
+        $disabled = DiagnosticsSwitch::option($config['disableDiagnostics']);
+        if ($disabled !== null) {
+            return $disabled;
+        }
+        self::reject('disableDiagnostics', 'bool', $config['disableDiagnostics']);
+
+        return true; // a privacy opt-out fails closed
     }
 
     /**
