@@ -7,6 +7,7 @@ namespace AgentCat\Tests\E2E;
 use AgentCat\Tests\E2E\Support\BuiltInServer;
 use AgentCat\Tests\E2E\Support\McpHttpClient;
 use AgentCat\Tests\Integration\Support\MockCollector;
+use AgentCat\Tests\Support\FileTree;
 use AgentCat\Tests\Support\JsonAssert;
 use AgentCat\Tests\Support\McpSdk\HttpHarness;
 use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
@@ -61,7 +62,7 @@ final class BufferedOutputTest extends TestCase
         self::$server = null;
         self::$collector?->stop();
         self::$collector = null;
-        self::remove(self::$dir);
+        FileTree::remove(self::$dir);
     }
 
     #[Group('ac-03-1')]
@@ -97,25 +98,5 @@ final class BufferedOutputTest extends TestCase
         $this->assertInstanceOf(BuiltInServer::class, self::$server);
 
         return self::$server;
-    }
-
-    /** The bootstrap removes only plain files in the test HOME (Ruling R8): remove this tree here. */
-    private static function remove(string $path): void
-    {
-        if ($path === '' || (!is_dir($path) && !is_file($path))) {
-            return;
-        }
-        if (is_file($path) || is_link($path)) {
-            unlink($path);
-
-            return;
-        }
-        $names = scandir($path);
-        foreach ($names === false ? [] : $names as $name) {
-            if ($name !== '.' && $name !== '..') {
-                self::remove($path . '/' . $name);
-            }
-        }
-        rmdir($path);
     }
 }

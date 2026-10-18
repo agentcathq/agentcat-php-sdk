@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AgentCat\Tests\Unit\Internal\Delivery;
 
 use AgentCat\Internal\Delivery\RequestEnd;
+use AgentCat\Tests\Support\FileTree;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -37,11 +38,7 @@ final class RequestEndTest extends TestCase
         if ($this->savedIgnoreUserAbort !== null) {
             ignore_user_abort((bool) $this->savedIgnoreUserAbort);
         }
-        if ($this->sessionDir !== '') {
-            $files = glob($this->sessionDir . '/*');
-            array_map(unlink(...), $files === false ? [] : $files);
-            rmdir($this->sessionDir);
-        }
+        FileTree::remove($this->sessionDir);
     }
 
     public function testFpmClosesTheSessionAndExtendsTheTimeLimitButKeepsTheBuffers(): void
@@ -235,13 +232,11 @@ final class RequestEndTest extends TestCase
         $_SESSION['seen'] = 'yes';
         $this->setIni('max_execution_time', '30');
         $this->saveIgnoreUserAbort(false);
-        ob_start(null, 0, self::NOT_FLUSHABLE);
-        ob_start();
-        echo 'held';
+        $level = $this->openBuffers();
 
         RequestEnd::detect(false, 'cli-server')->prepare(5.0);
 
-        $this->assertSame('held', ob_get_clean(), 'the open buffer went into the one below');
+        $this->assertSame(['held'], $this->closeBuffers($level), 'the open buffer went into the one below');
         $this->assertSame(PHP_SESSION_NONE, session_status());
         $files = glob($this->sessionDir . '/sess_*');
         $this->assertIsArray($files);
@@ -251,22 +246,55 @@ final class RequestEndTest extends TestCase
         $this->assertSame(1, ignore_user_abort(), 'the client may leave once it has the body');
     }
 
-    /** `disable_functions` and a PHP without ext-session: each step whose function is missing is skipped. */
+    /**
+     * `disable_functions` and a PHP without ext-session: each step whose function is missing is skipped. Without
+     * `ignore_user_abort()` and `ini_set()`, the buffers stay for PHP to send at the end.
+     */
     public function testDetectSkipsTheStepsWhoseFunctionsAreMissing(): void
     {
         $this->startSession();
         $this->setIni('max_execution_time', '30');
         $this->saveIgnoreUserAbort(false);
-        ob_start(null, 0, self::NOT_FLUSHABLE);
-        ob_start();
-        echo 'held';
+        $level = $this->openBuffers();
 
         RequestEnd::detect(false, 'cli-server', static fn(string $function): bool => false)->prepare(5.0);
 
-        $this->assertSame('held', ob_get_clean(), 'output buffering is part of PHP itself');
+        $this->assertSame(['held', ''], $this->closeBuffers($level));
         $this->assertSame(PHP_SESSION_ACTIVE, session_status());
         $this->assertSame('30', ini_get('max_execution_time'));
         $this->assertSame(0, ignore_user_abort());
+    }
+
+    /** @return iterable<string, array{list<string>, bool, list<string>, int}> */
+    public static function abortSettings(): iterable
+    {
+        yield 'ignore_user_abort() disabled: ini_set() switches the setting on' => [['ignore_user_abort'], false, ['held'], 1];
+        yield 'both disabled: the buffers stay' => [['ignore_user_abort', 'ini_set'], false, ['held', ''], 0];
+        yield 'both disabled, the setting already on' => [['ignore_user_abort', 'ini_set'], true, ['held'], 1];
+    }
+
+    /**
+     * On mod_php and php-cgi, a write to a client that left ends the script at once unless PHP ignores the abort; the
+     * shutdown pass would then end before delivery. So the buffers are sent only when PHP ignores the abort; the
+     * other steps run either way.
+     *
+     * @param list<string> $missing
+     * @param list<string> $buffers
+     */
+    #[DataProvider('abortSettings')]
+    public function testTheBuffersAreSentOnlyWhenPhpIgnoresAnAbortedClient(array $missing, bool $before, array $buffers, int $after): void
+    {
+        $this->startSession();
+        $this->setIni('max_execution_time', '30');
+        $this->saveIgnoreUserAbort($before);
+        $level = $this->openBuffers();
+
+        RequestEnd::detect(false, 'cli-server', static fn(string $function): bool => !in_array($function, $missing, true))->prepare(5.0);
+
+        $this->assertSame($buffers, $this->closeBuffers($level));
+        $this->assertSame($after, ignore_user_abort());
+        $this->assertSame(PHP_SESSION_NONE, session_status());
+        $this->assertSame('6', ini_get('max_execution_time'));
     }
 
     /** @return iterable<string, array{string}> */
@@ -323,6 +351,37 @@ final class RequestEndTest extends TestCase
         $previous = ini_set($name, $value);
         $this->assertNotFalse($previous, $name);
         $this->savedIni += [$name => $previous];
+    }
+
+    /**
+     * A buffer that the close stops at (it stands in for PHPUnit's), with an open buffer that holds `held` above it.
+     *
+     * @return int the level below both
+     */
+    private function openBuffers(): int
+    {
+        $level = ob_get_level();
+        ob_start(null, 0, self::NOT_FLUSHABLE);
+        ob_start();
+        echo 'held';
+
+        return $level;
+    }
+
+    /**
+     * Removes the buffers above `$level` and returns what each held, top first. More than two buffers fail the test.
+     *
+     * @return list<string>
+     */
+    private function closeBuffers(int $level): array
+    {
+        $held = [];
+        while (ob_get_level() > $level) {
+            $held[] = (string) ob_get_clean();
+        }
+        $this->assertLessThanOrEqual(2, count($held));
+
+        return $held;
     }
 
     private function saveIgnoreUserAbort(bool $value): void

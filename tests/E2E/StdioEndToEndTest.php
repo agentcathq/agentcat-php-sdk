@@ -9,6 +9,7 @@ use AgentCat\Internal\Diagnostics\Diagnostics;
 use AgentCat\Internal\Json\Json;
 use AgentCat\Tests\E2E\Support\StdioMcpClient;
 use AgentCat\Tests\Integration\Support\MockCollector;
+use AgentCat\Tests\Support\FileTree;
 use AgentCat\Tests\Support\JsonAssert;
 use AgentCat\Tests\Support\McpSdk\HttpHarness;
 use AgentCat\Tests\Support\McpSdk\McpSdkVersion;
@@ -83,7 +84,7 @@ final class StdioEndToEndTest extends TestCase
     {
         self::$collector?->stop();
         self::$collector = null;
-        self::remove(self::$dir);
+        FileTree::remove(self::$dir);
     }
 
     #[\Override]
@@ -469,25 +470,5 @@ final class StdioEndToEndTest extends TestCase
         $this->assertInstanceOf(MockCollector::class, self::$collector);
 
         return self::$collector;
-    }
-
-    /** The bootstrap removes only plain files in the test HOME (Ruling R8): remove this tree here. */
-    private static function remove(string $path): void
-    {
-        if ($path === '' || (!is_dir($path) && !is_file($path))) {
-            return;
-        }
-        if (is_file($path) || is_link($path)) {
-            unlink($path);
-
-            return;
-        }
-        $names = scandir($path);
-        foreach ($names === false ? [] : $names as $name) {
-            if ($name !== '.' && $name !== '..') {
-                self::remove($path . '/' . $name);
-            }
-        }
-        rmdir($path);
     }
 }

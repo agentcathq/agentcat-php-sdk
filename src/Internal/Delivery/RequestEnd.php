@@ -9,8 +9,8 @@ namespace AgentCat\Internal\Delivery;
  * writes and closes an active native session, so its lock is not held while AgentCat delivers; it gives the drain its
  * own time limit, so a request that used most of `max_execution_time` does not end the drain with a fatal error; and,
  * without a finish-request function, it sends the output buffers, so a response that carries a Content-Length
- * reaches the client before hooks and delivery run. Nothing runs on the command line. Every step is guarded: a
- * failing step skips only itself.
+ * reaches the client before hooks and delivery run, unless PHP cannot ignore an aborted client. Nothing runs on the
+ * command line. Every step is guarded: a failing step skips only itself.
  *
  * @internal
  */
@@ -45,6 +45,7 @@ final readonly class RequestEnd
         $session = $exists('session_status') && $exists('session_write_close');
         $limit = $exists('set_time_limit');
         $abort = $exists('ignore_user_abort');
+        $ini = $exists('ini_set');
 
         return new self(
             $sapi,
@@ -53,15 +54,16 @@ final readonly class RequestEnd
             static function (): void {
                 session_write_close();
             },
-            static fn(): int => $limit ? (int) ini_get('max_execution_time') : 0,
-            static function (int $seconds): void {
-                set_time_limit($seconds);
-            },
-            static function () use ($abort): void {
-                if ($abort) {
-                    ignore_user_abort(true); // the client may leave once it has the body
+            static fn(): int => (int) ini_get('max_execution_time'),
+            static function (int $seconds) use ($limit): void {
+                if ($limit) {
+                    set_time_limit($seconds);
                 }
-                self::closeOutputBuffers();
+            },
+            static function () use ($abort, $ini): void {
+                if (self::ignoreUserAbort($abort, $ini)) {
+                    self::closeOutputBuffers();
+                }
             },
         );
     }
@@ -104,14 +106,36 @@ final readonly class RequestEnd
      */
     public static function closeOutputBuffers(int $keep = 0): void
     {
-        $required = PHP_OUTPUT_HANDLER_REMOVABLE | PHP_OUTPUT_HANDLER_FLUSHABLE;
-        for ($level = ob_get_level(); $level > $keep; --$level) { // at most one pass per buffer
-            $flags = ob_get_status()['flags'] ?? null; // the buffer on top
-            if (!is_int($flags) || ($flags & $required) !== $required || !ob_end_flush()) {
-                break;
-            }
+        for ($level = ob_get_level(); $level > $keep && self::canSendTopBuffer(); --$level) { // at most one pass per buffer
+            ob_end_flush();
         }
         flush();
+    }
+
+    /** The buffer on top may be removed and flushed (Symfony's rule), so `ob_end_flush()` closes it without a notice. */
+    private static function canSendTopBuffer(): bool
+    {
+        $flags = ob_get_status()['flags'] ?? null;
+        $required = PHP_OUTPUT_HANDLER_REMOVABLE | PHP_OUTPUT_HANDLER_FLUSHABLE;
+
+        return is_int($flags) && ($flags & $required) === $required;
+    }
+
+    /**
+     * Lets the script go on when the client leaves once it has the body. On mod_php and php-cgi, a write to a client
+     * that left ends the script at once unless PHP ignores the abort, so sending the buffers would end the shutdown
+     * pass before delivery. With `ignore_user_abort()` disabled, `ini_set()` still switches the setting on. True when
+     * PHP ignores the abort now.
+     */
+    private static function ignoreUserAbort(bool $function, bool $ini): bool
+    {
+        if ($function) {
+            ignore_user_abort(true);
+        } elseif ($ini) {
+            ini_set('ignore_user_abort', '1');
+        }
+
+        return ini_get('ignore_user_abort') === '1'; // false also when an administrator locked the setting off
     }
 
     /**
