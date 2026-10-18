@@ -72,7 +72,7 @@ final class DiagnosticsSwitchTest extends TestCase
         $this->assertFalse(DiagnosticsSwitch::enabled(false, $value, null, true));
     }
 
-    /** A10 (D50): `DISABLE_DIAGNOSTICS`, the unprefixed name, is read only while `AGENTCAT_DISABLE_DIAGNOSTICS` is blank. */
+    /** A10 (D50): `DISABLE_DIAGNOSTICS`, the unprefixed name, can only turn diagnostics off. */
     #[Group('ac-06-49')]
     public function testTheUnprefixedFallbackCanOnlyTurnDiagnosticsOff(): void
     {
@@ -81,8 +81,17 @@ final class DiagnosticsSwitchTest extends TestCase
         $this->assertFalse(DiagnosticsSwitch::enabled(false, null, 'false', true), 'false never turns them on');
         $this->assertTrue(DiagnosticsSwitch::enabled(false, null, 'false', false), 'and does not turn them off');
         $this->assertTrue(DiagnosticsSwitch::enabled(false, null, '', false));
-        $this->assertTrue(DiagnosticsSwitch::enabled(false, 'false', 'true', true), 'a set AGENTCAT_DISABLE_DIAGNOSTICS decides');
-        $this->assertFalse(DiagnosticsSwitch::enabled(false, 'true', 'false', false));
+    }
+
+    /** D50 ruling: when the two names disagree, any off value wins; a false value never turns them on over a true one. */
+    #[Group('ac-06-49')]
+    public function testWhenTheTwoVariablesDisagreeOffWins(): void
+    {
+        $this->assertFalse(DiagnosticsSwitch::enabled(false, 'false', 'true', true), 'DISABLE_DIAGNOSTICS=true over AGENTCAT_DISABLE_DIAGNOSTICS=false');
+        $this->assertFalse(DiagnosticsSwitch::enabled(false, 'false', 'true', false));
+        $this->assertFalse(DiagnosticsSwitch::enabled(false, 'false', 'anything', false), 'any off word');
+        $this->assertFalse(DiagnosticsSwitch::enabled(false, 'true', 'false', false), 'AGENTCAT_DISABLE_DIAGNOSTICS=true over DISABLE_DIAGNOSTICS=false');
+        $this->assertTrue(DiagnosticsSwitch::enabled(false, 'false', 'false', true), 'two false values agree: on, also under a test runner');
     }
 
     #[Group('ac-06-48')]

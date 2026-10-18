@@ -48,8 +48,9 @@ final readonly class Options
      *        ID: a hash of the host name and the install path), the OS type and version, the architecture, the PHP,
      *        AgentCat SDK and mcp/sdk versions, the process ID and APP_ENV. The first track() in the process decides.
      *        AGENTCAT_DISABLE_DIAGNOSTICS also turns them off, or on with false; DISABLE_DIAGNOSTICS can only turn
-     *        them off. They are off in test environments. AGENTCAT_DIAGNOSTICS_ENDPOINT and AGENTCAT_DIAGNOSTICS_TOKEN
-     *        change where they go; a blocked collector holds a request at most 1 s.
+     *        them off, and when the two disagree, off wins. They are off in test environments.
+     *        AGENTCAT_DIAGNOSTICS_ENDPOINT and AGENTCAT_DIAGNOSTICS_TOKEN change where they go; a blocked collector
+     *        holds a request at most 1 s.
      * @param bool $disableSignalHandlers Keeps AgentCat from installing its SIGTERM and SIGINT handlers in CLI servers, so a
      *        signal ends the process as it did before, without the last delivery. Needed when the process must keep an
      *        ignored signal that it inherited. Applies only until the handlers are installed, at the first event or log

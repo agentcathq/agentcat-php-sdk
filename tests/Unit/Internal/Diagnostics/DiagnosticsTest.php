@@ -425,7 +425,7 @@ final class DiagnosticsTest extends TestCase
         $this->assertFalse($this->queue->hasWork());
     }
 
-    /** A10 (D50): the unprefixed `DISABLE_DIAGNOSTICS` is only a fallback that can turn diagnostics off. */
+    /** A10 (D50): the unprefixed `DISABLE_DIAGNOSTICS` can only turn diagnostics off, and its off wins. */
     #[Group('ac-06-49')]
     public function testTheUnprefixedVariableCanOnlyTurnDiagnosticsOff(): void
     {
@@ -442,7 +442,7 @@ final class DiagnosticsTest extends TestCase
         putenv('DISABLE_DIAGNOSTICS=true');
         putenv('AGENTCAT_DISABLE_DIAGNOSTICS=false');
         $this->init('p', testEnvironment: true);
-        $this->assertTrue(Diagnostics::enabled(), 'the AgentCat name, when set, decides');
+        $this->assertFalse(Diagnostics::enabled(), 'off wins over AGENTCAT_DISABLE_DIAGNOSTICS=false');
     }
 
     /** A10 (D50): an application's own `DIAGNOSTICS_ENDPOINT` and `DIAGNOSTICS_TOKEN` never reach AgentCat. */

@@ -8,8 +8,8 @@ use AgentCat\Internal\Support\Js;
 
 /**
  * TypeScript `initDiagnostics`'s decision: the `disableDiagnostics` option, then `AGENTCAT_DISABLE_DIAGNOSTICS`, then
- * the test environment. While `AGENTCAT_DISABLE_DIAGNOSTICS` is blank, the unprefixed `DISABLE_DIAGNOSTICS` (the
- * TypeScript name) can turn diagnostics off, never on (D50).
+ * the test environment. The unprefixed `DISABLE_DIAGNOSTICS` (the TypeScript name) can turn diagnostics off, never on
+ * (D50). When the two disagree, off wins: a privacy opt-out fails closed.
  *
  * @internal
  */
@@ -68,15 +68,12 @@ final class DiagnosticsSwitch
 
     /**
      * @param ?string $variable `AGENTCAT_DISABLE_DIAGNOSTICS`
-     * @param ?string $fallback `DISABLE_DIAGNOSTICS`, read only while `$variable` is blank; it can only turn
-     *                          diagnostics off
+     * @param ?string $fallback `DISABLE_DIAGNOSTICS`: it can only turn diagnostics off, also over a false `$variable`
      */
     public static function enabled(bool $disabledOption, ?string $variable, ?string $fallback, bool $testEnvironment): bool
     {
-        $flag = self::flag($variable);
-        if ($flag === self::UNSET && self::flag($fallback) === self::DISABLED) {
-            $flag = self::DISABLED; // a false value there never turns diagnostics on
-        }
+        // Off wins: a false value of either name never turns diagnostics on over the other's true.
+        $flag = self::flag($fallback) === self::DISABLED ? self::DISABLED : self::flag($variable);
 
         return !$disabledOption && $flag !== self::DISABLED && ($flag === self::FORCE_ENABLED || !$testEnvironment);
     }
