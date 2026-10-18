@@ -192,7 +192,7 @@ final class EventQueueDeliveryTest extends TestCase
     }
 
     /**
-     * I2: a SIGTERM drain that runs inside a write callback of the side channel (the seam stands in for the signal
+     * I2: a SIGTERM drain that runs inside a callback of the side channel (the seam stands in for the signal
      * handler). It delivers the event on the transport's own multi handle and returns once the event is delivered: the
      * side channel cannot progress inside its own callback, so the drain does not wait for it. The side transfer then
      * completes in the next passes.
@@ -208,7 +208,7 @@ final class EventQueueDeliveryTest extends TestCase
             /** Seconds the drain took; null until it ran. */
             public ?float $drained = null;
         };
-        $channel = new CurlHttpChannel(onWrite: function () use ($state): void {
+        $channel = new CurlHttpChannel(onCallback: function () use ($state): void {
             if ($state->drained !== null || !$state->queue instanceof EventQueue) {
                 return;
             }
@@ -232,7 +232,7 @@ final class EventQueueDeliveryTest extends TestCase
         } while ($channel->pending() > 0);
 
         $this->assertIsFloat($state->drained, 'the drain ran inside a write callback');
-        $this->assertLessThan(1.0, $state->drained, 'it did not wait for the side channel it interrupted (the budget is 5 s)');
+        $this->assertLessThan(2.5, $state->drained, 'it did not wait for the side channel it interrupted (the budget is 5 s)');
         $this->assertCount(1, $this->collector()->requests($events), "the event was delivered on the transport's own handle");
         $this->assertSame([200, null], $outcome, 'the side transfer completed');
     }

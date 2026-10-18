@@ -240,11 +240,13 @@ final class CurlHttpChannelTest extends TestCase
     }
 
     /**
-     * I2: a signal handler (the SIGTERM drain) that runs inside a write callback pumps, waits on and posts to the channel
-     * it interrupted. libcurl refuses every multi call from inside a callback; the nested calls leave the transfers
-     * alone, the new request waits for the next pump, and both complete.
+     * I2 and the N1 ruling: a signal handler (the SIGTERM drain) that runs inside a callback pumps, waits on and posts
+     * to the channel it interrupted. The `header` seam runs where PHP 8.4+ runs a signal, at the callback's entry before
+     * it marks the channel busy: the nested pump's add and run are refused, the refusal marks the channel busy, and
+     * the request waits. The `write` seam runs inside the body, where the channel is busy already. Either way: nothing
+     * pending, no wait, nothing failed, and every request completes.
      */
-    #[MaximumDuration(3000)]
+    #[MaximumDuration(5000)]
     public function testAPumpFromInsideATransferCallbackLeavesTheChannelAlone(): void
     {
         $url = $this->collector()->scenario([], ['status' => 200, 'body' => str_repeat('x', 200_000)]);
@@ -256,31 +258,62 @@ final class CurlHttpChannelTest extends TestCase
         };
         $nested = [];
         $channel = null;
-        $channel = $this->channel(onWrite: static function () use (&$channel, &$nested, $url, $record): void {
-            if ($nested !== [] || !$channel instanceof CurlHttpChannel) {
+        $channel = $this->channel(onCallback: static function (string $kind) use (&$channel, &$nested, $url, $record): void {
+            if (isset($nested[$kind]) || !$channel instanceof CurlHttpChannel) {
                 return;
             }
             $begin = hrtime(true);
-            $channel->post(new HttpRequest($url . '/b', [], ''), $record('b'));
+            $channel->post(new HttpRequest($url . '/' . $kind, [], ''), $record($kind));
             $channel->pump();
-            $channel->waitForActivity(1.0);
-            $nested = [
-                'seconds' => (hrtime(true) - $begin) / 1e9,
-                'pending' => $channel->pending(),
-                'inTransfer' => $channel->inTransfer(),
-            ];
+            for ($i = 0; $i < 3; ++$i) {
+                $channel->waitForActivity(1.0); // 3 s if the channel waited
+            }
+            $nested[$kind] = [(hrtime(true) - $begin) / 1e9 < 1.5, $channel->pending(), $channel->pending(false), $channel->inTransfer()];
         });
         $channel->post(new HttpRequest($url . '/a', [], ''), $record('a'));
 
-        $this->assertTrue($this->drain($channel, 2.0));
+        $this->assertTrue($this->drain($channel, 3.0));
 
         ksort($responses);
-        $this->assertSame(['a' => [200, null], 'b' => [200, null]], $responses, 'no curl error, no lost transfer');
-        $this->assertSame(['seconds', 'pending', 'inTransfer'], array_keys($nested), 'the seam ran inside a write callback');
-        $this->assertLessThan(0.5, $nested['seconds'] ?? INF, 'the nested wait returned at once');
-        $this->assertSame(0, $nested['pending'] ?? null, 'inside a callback nothing can be waited for');
-        $this->assertSame(1, $nested['inTransfer'] ?? null, 'b waited: libcurl refuses an add from inside a callback');
-        $this->assertCount(2, $this->collector()->requests($url));
+        $this->assertSame(['a' => [200, null], 'header' => [200, null], 'write' => [200, null]], $responses, 'no curl error, no lost transfer');
+        ksort($nested);
+        $this->assertSame(['header' => [true, 0, 0, 2], 'write' => [true, 0, 0, 2]], $nested, 'in each callback: no wait, nothing pending; a and the refused add of header in transfer');
+        $this->assertCount(3, $this->collector()->requests($url));
+    }
+
+    /**
+     * A callback that ends early (a throwable, or `exit()` in a signal handler) leaves the busy flag set. Outside
+     * `curl_multi_exec()` the channel sees that and goes on: the next request is sent as usual.
+     */
+    #[MaximumDuration(5000)]
+    public function testABusyFlagThatACallbackLeftSetIsClearedOutsideCurl(): void
+    {
+        $url = $this->collector()->scenario([], ['status' => 200, 'body' => str_repeat('x', 200_000)]);
+        /** @var \ArrayObject<int, \Throwable> $thrown */
+        $thrown = new \ArrayObject();
+        $failure = new \RuntimeException('a callback that ends early');
+        $channel = new CurlHttpChannel(onSwallowed: static function (\Throwable $error) use ($thrown): void {
+            $thrown[] = $error;
+        }, onCallback: static function (string $kind) use ($thrown, $failure): void {
+            if ($kind === 'write' && count($thrown) === 0) {
+                throw $failure;
+            }
+        });
+        $responses = [];
+        $record = static function (string $name) use (&$responses): \Closure {
+            return static function (HttpResponse $response) use ($name, &$responses): void {
+                $responses[$name] = $response->status;
+            };
+        };
+        $channel->post(new HttpRequest($url . '/a', [], ''), $record('a'));
+        $this->assertTrue($this->drain($channel, 3.0));
+        $this->assertSame([$failure], $thrown->getArrayCopy(), 'the throwable reached only the channel');
+
+        $channel->post(new HttpRequest($url . '/b', [], ''), $record('b'));
+
+        $this->assertSame(1, $channel->pending(), 'not busy outside curl');
+        $this->assertTrue($this->drain($channel, 3.0));
+        $this->assertSame(200, $responses['b'] ?? null, 'and the next request went out');
     }
 
     /**
@@ -590,17 +623,17 @@ final class CurlHttpChannelTest extends TestCase
 
     /**
      * @param (\Closure(string, int): int)|null $multiStatus
-     * @param (\Closure(): void)|null           $onWrite
+     * @param (\Closure(string): void)|null     $onCallback
      */
     private function channel(
         float $connectTimeoutSeconds = CurlTransport::CONNECT_TIMEOUT_SECONDS,
         float $totalTimeoutSeconds = CurlTransport::TOTAL_TIMEOUT_SECONDS,
         ?\Closure $multiStatus = null,
-        ?\Closure $onWrite = null,
+        ?\Closure $onCallback = null,
     ): CurlHttpChannel {
         return new CurlHttpChannel($connectTimeoutSeconds, $totalTimeoutSeconds, multiStatus: $multiStatus, onSwallowed: function (\Throwable $error): void {
             $this->swallowed[] = $error;
-        }, onWrite: $onWrite);
+        }, onCallback: $onCallback);
     }
 
     private function drain(HttpChannel $channel, float $seconds): bool

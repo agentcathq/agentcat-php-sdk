@@ -13,8 +13,10 @@ use AgentCat\Internal\Support\ErrorText;
  * every throwable is swallowed (D32; tests see them through `$onSwallowed`): a failed request reaches only its
  * callback. `CurlMulti` runs the transfers.
  *
- * At most 1 000 requests with at most 16 MiB of bodies wait; the oldest are dropped, with one line per pass. A call
- * from inside one of its own transfer callbacks (a signal handler) leaves the transfers alone (`CurlMulti`).
+ * At most 1 000 requests with at most 16 MiB of bodies wait; the oldest are dropped, with one line per pass. While one
+ * of its PHP callbacks runs (`busy()`), a signal handler there (the SIGTERM drain) gets nothing pending and its pumps
+ * and waits do nothing: libcurl refuses every multi call from inside a callback. PHP 8.4+ also runs a pending signal
+ * at the entry of a callback, before it marks the channel busy; the first refused `curl_multi_exec()` marks it then.
  *
  * @internal
  */
@@ -58,13 +60,18 @@ final class CurlHttpChannel implements HttpChannel
     /** Requests dropped from a full queue since the last pass; `pump()` logs them in one line. */
     private int $dropped = 0;
 
+    /** Set by the write and header functions while they run. */
+    private readonly CallbackFlag $inCallback;
+
     /**
      * @param (\Closure(string): bool)|null       $functionExists tests only: tells whether a curl function exists. Default `function_exists()`.
      * @param (\Closure(string, int): int)|null   $multiStatus    tests only: receives the function name and the CURLM code of each
      *                                                            `curl_multi_add_handle()` and `curl_multi_exec()` call, returns the code to act on
      * @param (\Closure(\Throwable): void)|null $onSwallowed    tests only: sees every throwable the channel swallows (D32); must not throw
-     * @param (\Closure(): void)|null          $onWrite        tests only: runs at the start of every write callback, inside
-     *                                                            `curl_multi_exec()`, where a signal handler can run too
+     * @param (\Closure(string): void)|null    $onCallback     tests only: where a signal handler can run, with `header` at the
+     *                                                            very start of every header callback, before it marks the
+     *                                                            channel busy (PHP 8.4+ runs signals there), and with
+     *                                                            `write` inside every write callback
      *
      * @throws \InvalidArgumentException for a timeout curl cannot take (`CurlSupport::timeoutMilliseconds()`)
      */
@@ -74,12 +81,13 @@ final class CurlHttpChannel implements HttpChannel
         ?\Closure $functionExists = null,
         ?\Closure $multiStatus = null,
         private readonly ?\Closure $onSwallowed = null,
-        private readonly ?\Closure $onWrite = null,
+        private readonly ?\Closure $onCallback = null,
     ) {
         $this->connectTimeoutMs = CurlSupport::timeoutMilliseconds($connectTimeoutSeconds);
         $this->totalTimeoutMs = CurlSupport::timeoutMilliseconds($totalTimeoutSeconds);
         $this->curl = new CurlSupport(self::NO_CURL, $functionExists);
         $this->multi = new CurlMulti($multiStatus);
+        $this->inCallback = new CallbackFlag();
     }
 
     #[\Override]
@@ -99,15 +107,16 @@ final class CurlHttpChannel implements HttpChannel
         $this->waitingBytes += $bytes;
     }
 
-    /** Also logs the requests dropped since the last pass, in one line. */
+    /** Also logs the requests dropped since the last pass, in one line. Does no curl work while `busy()`. */
     #[\Override]
     public function pump(): void
     {
-        if ($this->waiting !== [] || $this->multi->count() > 0) { // else nothing posted (or nothing can be): no curl call
+        if (!$this->busy() && ($this->waiting !== [] || $this->multi->count() > 0)) { // else nothing posted (or nothing can be): no curl call
             $this->guarded(function (): void {
                 $this->launch();
-                $this->collect();
-                $this->launch(); // requests that callbacks posted (Sentry's sequence) start in this pass
+                if ($this->collect()) {
+                    $this->launch(); // requests that callbacks posted (Sentry's sequence) start in this pass
+                }
             });
         }
         if ($this->dropped > 0) {
@@ -116,11 +125,11 @@ final class CurlHttpChannel implements HttpChannel
         }
     }
 
-    /** 0 from inside one of its own transfer callbacks (a signal drain): nothing can progress there, so nothing can be waited for. */
+    /** 0 while `busy()`: inside its own callback nothing can progress, so a drain there has nothing to wait for. */
     #[\Override]
     public function pending(bool $includeBackground = true): int
     {
-        if ($this->multi->executing()) {
+        if ($this->busy()) {
             return 0;
         }
         if ($includeBackground) {
@@ -140,8 +149,8 @@ final class CurlHttpChannel implements HttpChannel
     #[\Override]
     public function waitForActivity(float $seconds): void
     {
-        if ($this->multi->count() === 0) {
-            return; // a waiting request starts at the next pump()
+        if ($this->multi->count() === 0 || $this->busy()) {
+            return; // a waiting request starts at the next pump(); inside a callback nothing can progress
         }
         $timeout = CurlSupport::waitSeconds($seconds, self::MAX_WAIT_SECONDS);
         $this->guarded(function () use ($timeout): void {
@@ -153,6 +162,26 @@ final class CurlHttpChannel implements HttpChannel
     public function inTransfer(): int
     {
         return $this->multi->count();
+    }
+
+    /**
+     * True while one of its PHP callbacks runs, inside `curl_multi_exec()`. An `exit()` in a signal handler there ends
+     * the callback before it clears the flag; the flag is cleared once no `curl_multi_exec()` is on the stack (the
+     * shutdown functions run after the stack unwound).
+     */
+    private function busy(): bool
+    {
+        if (!$this->inCallback->active) {
+            return false;
+        }
+        foreach (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS) as $frame) {
+            if ($frame['function'] === 'curl_multi_exec') {
+                return true;
+            }
+        }
+        $this->inCallback->active = false;
+
+        return false;
     }
 
     /** @param \Closure(): void $work */
@@ -175,13 +204,10 @@ final class CurlHttpChannel implements HttpChannel
         }
     }
 
-    /**
-     * Starts waiting requests while slots are free; the next collect() runs their first curl_multi_exec(). From inside
-     * a transfer callback none starts: they wait for the next pump.
-     */
+    /** Starts waiting requests while slots are free; the next collect() runs their first curl_multi_exec(). */
     private function launch(): void
     {
-        while (!$this->multi->executing() && $this->multi->count() < self::MAX_CONCURRENT && $this->waiting !== []) {
+        while ($this->multi->count() < self::MAX_CONCURRENT && $this->waiting !== []) {
             $next = array_shift($this->waiting);
             $this->waitingBytes -= strlen($next['request']->body);
             $transfer = new HttpTransfer($next['onDone'], $next['request']->background);
@@ -197,10 +223,14 @@ final class CurlHttpChannel implements HttpChannel
         }
     }
 
-    /** Runs the transfers, then runs the callback of every transfer that this run finished (or that a failed run dropped). */
-    private function collect(): void
+    /**
+     * Runs the transfers, then runs the callback of every transfer that this run finished (or that a failed run
+     * dropped). False when libcurl refused the run: the call came from inside one of its callbacks, and from now until
+     * that callback ends the channel is `busy()`.
+     */
+    private function collect(): bool
     {
-        $this->multi->run(
+        $ran = $this->multi->run(
             function (HttpTransfer $transfer, \CurlHandle $handle, int $result): void {
                 $this->finish($transfer->onDone, $result === CURLE_OK
                     ? new HttpResponse(curl_getinfo($handle, CURLINFO_RESPONSE_CODE), $transfer->reason, $transfer->body)
@@ -210,6 +240,11 @@ final class CurlHttpChannel implements HttpChannel
                 $this->finish($transfer->onDone, HttpResponse::failed($error));
             },
         );
+        if (!$ran) {
+            $this->inCallback->active = true; // the callback clears it when it ends
+        }
+
+        return $ran;
     }
 
     /** @param \Closure(HttpResponse): void $onDone */
@@ -224,8 +259,14 @@ final class CurlHttpChannel implements HttpChannel
 
     /**
      * The options of `$request`: the write and header functions first (`CurlSupport::postOptions()`). They hold only
-     * `$transfer`, so a finished handle frees it and no handle holds the channel. The request's timeouts win over the
-     * channel's (diagnostics: 250 ms and 1 s, D49).
+     * `$transfer` and the callback flag, so a finished handle frees the transfer and no handle holds the channel. The
+     * request's timeouts win over the channel's (diagnostics: 250 ms and 1 s, D49).
+     *
+     * Each callback sets the flag as its first statement and clears it as its last one before `return`. PHP runs a
+     * pending signal at a function call or a backward jump, so a handler inside the callback always sees the flag. A
+     * `finally` would not do: leaving it jumps back to the `return`, and a handler run there would see the flag
+     * cleared while libcurl is still in `curl_multi_exec()`. An `exit()` or a throwable inside the callback leaves the
+     * flag set; `busy()` clears it once no `curl_multi_exec()` is on the stack.
      *
      * @return array<int, mixed>
      *
@@ -237,23 +278,33 @@ final class CurlHttpChannel implements HttpChannel
         foreach ($request->headers as $name => $value) {
             $headers[] = $name . ': ' . $value;
         }
-        $onWrite = $this->onWrite;
+        $inCallback = $this->inCallback;
+        $onCallback = $this->onCallback;
         $capture = [
-            CURLOPT_WRITEFUNCTION => static function (\CurlHandle $handle, string $data) use ($transfer, $onWrite): int {
-                if ($onWrite instanceof \Closure) {
-                    $onWrite();
+            CURLOPT_WRITEFUNCTION => static function (\CurlHandle $handle, string $data) use ($transfer, $inCallback, $onCallback): int {
+                $inCallback->active = true;
+                if ($onCallback instanceof \Closure) {
+                    $onCallback('write');
                 }
                 // Up to MAX_BODY_BYTES are kept; the rest is read and dropped.
                 $transfer->body .= substr($data, 0, self::MAX_BODY_BYTES - strlen($transfer->body));
+                $taken = strlen($data); // a shorter return value would abort the transfer
+                $inCallback->active = false; // last: see curlOptions()
 
-                return strlen($data); // a shorter return value would abort the transfer
+                return $taken;
             },
-            CURLOPT_HEADERFUNCTION => static function (\CurlHandle $handle, string $line) use ($transfer): int {
+            CURLOPT_HEADERFUNCTION => static function (\CurlHandle $handle, string $line) use ($transfer, $inCallback, $onCallback): int {
+                if ($onCallback instanceof \Closure) {
+                    $onCallback('header');
+                }
+                $inCallback->active = true;
                 if (preg_match(self::STATUS_LINE, $line, $match) === 1) {
                     $transfer->reason = $match[1] ?? '';
                 }
+                $taken = strlen($line);
+                $inCallback->active = false; // last: see curlOptions()
 
-                return strlen($line);
+                return $taken;
             },
         ];
 

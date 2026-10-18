@@ -11,14 +11,15 @@ use AgentCat\Internal\Transport\HttpResponse;
 require dirname(__DIR__, 3) . '/vendor/autoload.php';
 
 // A signal handler that calls exit() inside a write callback of the side channel (a framework's SIGTERM handler often
-// exits; the seam stands in for it). PHP skips every finally block on exit(), so the channel's re-entrancy guard must
-// still be cleared: the shutdown function then sends one more request on the same channel.
+// exits; the seam stands in for it). PHP skips every finally block on exit(), so the callback leaves the channel's busy
+// flag set; the channel must see that no curl_multi_exec() runs any more: the shutdown function then sends one more
+// request on the same channel.
 // Usage: exit-in-callback.php <side-url>
 // Prints "exit", then from the shutdown function "after: <status> <error or ->" and "pending: <n>".
 $url = $argv[1] ?? '';
 $exited = false;
-$channel = new CurlHttpChannel(onWrite: static function () use (&$exited): void {
-    if (!$exited) {
+$channel = new CurlHttpChannel(onCallback: static function (string $kind) use (&$exited): void {
+    if ($kind === 'write' && !$exited) {
         $exited = true;
         echo "exit\n";
 

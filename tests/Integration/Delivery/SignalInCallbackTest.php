@@ -90,8 +90,8 @@ final class SignalInCallbackTest extends TestCase
     }
 
     /**
-     * A handler that calls exit() inside a write callback: PHP skips finally blocks then, but frees the frame, so the
-     * re-entrancy guard is cleared and the shutdown function can still send on the same channel.
+     * A handler that calls exit() inside a write callback: the callback ends before it clears the channel's busy flag.
+     * The channel sees that no curl_multi_exec() runs any more, so the shutdown function can still send on it.
      */
     #[MaximumDuration(10000)]
     public function testAnExitInsideACurlCallbackLeavesTheChannelUsableAtShutdown(): void

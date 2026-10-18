@@ -49,8 +49,8 @@ final readonly class Options
      *        AgentCat SDK and mcp/sdk versions, the process ID and APP_ENV. The first track() in the process decides.
      *        AGENTCAT_DISABLE_DIAGNOSTICS also turns them off, or on with false; DISABLE_DIAGNOSTICS can only turn
      *        them off, and when the two disagree, off wins. They are off in test environments.
-     *        AGENTCAT_DIAGNOSTICS_ENDPOINT and AGENTCAT_DIAGNOSTICS_TOKEN change where they go; a blocked collector
-     *        holds a request at most 1 s.
+     *        AGENTCAT_DIAGNOSTICS_ENDPOINT and AGENTCAT_DIAGNOSTICS_TOKEN change where they go. Each diagnostics
+     *        request waits at most 1 s for a blocked collector; one shutdown can send two, one after the other.
      * @param bool $disableSignalHandlers Keeps AgentCat from installing its SIGTERM and SIGINT handlers in CLI servers, so a
      *        signal ends the process as it did before, without the last delivery. Needed when the process must keep an
      *        ignored signal that it inherited. Applies only until the handlers are installed, at the first event or log
