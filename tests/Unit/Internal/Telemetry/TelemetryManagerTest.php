@@ -137,7 +137,7 @@ final class TelemetryManagerTest extends TestCase
         $this->assertSame(1, $manager->count());
         $this->assertSame(['https://us.i.posthog.com/batch'], $http->urls());
         $this->assertSame([
-            'Failed to initialize exporter sentry: InvalidArgumentException: Invalid Sentry DSN: https://ABC@o1.ingest.sentry.io/42',
+            'Failed to initialize exporter sentry: InvalidArgumentException: Invalid Sentry DSN: https://***@o1.ingest.sentry.io/42',
             'PostHogExporter: Initialized with endpoint https://us.i.posthog.com/batch',
             'Initialized telemetry exporter: ph',
             'PostHogExporter: Sending 1 event(s) for ' . ExporterFixtures::EVENT,

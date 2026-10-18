@@ -59,37 +59,45 @@ final class SentryDsnTest extends TestCase
         $this->assertSame('0123456789abcdef', SentryDsn::parse('https://0123456789abcdef@h/1')->publicKey);
     }
 
+    /**
+     * A3: the message names the DSN with its user-info masked: the public key, and the secret of a legacy
+     * `https://public:secret@host/1` DSN, never reach a log line or diagnostics. Scheme, host, port and path stay.
+     * A deliberate divergence from TypeScript, which prints the whole DSN.
+     */
     #[Group('ac-06-33')]
     #[DataProvider('invalidDsns')]
-    public function testAnInvalidDsnThrowsWithTheDsnInTheMessage(string $dsn): void
+    public function testAnInvalidDsnThrowsWithTheMaskedDsnInTheMessage(string $dsn, string $logged): void
     {
-        $this->assertSame('Invalid Sentry DSN: ' . $dsn, Thrown::by(\InvalidArgumentException::class, static fn(): \AgentCat\Internal\Telemetry\Sentry\SentryDsn => SentryDsn::parse($dsn))->getMessage());
-        $this->assertSame('Invalid Sentry DSN: ' . $dsn, Thrown::by(\InvalidArgumentException::class, static fn(): \AgentCat\Internal\Telemetry\Sentry\SentryPayload => SentryPayload::of(new SentryExporter($dsn)))->getMessage());
+        $this->assertSame('Invalid Sentry DSN: ' . $logged, Thrown::by(\InvalidArgumentException::class, static fn(): SentryDsn => SentryDsn::parse($dsn))->getMessage());
+        $this->assertSame('Invalid Sentry DSN: ' . $logged, Thrown::by(\InvalidArgumentException::class, static fn(): SentryPayload => SentryPayload::of(new SentryExporter($dsn)))->getMessage());
     }
 
-    /** @return iterable<string, array{string}> */
+    /** @return iterable<string, array{string, string}> the DSN, then how the message names it */
     public static function invalidDsns(): iterable
     {
-        yield 'upper-case key' => ['https://ABC@o1.ingest.sentry.io/42'];
-        yield 'secret' => ['https://abc:secret@o1.ingest.sentry.io/42'];
-        yield 'non-numeric project' => ['https://abc@o1.ingest.sentry.io/proj'];
-        yield 'scheme' => ['ftp://abc@h/1'];
-        yield 'trailing newline' => ["https://abc@h/42\n"];
-        yield 'leading text' => [' https://abc@h/42'];
-        yield 'no key' => ['https://h/42'];
-        yield 'no project' => ['https://abc@h/'];
-        yield 'empty key' => ['https://@h/42'];
-        yield 'non-hex key' => ['https://xyz@h/42'];
-        yield 'port without digits' => ['https://abc@h:/42'];
-        yield 'letters in the port' => ['https://abc@h:80a/42'];
-        yield 'space in the host' => ['https://abc@h h/42'];
-        yield 'carriage return in the path' => ["https://abc@h/a\rb/42"];
-        yield 'line separator in the path' => ["https://abc@h/a\u{2028}b/42"];
-        yield 'paragraph separator in the path' => ["https://abc@h/a\u{2029}b/42"];
-        yield 'trailing project text' => ['https://abc@h/42x'];
-        yield 'non-ASCII letter in the host' => ['https://abc@é.example.com/42'];
-        yield 'non-ASCII digits in the project' => ['https://abc@o1.sentry.io/٤٢'];
-        yield 'non-ASCII digits in the port' => ['https://abc@h:٨٠/42'];
-        yield 'empty' => [''];
+        yield 'upper-case key' => ['https://ABC@o1.ingest.sentry.io/42', 'https://***@o1.ingest.sentry.io/42'];
+        yield 'secret' => ['https://abc:secret@o1.ingest.sentry.io/42', 'https://***@o1.ingest.sentry.io/42'];
+        yield 'an @ in the secret' => ['https://abc:se@cret@o1.ingest.sentry.io/42', 'https://***@o1.ingest.sentry.io/42'];
+        yield 'non-numeric project' => ['https://abc@o1.ingest.sentry.io/proj', 'https://***@o1.ingest.sentry.io/proj'];
+        yield 'scheme' => ['ftp://abc@h/1', 'ftp://***@h/1'];
+        yield 'no scheme' => ['abc@o1.ingest.sentry.io/42', '***@o1.ingest.sentry.io/42'];
+        yield 'trailing newline' => ["https://abc@h/42\n", "https://***@h/42\n"];
+        yield 'leading text' => [' https://abc@h/42', ' https://***@h/42'];
+        yield 'no key' => ['https://h/42', 'https://h/42'];
+        yield 'no project' => ['https://abc@h/', 'https://***@h/'];
+        yield 'empty key: nothing to mask' => ['https://@h/42', 'https://@h/42'];
+        yield 'non-hex key' => ['https://xyz@h/42', 'https://***@h/42'];
+        yield 'port without digits' => ['https://abc@h:/42', 'https://***@h:/42'];
+        yield 'letters in the port' => ['https://abc@h:80a/42', 'https://***@h:80a/42'];
+        yield 'space in the host' => ['https://abc@h h/42', 'https://***@h h/42'];
+        yield 'carriage return in the path' => ["https://abc@h/a\rb/42", "https://***@h/a\rb/42"];
+        yield 'line separator in the path' => ["https://abc@h/a\u{2028}b/42", "https://***@h/a\u{2028}b/42"];
+        yield 'paragraph separator in the path' => ["https://abc@h/a\u{2029}b/42", "https://***@h/a\u{2029}b/42"];
+        yield 'trailing project text' => ['https://abc@h/42x', 'https://***@h/42x'];
+        yield 'non-ASCII letter in the host' => ['https://abc@é.example.com/42', 'https://***@é.example.com/42'];
+        yield 'non-ASCII digits in the project' => ['https://abc@o1.sentry.io/٤٢', 'https://***@o1.sentry.io/٤٢'];
+        yield 'non-ASCII digits in the port' => ['https://abc@h:٨٠/42', 'https://***@h:٨٠/42'];
+        yield 'a :// after the @' => ['abc@h/x://y', '***@h/x://y'];
+        yield 'empty' => ['', ''];
     }
 }
