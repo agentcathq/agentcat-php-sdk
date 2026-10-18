@@ -41,10 +41,13 @@ final readonly class Options
      * @param array<array-key, OtlpExporter|DatadogExporter|SentryExporter|PostHogExporter>|null $exporters Also sends every
      *        event to your own tools, keyed by a name of your choice. The first track() in the process that passes exporters
      *        sets them up for every server; later calls change nothing.
-     * @param bool $disableDiagnostics Turns off diagnostics: AgentCat's own log lines (the lines of agentcat.log), sent to
-     *        AgentCat to find broken installs. The lines can contain session IDs, actor IDs, tool names and error messages.
-     *        The first track() in the process decides. DISABLE_DIAGNOSTICS also turns them off, or on with false; they are
-     *        off in test environments.
+     * @param bool $disableDiagnostics Turns off diagnostics, which AgentCat uses to find broken installs. Diagnostics send
+     *        every log line of the SDK to AgentCat, with its time and level, also when a PSR-3 logger gets the lines
+     *        instead of agentcat.log. The lines can contain session IDs, actor IDs, tool names, error messages, and the
+     *        answers of exporters that failed, quoted. Each batch also carries your project ID (without one, an install
+     *        ID: a hash of the host name and the install path), the OS type and version, the architecture, the PHP,
+     *        AgentCat SDK and mcp/sdk versions, the process ID and APP_ENV. The first track() in the process decides.
+     *        DISABLE_DIAGNOSTICS also turns them off, or on with false; they are off in test environments.
      * @param bool $disableSignalHandlers Keeps AgentCat from installing its SIGTERM and SIGINT handlers in CLI servers, so a
      *        signal ends the process as it did before, without the last delivery. Needed when the process must keep an
      *        ignored signal that it inherited. Applies only until the handlers are installed, at the first event or log
