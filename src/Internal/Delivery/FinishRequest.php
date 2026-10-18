@@ -15,21 +15,33 @@ final class FinishRequest
     /**
      * PHP-FPM `fastcgi_finish_request`, LiteSpeed `litespeed_finish_request`, FrankenPHP (classic mode)
      * `frankenphp_finish_request` or its `fastcgi_finish_request` alias; null elsewhere. FrankenPHP worker mode
-     * gets null: its shutdown functions do not run per request.
+     * (`isFrankenPhpWorker()`) gets null: its shutdown functions do not run per request.
      *
-     * @param array<array-key, mixed> $server         `$_SERVER`
-     * @param \Closure(string): bool  $functionExists
+     * @param array<array-key, mixed>               $server         `$_SERVER`
+     * @param \Closure(string): bool                $functionExists
+     * @param (\Closure(string): (string|false))|null $getenv         default `getenv()`
      */
-    public static function functionFor(string $sapi, array $server, \Closure $functionExists): ?string
+    public static function functionFor(string $sapi, array $server, \Closure $functionExists, ?\Closure $getenv = null): ?string
     {
         $function = match (true) {
             $sapi === 'fpm-fcgi' => 'fastcgi_finish_request',
             $sapi === 'litespeed' => 'litespeed_finish_request',
-            $sapi === 'frankenphp' && !isset($server['FRANKENPHP_WORKER']) => $functionExists('frankenphp_finish_request') ? 'frankenphp_finish_request' : 'fastcgi_finish_request',
+            $sapi === 'frankenphp' && !self::isFrankenPhpWorker($server, $getenv) => $functionExists('frankenphp_finish_request') ? 'frankenphp_finish_request' : 'fastcgi_finish_request',
             default => null,
         };
 
         return $function !== null && $functionExists($function) ? $function : null;
+    }
+
+    /**
+     * FrankenPHP worker mode: `$_SERVER['FRANKENPHP_WORKER']` is set, or the `FRANKENPHP_WORKER` environment variable.
+     *
+     * @param array<array-key, mixed>               $server `$_SERVER`
+     * @param (\Closure(string): (string|false))|null $getenv default `getenv()`
+     */
+    public static function isFrankenPhpWorker(array $server, ?\Closure $getenv = null): bool
+    {
+        return isset($server['FRANKENPHP_WORKER']) || ($getenv ?? getenv(...))('FRANKENPHP_WORKER') !== false;
     }
 
     /** @return (\Closure(): void)|null the finish call of this SAPI, if it has one */

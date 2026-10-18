@@ -9,9 +9,10 @@ namespace AgentCat\Internal\Delivery;
  *
  * The first event (or `EventQueue::arm()`) registers `onShutdown()` as a shutdown function. It registers `onFinalShutdown()` again, so
  * that the flush runs after every shutdown function the application registered later (OpenTelemetry's
- * `ShutdownHandler` pattern). The final pass first sends the HTTP response to the client when the SAPI can
- * (`fastcgi_finish_request()` and friends) and the queue has work (events, exporter requests or diagnostics lines),
- * then shuts the queue down within its drain budget.
+ * `ShutdownHandler` pattern). When the queue has work (events, exporter requests or diagnostics lines), the final
+ * pass first ends the request (`RequestEnd`: the session, the time limit and, without a finish call, the output
+ * buffers) and sends the HTTP response to the client when the SAPI can (`fastcgi_finish_request()` and friends), then
+ * shuts the queue down within its drain budget.
  *
  * @internal
  */
@@ -26,11 +27,13 @@ final class ShutdownFlusher
      * @param \Closure(): EventQueue                   $queue         the queue to deliver, looked up at shutdown
      * @param (\Closure(\Closure(): void): void)|null $register      default `register_shutdown_function(...)`
      * @param (\Closure(): void)|null                 $finishRequest sends the response to the client (`FinishRequest::detect()`)
+     * @param RequestEnd|null                         $requestEnd    runs before the finish call when the queue has work
      */
     public function __construct(
         private readonly \Closure $queue,
         ?\Closure $register = null,
         private readonly ?\Closure $finishRequest = null,
+        private readonly ?RequestEnd $requestEnd = null,
     ) {
         $this->register = $register ?? register_shutdown_function(...);
     }
@@ -60,11 +63,14 @@ final class ShutdownFlusher
     {
         try {
             $queue = ($this->queue)();
-            if ($this->finishRequest instanceof \Closure && $queue->hasWork()) {
-                try {
-                    ($this->finishRequest)(); // the client gets its response before the events are sent
-                } catch (\Throwable) {
-                    // keep going: delivery matters more than the finish call
+            if ($queue->hasWork()) {
+                $this->requestEnd?->prepare(EventQueue::SHUTDOWN_TIMEOUT_SECONDS); // never throws
+                if ($this->finishRequest instanceof \Closure) {
+                    try {
+                        ($this->finishRequest)(); // the client gets its response before the events are sent
+                    } catch (\Throwable) {
+                        // keep going: delivery matters more than the finish call
+                    }
                 }
             }
             $queue->finalShutdown();

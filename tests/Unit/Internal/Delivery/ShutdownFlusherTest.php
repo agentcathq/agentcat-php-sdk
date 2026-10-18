@@ -7,6 +7,7 @@ namespace AgentCat\Tests\Unit\Internal\Delivery;
 use AgentCat\Event;
 use AgentCat\Internal\Delivery\EventQueue;
 use AgentCat\Internal\Delivery\ExporterSink;
+use AgentCat\Internal\Delivery\RequestEnd;
 use AgentCat\Internal\Delivery\ShutdownFlusher;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Pipeline\QueuedEvent;
@@ -28,6 +29,9 @@ final class ShutdownFlusherTest extends TestCase
 
     /** @var list<\Closure(): void> */
     private array $registered = [];
+
+    /** @var list<string> the request-end and finish calls, in order */
+    private array $calls = [];
 
     #[\Override]
     protected function setUp(): void
@@ -266,6 +270,44 @@ final class ShutdownFlusherTest extends TestCase
         $this->assertSame(['Queue is shutting down, event dropped'], $this->logger->messages());
         $aborted->resume();
         $this->assertTrue($aborted->isTerminated());
+    }
+
+    public function testTheRequestEndRunsBeforeTheFinishCallAndOnlyWithWork(): void
+    {
+        $queue = new EventQueue(transport: new RecordingTransport());
+        $end = new RequestEnd('fpm-fcgi', true, static fn(): bool => true, function (): void {
+            $this->calls[] = 'session';
+        }, static fn(): int => 0, static function (int $s): void {}, static function (): void {});
+        $flusher = new ShutdownFlusher(static function () use (&$queue): EventQueue {
+            return $queue;
+        }, static function (\Closure $f): void {}, function (): void {
+            $this->calls[] = 'finish';
+        }, $end);
+
+        $flusher->onFinalShutdown();
+        $this->assertSame([], $this->calls); // nothing queued: the request is left as it is
+
+        $queue = new EventQueue(transport: new RecordingTransport()); // the closure above reads $queue by reference
+        $queue->add(new QueuedEvent(new Event(projectId: 'proj_' . str_repeat('a', 27))));
+        $flusher->onFinalShutdown();
+
+        $this->assertSame(['session', 'finish'], $this->calls);
+    }
+
+    /** The drain's time limit covers the whole shutdown budget, also without a finish call. */
+    public function testTheRequestEndGetsTheShutdownBudgetWithoutAFinishCall(): void
+    {
+        $this->queue->add(new QueuedEvent($this->event()));
+        $end = new RequestEnd('cli-server', false, static fn(): bool => false, static function (): void {}, static fn(): int => 30, function (int $seconds): void {
+            $this->calls[] = 'limit ' . $seconds;
+        }, function (): void {
+            $this->calls[] = 'output with ' . count($this->transport->deliveries) . ' deliveries';
+        });
+
+        (new ShutdownFlusher(fn(): EventQueue => $this->queue, $this->recorder(), null, $end))->onFinalShutdown();
+
+        $this->assertSame(['limit 6', 'output with 0 deliveries'], $this->calls);
+        $this->assertCount(1, $this->transport->deliveries);
     }
 
     /**

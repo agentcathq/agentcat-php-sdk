@@ -283,6 +283,26 @@ final class SignalDrainTest extends TestCase
         $this->assertSame(\SIG_DFL, pcntl_signal_get_handler(\SIGWINCH));
     }
 
+    /** @return iterable<string, array{string}> */
+    public static function coroutineExtensions(): iterable
+    {
+        yield 'swoole' => ['swoole'];
+        yield 'openswoole' => ['openswoole'];
+    }
+
+    #[DataProvider('coroutineExtensions')]
+    #[RequiresPhpExtension('pcntl')]
+    public function testNothingIsInstalledUnderACoroutineServer(string $extension): void
+    {
+        $before = pcntl_signal_get_handler(\SIGTERM);
+        $drain = new SignalDrain(fn(): EventQueue => $this->queue, static function (int $signal): void {}, static fn(string $f): bool => true, 'cli', static fn(string $loaded): bool => $loaded === $extension);
+
+        $drain->install();
+
+        $this->assertSame($before, pcntl_signal_get_handler(\SIGTERM));
+        $this->assertTrue($drain->disable()); // never installed, so a later switch-off still counts
+    }
+
     /** SIG_DFL on both signals and synchronous dispatch, so that a test sees exactly what `install()` changed. */
     private function resetHandlers(): void
     {

@@ -94,13 +94,14 @@ final class EventQueue
     }
 
     /**
-     * The queue of this process; its first event registers the shutdown delivery and installs the signal drain
-     * (CLI servers with ext-pcntl).
+     * The queue of this process; its first event registers the shutdown delivery (which ends the request first on a
+     * web SAPI, `RequestEnd`) and installs the signal drain (CLI servers with ext-pcntl).
      */
     public static function global(): self
     {
         if (!self::$global instanceof self) {
-            $flusher = new ShutdownFlusher(static fn(): self => self::global(), null, FinishRequest::detect());
+            $finish = FinishRequest::detect();
+            $flusher = new ShutdownFlusher(static fn(): self => self::global(), null, $finish, RequestEnd::detect($finish instanceof \Closure));
             $signals = new SignalDrain(static fn(): self => self::global());
             self::$global = new self(onEnqueue: static function () use ($flusher, $signals): void {
                 $flusher->ensureRegistered();
