@@ -274,8 +274,8 @@ final class OptionsTest extends TestCase
 
     /**
      * A4: the opt-out reads what a framework config file gives it, Laravel's `env()` strings included (`env()` turns
-     * only `true`/`false`/`(true)`/`(false)` into bools, so `1` in `.env` arrives as `'1'`). The `DISABLE_DIAGNOSTICS`
-     * words, trimmed, in any case.
+     * only `true`/`false`/`(true)`/`(false)` into bools, so `1` in `.env` arrives as `'1'`). The words of
+     * `AGENTCAT_DISABLE_DIAGNOSTICS`, trimmed, in any case. Null is `env()` of an unset variable: not set, the default.
      *
      * @return iterable<string, array{mixed, bool}>
      */
@@ -299,6 +299,7 @@ final class OptionsTest extends TestCase
         yield "'' (an empty .env value)" => ['', false];
         yield "' ' (blank)" => [' ', false];
         yield 'int 0' => [0, false];
+        yield 'null (env() of an unset variable)' => [null, false];
     }
 
     #[DataProvider('diagnosticsSwitches')]
@@ -315,17 +316,16 @@ final class OptionsTest extends TestCase
         yield 'another word' => ['disabled', 'string'];
         yield 'int 2' => [2, 'int'];
         yield 'float 1.0' => [1.0, 'float'];
-        yield "null (env() of a missing variable)" => [null, 'null'];
         yield 'an array' => [[], 'array'];
     }
 
-    /** A4: a privacy opt-out fails closed: a value it cannot read logs the usual line and turns diagnostics off. */
+    /** A4: a privacy opt-out fails closed: a value that is set but cannot be read logs one line and turns diagnostics off. */
     #[DataProvider('unreadableDiagnosticsSwitches')]
     public function testFromArrayTurnsDiagnosticsOffForAValueItCannotRead(mixed $value, string $type): void
     {
         $this->assertTrue(Options::fromArray(['disableDiagnostics' => $value])->disableDiagnostics);
         $this->assertSame(
-            ['WARN: AgentCat option "disableDiagnostics" must be bool, got ' . $type . '; the default is used'],
+            ['WARN: AgentCat option "disableDiagnostics" must be bool, got ' . $type . '; the value is treated as true'],
             $this->logger->messages(),
         );
     }

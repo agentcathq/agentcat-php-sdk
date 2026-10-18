@@ -82,8 +82,8 @@ final readonly class Options
      *
      * `disableDiagnostics` also takes what an `.env` file gives: int 1 or 0, and the words of
      * `AGENTCAT_DISABLE_DIAGNOSTICS` (`true`, `1`, `yes`, `on` turn diagnostics off; `false`, `0`, `no`, `off` and
-     * blank keep them on; trimmed, any case). Any other value, null included, logs the warning and turns diagnostics
-     * off: an opt-out fails closed.
+     * blank keep them on; trimmed, any case). Null (`env()` of an unset variable) is not set: the default. Any other
+     * value logs a warning and turns diagnostics off: an opt-out fails closed.
      *
      * @param array<array-key, mixed> $config
      */
@@ -131,16 +131,18 @@ final readonly class Options
     /** @param array<array-key, mixed> $config */
     private static function disableDiagnostics(array $config): bool
     {
-        if (!array_key_exists('disableDiagnostics', $config)) {
-            return false;
+        $value = $config['disableDiagnostics'] ?? null;
+        if ($value === null) {
+            return false; // not set: env() of an unset variable gives null
         }
-        $disabled = DiagnosticsSwitch::option($config['disableDiagnostics']);
+        $disabled = DiagnosticsSwitch::option($value);
         if ($disabled !== null) {
             return $disabled;
         }
-        self::reject('disableDiagnostics', 'bool', $config['disableDiagnostics']);
+        // A privacy opt-out fails closed.
+        Log::write(sprintf('WARN: AgentCat option "disableDiagnostics" must be bool, got %s; the value is treated as true', get_debug_type($value)));
 
-        return true; // a privacy opt-out fails closed
+        return true;
     }
 
     /**
