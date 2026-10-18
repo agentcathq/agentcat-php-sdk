@@ -22,7 +22,9 @@ return (new Configuration())
     ->ignoreErrorsOnPackageAndPath('php-http/discovery', __DIR__ . '/tests/E2E/Fixtures', [ErrorType::SHADOW_DEPENDENCY])
     // laravel/mcp and Laravel are optional (01 AC-90): dev dependencies used only by the Laravel adapter and bridge.
     ->ignoreErrorsOnPackageAndPath('laravel/mcp', __DIR__ . '/src/LaravelMcp', [ErrorType::DEV_DEPENDENCY_IN_PROD])
+    ->ignoreErrorsOnPackageAndPath('laravel/mcp', __DIR__ . '/src/Laravel', [ErrorType::DEV_DEPENDENCY_IN_PROD])
     ->ignoreErrorsOnPackageAndPath('laravel/framework', __DIR__ . '/src/LaravelMcp', [ErrorType::DEV_DEPENDENCY_IN_PROD])
+    ->ignoreErrorsOnPackageAndPath('laravel/framework', __DIR__ . '/src/Laravel', [ErrorType::DEV_DEPENDENCY_IN_PROD])
     // False positives: the analyser reads AgentCat's own `Env::get()` and `new Event(` as Laravel's global env() and
     // event() helpers. PHPat keeps Laravel out of both files (LayeringTest).
     ->ignoreErrorsOnPackageAndPaths('laravel/framework', [__DIR__ . '/src/Internal/Support/TestMode.php', __DIR__ . '/src/Client.php'], [ErrorType::DEV_DEPENDENCY_IN_PROD])

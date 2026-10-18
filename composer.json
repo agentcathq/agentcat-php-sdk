@@ -93,6 +93,13 @@
         },
         "sort-packages": true
     },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "AgentCat\\Laravel\\AgentCatServiceProvider"
+            ]
+        }
+    },
     "scripts": {
         "check": [
             "@composer validate --strict",
