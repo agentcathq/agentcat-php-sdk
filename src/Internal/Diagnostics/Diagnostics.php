@@ -17,7 +17,8 @@ use AgentCat\Internal\Transport\HttpRequest;
  * the process decides. Lines are buffered (1 000 at most, the oldest dropped) and posted at the first queue pass
  * (`pump()`, `flush()`, `shutdown()`) once the oldest of them is 2 s old, and once more when the queue shuts down, after
  * the events (D47: under PHP-FPM one post per request, after the response). Lines logged in the last shutdown pass,
- * after `finish()`, wait for a later `shutdown()`. A failure is silent: a log line would feed the buffer it reports on.
+ * after `finish()`, are dropped unless a later `shutdown()` runs. A failure is silent: a log line would feed the buffer
+ * it reports on.
  *
  * @internal
  */
@@ -29,8 +30,7 @@ final class Diagnostics implements QueueCompanion
 
     private const string IGNORED = 'WARN: AgentCat diagnostics were set up by an earlier track(); disableDiagnostics: true in this call is ignored';
 
-    /** The `disableDiagnostics` option of the first call; null before it. */
-    private static ?bool $firstDisabled = null;
+    private static bool $initialized = false;
 
     private static bool $warned = false;
 
@@ -59,8 +59,8 @@ final class Diagnostics implements QueueCompanion
     ) {}
 
     /**
-     * TS `initDiagnostics`: the first call in the process decides; a later call changes nothing, and a later
-     * `$disabled = true` after a first `false` logs one line, once. Never throws.
+     * TS `initDiagnostics`: the first call in the process decides; a later call changes nothing. A later
+     * `$disabled = true` while diagnostics run logs one line, once. Never throws.
      *
      * @param (\Closure(): bool)|null  $inTestEnvironment default `TestMode::inTestEnvironment()` (P5)
      * @param (\Closure(): float)|null $clock             tests: monotonic seconds
@@ -69,15 +69,15 @@ final class Diagnostics implements QueueCompanion
     public static function init(string $projectId, bool $disabled, EventQueue $queue, ?\Closure $inTestEnvironment = null, ?\Closure $clock = null, ?\Closure $wallMillis = null): void
     {
         try {
-            if (self::$firstDisabled !== null) {
-                if ($disabled && !self::$firstDisabled && !self::$warned) {
+            if (self::$initialized) {
+                if ($disabled && self::$active instanceof self && !self::$warned) {
                     self::$warned = true;
                     Log::write(self::IGNORED);
                 }
 
                 return;
             }
-            self::$firstDisabled = $disabled;
+            self::$initialized = true;
             $testEnvironment = $inTestEnvironment instanceof \Closure ? $inTestEnvironment() : TestMode::inTestEnvironment();
             if (!DiagnosticsSwitch::enabled($disabled, Env::get('DISABLE_DIAGNOSTICS'), $testEnvironment)) {
                 return;
@@ -105,7 +105,7 @@ final class Diagnostics implements QueueCompanion
     /** Tests only: forgets the decision and removes the sink. */
     public static function reset(): void
     {
-        self::$firstDisabled = null;
+        self::$initialized = false;
         self::$warned = false;
         self::$active = null;
         Log::setDiagnosticsSink(null);

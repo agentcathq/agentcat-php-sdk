@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace AgentCat\Tests\Unit\Internal\Diagnostics;
 
 use AgentCat\Internal\Diagnostics\DiagnosticsAttributes;
+use AgentCat\Internal\Json\Json;
 use AgentCat\Internal\SdkVersion;
 use AgentCat\Tests\Support\Environment;
+use AgentCat\Tests\Support\JsonAssert;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -48,11 +50,51 @@ final class DiagnosticsAttributesTest extends TestCase
         ], $this->pairs(DiagnosticsAttributes::resource('proj_x')));
     }
 
-    public function testEveryResourceValueIsANonEmptyString(): void
+    /**
+     * On the wire, so that a null or empty value cannot hide behind the PHPDoc type. `APP_ENV` is unset and the host
+     * functions are switched off, so some values are null before the filter.
+     */
+    public function testEveryValueIsANonEmptyString(): void
     {
-        foreach (DiagnosticsAttributes::resource('proj_x') as $attribute) {
-            $this->assertNotSame('', $attribute['value']['stringValue'], $attribute['key']);
+        $none = static fn(): bool => false;
+
+        foreach ([DiagnosticsAttributes::resource('proj_x'), DiagnosticsAttributes::resource('', $none), DiagnosticsAttributes::record()] as $attributes) {
+            $decoded = Json::decode(Json::encodeJs($attributes) ?? 'null');
+            $this->assertIsList($decoded);
+            foreach ($decoded as $attribute) {
+                $value = JsonAssert::at($attribute, 'value', 'stringValue');
+                $this->assertIsString($value, Json::encodeJs($attribute) ?? '');
+                $this->assertNotSame('', $value, Json::encodeJs($attribute) ?? '');
+            }
         }
+    }
+
+    /** @return iterable<string, array{list<string>, list<string>}> */
+    public static function disabledFunctions(): iterable
+    {
+        yield 'php_uname' => [['php_uname'], ['os.version', 'host.arch']];
+        yield 'getmypid' => [['getmypid'], ['process.pid']];
+        yield 'gethostname' => [['gethostname'], []];
+        yield 'all three' => [['php_uname', 'getmypid', 'gethostname'], ['process.pid', 'os.version', 'host.arch']];
+    }
+
+    /**
+     * A hardened host can list these in `disable_functions`: only their attributes are left out (TS: partial
+     * attributes are fine). Without `gethostname()` the install ID hashes an empty host name (TS `?? ""`).
+     *
+     * @param list<string> $disabled
+     * @param list<string> $missing
+     */
+    #[DataProvider('disabledFunctions')]
+    public function testADisabledHostFunctionLeavesOutOnlyItsAttribute(array $disabled, array $missing): void
+    {
+        $exists = static fn(string $function): bool => !in_array($function, $disabled, true);
+        $all = $this->pairs(DiagnosticsAttributes::resource('proj_x'));
+
+        $this->assertSame(array_diff_key($all, array_flip($missing)), $this->pairs(DiagnosticsAttributes::resource('proj_x', $exists)));
+        $host = in_array('gethostname', $disabled, true) ? '' : (string) gethostname();
+        $installId = $this->pairs(DiagnosticsAttributes::resource('', $exists))['agentcat.install_id'] ?? null;
+        $this->assertSame(DiagnosticsAttributes::installId($host, 'file://' . dirname(__DIR__, 4)), $installId);
     }
 
     public function testAppEnvBecomesTheDeploymentEnvironmentAtTheEnd(): void

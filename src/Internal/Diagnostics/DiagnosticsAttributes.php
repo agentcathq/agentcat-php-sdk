@@ -16,23 +16,30 @@ final class DiagnosticsAttributes
 {
     /**
      * Without a project, `agentcat.install_id` hashes the host name and `file://` + the package root (`__DIR__` has its
-     * symlinks resolved).
+     * symlinks resolved). A host function in `disable_functions` (`getmypid`, `php_uname`) leaves out only its
+     * attribute; without `gethostname` the host name is empty (TS `os.hostname?.() ?? ""`).
+     *
+     * @param (\Closure(string): bool)|null $functionExists tests only: tells whether a host function can be called; default `function_exists()`
      *
      * @return list<array{key: string, value: array{stringValue: string}}> the resource attributes of every request
      */
-    public static function resource(string $projectId): array
+    public static function resource(string $projectId, ?\Closure $functionExists = null): array
     {
+        $can = $functionExists ?? function_exists(...);
+        $host = $can('gethostname') ? (string) gethostname() : '';
+        $uname = $can('php_uname');
+
         return self::list([
-            $projectId !== '' ? ['agentcat.project_id', $projectId] : ['agentcat.install_id', self::installId((string) gethostname(), 'file://' . dirname(__DIR__, 3))],
+            $projectId !== '' ? ['agentcat.project_id', $projectId] : ['agentcat.install_id', self::installId($host, 'file://' . dirname(__DIR__, 3))],
             ['agentcat.sdk.language', 'php'],
             ['agentcat.sdk.version', SdkVersion::get()],
             ['agentcat.mcp_sdk.version', SdkVersion::installed('mcp/sdk')],
             ['process.runtime.name', 'php'],
             ['process.runtime.version', PHP_VERSION],
-            ['process.pid', (string) getmypid()],
+            ['process.pid', $can('getmypid') ? (string) getmypid() : null],
             ['os.type', self::osType(PHP_OS_FAMILY)],
-            ['os.version', php_uname('r')],
-            ['host.arch', self::arch(php_uname('m'))],
+            ['os.version', $uname ? php_uname('r') : null],
+            ['host.arch', $uname ? self::arch(php_uname('m')) : null],
             ['deployment.environment', Env::get('APP_ENV')],
         ]);
     }

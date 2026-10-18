@@ -337,6 +337,23 @@ final class DiagnosticsTest extends TestCase
         $this->assertTrue($this->queue->hasWork(), 'the line is a diagnostics line too');
     }
 
+    /** The line says diagnostics "were set up": not when the variable or the test environment kept them off. */
+    #[Group('ac-06-53')]
+    public function testALaterDisablingCallIsSilentWhenDiagnosticsNeverStarted(): void
+    {
+        putenv('DISABLE_DIAGNOSTICS=true');
+        $this->init('p');
+        $this->init('p', disabled: true);
+
+        Diagnostics::reset();
+        putenv('DISABLE_DIAGNOSTICS');
+        $this->init('p', testEnvironment: true);
+        $this->init('p', disabled: true);
+
+        $this->assertFalse(Diagnostics::enabled());
+        $this->assertSame([], $this->logger->messages());
+    }
+
     #[Group('ac-06-52')]
     #[Group('ac-01-65')]
     public function testATestEnvironmentTurnsDiagnosticsOffUnlessTheVariableIsFalse(): void
