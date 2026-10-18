@@ -16,7 +16,8 @@ use PHPUnit\Framework\TestCase;
 /** No transfer starts here: nothing is pumped, curl is "missing", or every add is refused. tests/Integration/Transport covers the transfers. */
 final class CurlHttpChannelUnitTest extends TestCase
 {
-    private const string FULL = 'WARN: AgentCat telemetry export queue full, dropping the oldest request';
+    /** A5: at most one line per pass, with the count of that pass. */
+    private const string FULL = 'WARN: AgentCat telemetry export queue full, dropped the oldest %d request(s)';
 
     private const string NO_CURL = 'WARN: AgentCat cannot send telemetry exports or diagnostics: ext-curl functions are missing or disabled (';
 
@@ -35,30 +36,38 @@ final class CurlHttpChannelUnitTest extends TestCase
         Log::reset();
     }
 
-    public function testAFullQueueDropsTheOldestRequestWithOneLineEach(): void
+    public function testAFullQueueDropsTheOldestRequestsWithOneLinePerPass(): void
     {
         // Every add is refused: one pump then fails each waiting request through its callback, and none is sent.
         $swallowed = [];
-        $channel = new CurlHttpChannel(
-            multiStatus: static fn(string $function, int $code): int => $function === 'curl_multi_add_handle' ? CURLM_INTERNAL_ERROR : $code,
-            onSwallowed: static function (\Throwable $error) use (&$swallowed): void {
-                $swallowed[] = $error;
-            },
-        );
+        $channel = $this->refusingChannel($swallowed);
         $ran = [];
-
-        for ($i = 0; $i < CurlHttpChannel::MAX_WAITING + 2; ++$i) {
+        $post = static function (int $i) use ($channel, &$ran): void {
             $channel->post(new HttpRequest('http://127.0.0.1:9/r' . $i, [], '{}'), static function () use (&$ran, $i): void {
                 $ran[] = $i;
             });
+        };
+
+        for ($i = 0; $i < CurlHttpChannel::MAX_WAITING + 3; ++$i) {
+            $post($i);
         }
 
         $this->assertSame(1000, $channel->pending());
         $this->assertSame(0, $channel->inTransfer());
-        $this->assertSame([self::FULL, self::FULL], $this->logger->messages());
+        $this->assertSame([], $this->logger->messages(), 'the line waits for the pass');
         $channel->pump();
-        $this->assertSame(range(2, 1001), $ran, 'r0 and r1, the oldest, were dropped');
+        $this->assertSame([sprintf(self::FULL, 3)], $this->logger->messages(), 'one line for the pass, with its count');
+        $this->assertSame(range(3, 1002), $ran, 'r0 to r2, the oldest, were dropped');
         $this->assertSame(0, $channel->pending());
+
+        $channel->pump();
+        $this->assertCount(1, $this->logger->messages(), 'a pass without drops logs nothing');
+
+        for ($i = 0; $i < CurlHttpChannel::MAX_WAITING + 1; ++$i) {
+            $post(2000 + $i);
+        }
+        $channel->pump();
+        $this->assertSame([sprintf(self::FULL, 3), sprintf(self::FULL, 1)], $this->logger->messages(), 'the count starts again');
         $this->assertSame([], $swallowed);
     }
 
@@ -230,4 +239,18 @@ final class CurlHttpChannelUnitTest extends TestCase
         $this->assertSame(1, $channel->pending(false));
     }
 
+    /**
+     * A channel whose every add is refused: a pump fails each waiting request through its callback, and none is sent.
+     *
+     * @param list<\Throwable> $swallowed
+     */
+    private function refusingChannel(array &$swallowed): CurlHttpChannel
+    {
+        return new CurlHttpChannel(
+            multiStatus: static fn(string $function, int $code): int => $function === 'curl_multi_add_handle' ? CURLM_INTERNAL_ERROR : $code,
+            onSwallowed: static function (\Throwable $error) use (&$swallowed): void {
+                $swallowed[] = $error;
+            },
+        );
+    }
 }

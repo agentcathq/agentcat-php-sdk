@@ -13,7 +13,8 @@ use AgentCat\Internal\Support\ErrorText;
  * every throwable is swallowed (D32; tests see them through `$onSwallowed`): a failed request reaches only its
  * callback. `CurlMulti` runs the transfers.
  *
- * A call from inside one of its own transfer callbacks (a signal handler) leaves the transfers alone (`CurlMulti`).
+ * At most 1 000 requests wait; the oldest are dropped, with one line per pass. A call from inside one of its own
+ * transfer callbacks (a signal handler) leaves the transfers alone (`CurlMulti`).
  *
  * @internal
  */
@@ -30,7 +31,7 @@ final class CurlHttpChannel implements HttpChannel
 
     private const string NO_CURL = 'WARN: AgentCat cannot send telemetry exports or diagnostics: ext-curl functions are missing or disabled (%s)';
 
-    private const string FULL = 'WARN: AgentCat telemetry export queue full, dropping the oldest request';
+    private const string FULL = 'WARN: AgentCat telemetry export queue full, dropped the oldest %d request(s)';
 
     /** The reason phrase of a status line; the last status line of a response wins. */
     private const string STATUS_LINE = '~\AHTTP/\S+\s+\d{3}(?:[ \t]+([^\r\n]*))?~';
@@ -47,6 +48,9 @@ final class CurlHttpChannel implements HttpChannel
 
     /** @var list<array{request: HttpRequest, onDone: \Closure(HttpResponse): void}> */
     private array $waiting = [];
+
+    /** Requests dropped from a full queue since the last pass; `pump()` logs them in one line. */
+    private int $dropped = 0;
 
     /**
      * @param (\Closure(string): bool)|null       $functionExists tests only: tells whether a curl function exists. Default `function_exists()`.
@@ -80,22 +84,26 @@ final class CurlHttpChannel implements HttpChannel
         }
         if (count($this->waiting) >= self::MAX_WAITING) {
             array_shift($this->waiting);
-            Log::write(self::FULL);
+            ++$this->dropped;
         }
         $this->waiting[] = ['request' => $request, 'onDone' => $onDone];
     }
 
+    /** Also logs the requests dropped since the last pass, in one line. */
     #[\Override]
     public function pump(): void
     {
-        if ($this->waiting === [] && $this->multi->count() === 0) {
-            return; // nothing posted (or nothing can be): no curl call
+        if ($this->waiting !== [] || $this->multi->count() > 0) { // else nothing posted (or nothing can be): no curl call
+            $this->guarded(function (): void {
+                $this->launch();
+                $this->collect();
+                $this->launch(); // requests that callbacks posted (Sentry's sequence) start in this pass
+            });
         }
-        $this->guarded(function (): void {
-            $this->launch();
-            $this->collect();
-            $this->launch(); // requests that callbacks posted (Sentry's sequence) start in this pass
-        });
+        if ($this->dropped > 0) {
+            Log::write(sprintf(self::FULL, $this->dropped));
+            $this->dropped = 0;
+        }
     }
 
     /** 0 from inside one of its own transfer callbacks (a signal drain): nothing can progress there, so nothing can be waited for. */
