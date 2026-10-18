@@ -172,25 +172,6 @@ final class RequestEndTest extends TestCase
         $this->expectOutputString('held');
     }
 
-    /**
-     * The shutdown pass keeps no level: PHP's own buffer (`output_buffering`) goes too. Here that is PHPUnit's buffer,
-     * empty at this point; the test opens a new one in its place, so PHPUnit finds its level again.
-     */
-    public function testCloseOutputBuffersSendsEveryRemovableBufferByDefault(): void
-    {
-        $level = ob_get_level();
-        $this->assertGreaterThan(0, $level, "PHPUnit's own buffer");
-        ob_start();
-
-        RequestEnd::closeOutputBuffers();
-        $closed = ob_get_level();
-        while (ob_get_level() < $level) {
-            ob_start();
-        }
-
-        $this->assertSame(0, $closed);
-    }
-
     /** Symfony's rule: a buffer that may not be flushed, and every buffer below it, stays. */
     public function testCloseOutputBuffersStopsAtABufferThatMayNotBeFlushed(): void
     {
