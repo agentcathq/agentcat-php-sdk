@@ -19,6 +19,8 @@ require dirname(__DIR__, 3) . '/vendor/autoload.php';
 //               <marker>; the script goes on and prints "done".
 //   chain-exit: its own SIGTERM handler calls exit(0). It prints "signaled" just before it sends itself SIGTERM.
 //   twice:      like default, but it prints "signaled" just before the SIGTERM, so that the test can send another.
+//   disabled:   disableSignalHandlers is on: it calls EventQueue::global()->disableSignalHandlers() before the event, then
+//               sends itself SIGTERM. Nothing delivers; SIGTERM ends the process at once.
 //   shutdown:   no signal of its own: it prints "ending" and ends, so that the shutdown function delivers the event.
 $baseUrl = $argv[1] ?? '';
 $mode = $argv[2] ?? '';
@@ -34,6 +36,9 @@ if ($mode === 'chain-exit') {
     });
 }
 $queue = EventQueue::global();
+if ($mode === 'disabled') {
+    $queue->disableSignalHandlers();
+}
 $queue->configure($baseUrl);
 $queue->add(new QueuedEvent(new Event(projectId: 'proj_test', eventType: 'mcp:tools/call', resourceName: 'signal-drain')));
 if ($mode === 'shutdown') {

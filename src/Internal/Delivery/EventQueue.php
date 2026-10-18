@@ -74,6 +74,7 @@ final class EventQueue
      * @param (\Closure(): void)|null        $onEnqueue the delivery-trigger registrar, called on every `add()` and `arm()`
      * @param (\Closure(Event): string)|null $encode    builds the HTTP body; default `WireEncoder::encode(...)`
      * @param HttpChannel                    $channel   the side channel of the exporter and diagnostics requests
+     * @param SignalDrain|null               $signalDrain the SIGTERM and SIGINT drain that `disableSignalHandlers()` switches off
      */
     public function __construct(
         private readonly EventProcessor $processor = new EventProcessor(),
@@ -83,6 +84,7 @@ final class EventQueue
         private readonly float $shutdownTimeoutSeconds = self::SHUTDOWN_TIMEOUT_SECONDS,
         ?\Closure $encode = null,
         private readonly HttpChannel $channel = new CurlHttpChannel(),
+        private readonly ?SignalDrain $signalDrain = null,
     ) {
         $this->waiting = new \SplQueue();
         $this->encode = $encode ?? WireEncoder::encode(...);
@@ -101,10 +103,16 @@ final class EventQueue
             self::$global = new self(onEnqueue: static function () use ($flusher, $signals): void {
                 $flusher->ensureRegistered();
                 $signals->install();
-            });
+            }, signalDrain: $signals);
         }
 
         return self::$global;
+    }
+
+    /** Keeps the signal handlers out of the process. False when they are installed already. */
+    public function disableSignalHandlers(): bool
+    {
+        return $this->signalDrain?->disable() ?? true;
     }
 
     /** Tests only: replaces the global queue; null makes `global()` build a new one. */

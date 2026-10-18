@@ -91,6 +91,30 @@ final class SignalDrainDeliveryTest extends TestCase
         $this->assertSame(['signal-drain'], $this->resourceNames($base));
     }
 
+    #[MaximumDuration(10000)]
+    public function testWithTheHandlersDisabledSigtermEndsTheProcessAtOnceAndNothingIsSent(): void
+    {
+        $base = $this->collector()->scenario();
+        $process = $this->fixture($base, 'disabled');
+
+        $signaled = null;
+        $started = microtime(true);
+
+        try {
+            $process->run();
+        } catch (ProcessSignaledException $e) {
+            $signaled = $e;
+        }
+        $elapsed = microtime(true) - $started;
+
+        $this->assertInstanceOf(ProcessSignaledException::class, $signaled, sprintf('exit code %s: %s', var_export($process->getExitCode(), true), $process->getErrorOutput()));
+        $this->assertSame(15, $process->getTermSignal());
+        $this->assertLessThan(self::SIGNAL_DEADLINE, $elapsed);
+        $this->assertSame('', $process->getOutput());
+        $this->assertSame('', $process->getErrorOutput());
+        $this->assertSame([], $this->resourceNames($base));
+    }
+
     #[Group('ac-03-11')]
     #[MaximumDuration(10000)]
     public function testWithACustomerHandlerTheQueueDrainsThenTheHandlerRunsAndTheProcessGoesOn(): void

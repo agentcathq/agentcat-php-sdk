@@ -7,6 +7,7 @@ namespace AgentCat\Tests\Unit\Internal\Delivery;
 use AgentCat\Event;
 use AgentCat\Internal\Delivery\EventQueue;
 use AgentCat\Internal\Delivery\ExporterSink;
+use AgentCat\Internal\Delivery\SignalDrain;
 use AgentCat\Internal\Json\Json;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Pipeline\EventProcessor;
@@ -27,6 +28,7 @@ use AgentCat\Tests\Support\RecordingTransport;
 use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LogLevel;
 
@@ -1199,5 +1201,32 @@ final class EventQueueTest extends TestCase
                 $this->channel->post(new HttpRequest('http://exporter.test/' . $event->resourceName, [], '{}'), $this->onDone ?? static function (): void {});
             }
         };
+    }
+
+    public function testAQueueWithoutADrainHasNoSignalHandlersToDisable(): void
+    {
+        $this->assertTrue((new EventQueue(transport: new RecordingTransport()))->disableSignalHandlers());
+    }
+
+    #[RequiresPhpExtension('pcntl')]
+    public function testDisableSignalHandlersAsksTheDrain(): void
+    {
+        $term = pcntl_signal_get_handler(\SIGTERM);
+        $int = pcntl_signal_get_handler(\SIGINT);
+        $async = pcntl_async_signals();
+
+        try {
+            $fresh = new EventQueue(transport: new RecordingTransport(), signalDrain: new SignalDrain(static fn(): EventQueue => throw new \LogicException('unused'), null, static fn(string $f): bool => true, 'cli'));
+            $this->assertTrue($fresh->disableSignalHandlers());
+
+            $drain = new SignalDrain(static fn(): EventQueue => throw new \LogicException('unused'), null, static fn(string $f): bool => true, 'cli');
+            $drain->install();
+            $installed = new EventQueue(transport: new RecordingTransport(), signalDrain: $drain);
+            $this->assertFalse($installed->disableSignalHandlers());
+        } finally {
+            pcntl_signal(\SIGTERM, $term);
+            pcntl_signal(\SIGINT, $int);
+            pcntl_async_signals($async);
+        }
     }
 }

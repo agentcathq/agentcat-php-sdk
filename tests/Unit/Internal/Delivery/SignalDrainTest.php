@@ -311,4 +311,27 @@ final class SignalDrainTest extends TestCase
     {
         return new QueuedEvent(new Event(projectId: 'proj_test', eventType: 'mcp:tools/call', resourceName: $name));
     }
+
+    #[RequiresPhpExtension('pcntl')]
+    public function testDisableBeforeInstallKeepsTheHandlersAsTheyWere(): void
+    {
+        $before = pcntl_signal_get_handler(\SIGTERM);
+        $drain = new SignalDrain(fn(): EventQueue => $this->queue, static function (int $signal): void {}, static fn(string $f): bool => true, 'cli');
+
+        $this->assertTrue($drain->disable());
+        $drain->install();
+
+        $this->assertSame($before, pcntl_signal_get_handler(\SIGTERM));
+        $this->assertSame(\SIG_DFL, pcntl_signal_get_handler(\SIGINT));
+    }
+
+    #[RequiresPhpExtension('pcntl')]
+    public function testDisableAfterInstallReportsThatItIsTooLate(): void
+    {
+        $drain = new SignalDrain(fn(): EventQueue => $this->queue, static function (int $signal): void {}, static fn(string $f): bool => true, 'cli');
+        $drain->install();
+
+        $this->assertFalse($drain->disable());
+        $this->assertNotSame(\SIG_DFL, pcntl_signal_get_handler(\SIGTERM));
+    }
 }
