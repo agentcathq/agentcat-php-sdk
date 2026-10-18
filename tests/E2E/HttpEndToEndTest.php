@@ -26,6 +26,9 @@ final class HttpEndToEndTest extends TestCase
 {
     private const float COLLECTOR_DEADLINE_SECONDS = 5.0;
 
+    /** How long the diagnostics test waits for the two requests' diagnostics after the second answer. */
+    private const float DIAGNOSTICS_DEADLINE_SECONDS = 8.0;
+
     /** The fixture's `identify` sleeps 3 s with `X-E2E-Identify-Sleep: 1`, before the delivery. */
     private const float SLEEPING_HOOK_DEADLINE_SECONDS = 8.0;
 
@@ -65,6 +68,7 @@ final class HttpEndToEndTest extends TestCase
             self::$server = BuiltInServer::start(__DIR__ . '/Fixtures/http-server.php', [
                 'AGENTCAT_ENABLED' => 'true',
                 'AGENTCAT_API_URL' => self::$fallbackUrl,
+                'DIAGNOSTICS_ENDPOINT' => MockCollector::closedPortUrl(), // a request without X-E2E-Diagnostics stays local
                 'HOME' => self::$dir . '/home',
                 'AGENTCAT_E2E_SESSIONS' => self::$dir . '/sessions',
                 'AGENTCAT_E2E_MARKERS' => self::$dir . '/markers',
@@ -279,6 +283,35 @@ final class HttpEndToEndTest extends TestCase
         $this->assertSame($accept, JsonAssert::at($headers, 'accept'));
     }
 
+    /**
+     * D47 (open question Q3): under `php -S`, like PHP-FPM, each request posts its own diagnostics once, at its end,
+     * after the response. A slow runner can add a request without the per-event line, from a 2 s window inside a
+     * request.
+     */
+    #[Group('ac-06-62')]
+    #[MaximumDuration(15000)]
+    public function testEachRequestSendsItsOwnDiagnosticsAfterTheResponse(): void
+    {
+        $diagnostics = $this->collector()->scenario();
+        $client = $this->client();
+        $client->initialize();
+
+        $first = $client->callTool('echo', ['msg' => 'one', 'session_id' => 'start'], $this->headers(['X-E2E-Diagnostics' => $diagnostics]));
+        $second = $client->callTool('echo', ['msg' => 'two', 'session_id' => 'start'], $this->headers(['X-E2E-Diagnostics' => $diagnostics]));
+
+        $this->assertSame('echo: one', JsonAssert::at(HttpHarness::result($first['message']), 'content', 1, 'text'));
+        $this->assertSame('echo: two', JsonAssert::at(HttpHarness::result($second['message']), 'content', 1, 'text'));
+        $sent = $this->diagnosticsWithASentEvent($diagnostics, 2);
+        $this->assertCount(2, $sent, 'one diagnostics request with the per-event line per tracked request');
+        foreach ($sent as $request) {
+            $this->assertSame('/v1/logs', $request->path);
+            $this->assertSame(1, substr_count($this->body($request), 'Successfully sent event '), 'one line each');
+        }
+        $starts = array_map(static fn(\stdClass $request): mixed => $request->start, $sent);
+        $this->assertIsFloat(min($starts));
+        $this->assertGreaterThan($first['receivedAt'], min($starts), 'the diagnostics POST ran after the response');
+    }
+
     /** A call without `X-E2E-Collector` falls back to `AGENTCAT_API_URL`, a closed local port: never the default API. */
     #[MaximumDuration(10000)]
     public function testWithoutACollectorHeaderTheEventGoesToTheLocalFallback(): void
@@ -332,6 +365,37 @@ final class HttpEndToEndTest extends TestCase
         $this->assertInstanceOf(\stdClass::class, $event, $body);
 
         return $event;
+    }
+
+    /**
+     * Waits until `$count` diagnostics requests of the scenario carry a `Successfully sent event` line, or the deadline
+     * passes, and returns those requests.
+     *
+     * @return list<\stdClass>
+     */
+    private function diagnosticsWithASentEvent(string $scenario, int $count): array
+    {
+        $deadline = microtime(true) + self::DIAGNOSTICS_DEADLINE_SECONDS;
+        do {
+            $sent = array_values(array_filter(
+                $this->collector()->requests($scenario),
+                fn(\stdClass $request): bool => str_contains($this->body($request), 'Successfully sent event '),
+            ));
+            if (count($sent) >= $count) {
+                break;
+            }
+            usleep(20_000);
+        } while (microtime(true) < $deadline);
+
+        return $sent;
+    }
+
+    private function body(\stdClass $request): string
+    {
+        $body = $request->body ?? null;
+        $this->assertIsString($body);
+
+        return $body;
     }
 
     /** How often the server's agentcat.log says that a request rebuilt the registries. */

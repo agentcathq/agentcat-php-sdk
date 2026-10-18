@@ -241,6 +241,32 @@ final class StdioEndToEndTest extends TestCase
         $this->assertStdoutIsOnlyJsonRpc($client);
     }
 
+    /** 06 AC-62 in a real process: stdin EOF flushes the diagnostics buffer once, with the setup beacons. */
+    #[Group('ac-06-62')]
+    #[MaximumDuration(15000)]
+    public function testStdinEofSendsTheDiagnosticsOnce(): void
+    {
+        $diagnostics = $this->collector()->scenario();
+        $client = $this->start(env: ['DISABLE_DIAGNOSTICS' => 'false', 'DIAGNOSTICS_ENDPOINT' => $diagnostics]);
+        $this->handshake($client);
+        $this->resultOf($client, 'tools/call', ['name' => 'echo', 'arguments' => ['msg' => 'one', 'session_id' => 'start']]);
+
+        $this->assertExitsAtEof($client);
+
+        // A slow runner can pass the 2 s window during the session and post once more at a handler-entry pump:
+        // the last request is the shutdown flush, and it carries the per-event line logged during the EOF drain.
+        $requests = $this->collector()->requests($diagnostics);
+        $this->assertNotSame([], $requests);
+        $bodies = array_map($this->body(...), $requests);
+        $all = implode("\n", $bodies);
+        foreach ($requests as $request) {
+            $this->assertSame('/v1/logs', $request->path);
+        }
+        $this->assertStringContainsString('"stringValue":"php"', $all);
+        $this->assertStringContainsString('AgentCat setup complete | project proj_', $all);
+        $this->assertStringContainsString('Successfully sent event ', $bodies[count($bodies) - 1]);
+    }
+
     /** mcp/sdk main serves the 2026-07-28 era over stdio when the first request carries its envelope. */
     #[MaximumDuration(15000)]
     public function testAModernEraFirstRequestIsTrackedWithoutAHandshake(): void
@@ -265,12 +291,14 @@ final class StdioEndToEndTest extends TestCase
     }
 
     /**
-     * Starts this test's server with its own collector scenario and HOME. `AGENTCAT_API_URL` is a closed local port, so
-     * an event without the scenario can never reach the AgentCat API.
+     * Starts this test's server with its own collector scenario and HOME. `AGENTCAT_API_URL` and `DIAGNOSTICS_ENDPOINT`
+     * are closed local ports, so an event without the scenario can never reach the AgentCat API, and diagnostics, which
+     * stay off by the inherited `DISABLE_DIAGNOSTICS=true`, can never reach AgentCat's collector.
      *
      * @param array{status: int, delayMs?: int, body?: string} $default the collector's answer to every event
+     * @param array<string, string>                            $env     more environment variables of the server, applied last
      */
-    private function start(array $default = ['status' => 202, 'body' => '{"status":"accepted"}']): StdioMcpClient
+    private function start(array $default = ['status' => 202, 'body' => '{"status":"accepted"}'], array $env = []): StdioMcpClient
     {
         $this->scenario = $this->collector()->scenario([], $default);
         $this->home = self::$dir . '/home-' . bin2hex(random_bytes(6));
@@ -278,8 +306,10 @@ final class StdioEndToEndTest extends TestCase
         $this->client = StdioMcpClient::start(__DIR__ . '/Fixtures/stdio-server.php', [
             'AGENTCAT_ENABLED' => 'true',
             'AGENTCAT_API_URL' => MockCollector::closedPortUrl(),
+            'DIAGNOSTICS_ENDPOINT' => MockCollector::closedPortUrl(),
             'AGENTCAT_E2E_COLLECTOR' => $this->scenario,
             'HOME' => $this->home,
+            ...$env,
         ]);
 
         return $this->client;
@@ -385,6 +415,15 @@ final class StdioEndToEndTest extends TestCase
         } while (microtime(true) < $deadline);
 
         return null;
+    }
+
+    /** The body of a request the collector recorded. */
+    private function body(\stdClass $request): string
+    {
+        $body = $request->body ?? null;
+        $this->assertIsString($body);
+
+        return $body;
     }
 
     /** The server's agentcat.log. */

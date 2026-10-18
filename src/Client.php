@@ -7,6 +7,7 @@ namespace AgentCat;
 use AgentCat\Internal\ClientSeams;
 use AgentCat\Internal\Constants;
 use AgentCat\Internal\Delivery\EventQueue;
+use AgentCat\Internal\Diagnostics\Diagnostics;
 use AgentCat\Internal\Engine\CallInterceptor;
 use AgentCat\Internal\Engine\Publisher;
 use AgentCat\Internal\Engine\TrackedServer;
@@ -86,6 +87,10 @@ final readonly class Client
             }
             $options ??= new Options();
             $projectId ??= Env::get('AGENTCAT_PROJECT_ID') ?? ''; // D36: '' means telemetry only
+            if ($this->telemetry) {
+                // TS: the first statement of track(), before the server is checked; the first call in the process decides.
+                Diagnostics::init($projectId, $options->disableDiagnostics, $this->publisher->queue());
+            }
             if (!McpSdkAdapter::supports($server)) {
                 $signals = McpSdkAdapter::fingerprint($server);
                 Log::warning(sprintf('AgentCat SDK Compatibility: unrecognized server shape | signals %s. %s', $signals === '' ? '(none)' : $signals, McpSdkAdapter::SUPPORT_MATRIX));
