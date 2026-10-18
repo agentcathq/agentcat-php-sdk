@@ -15,6 +15,10 @@ mkdir($agentcatTestHome, 0o700, true);
 putenv('HOME=' . $agentcatTestHome);
 $_SERVER['HOME'] = $_ENV['HOME'] = $agentcatTestHome;
 
+// TS `src/tests/setup.ts`: no test sends diagnostics unless it clears this; subprocesses inherit it.
+putenv('DISABLE_DIAGNOSTICS=true');
+$_SERVER['DISABLE_DIAGNOSTICS'] = $_ENV['DISABLE_DIAGNOSTICS'] = 'true';
+
 register_shutdown_function(static function () use ($agentcatTestHome): void {
     $names = scandir($agentcatTestHome);
     foreach ($names === false ? [] : $names as $name) {

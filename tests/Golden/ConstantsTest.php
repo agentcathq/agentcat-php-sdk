@@ -135,6 +135,8 @@ final class ConstantsTest extends TestCase
         yield 'SOURCE' => ['agentcat', Constants::SOURCE];
         yield 'DIAGNOSTICS_SCOPE_NAME' => ['agentcat-diagnostics', Constants::DIAGNOSTICS_SCOPE_NAME];
         yield 'DEFAULT_API_BASE_URL' => ['https://api.agentcat.com', Constants::DEFAULT_API_BASE_URL];
+        yield 'DEFAULT_DIAGNOSTICS_ENDPOINT' => ['https://otel.agentcat.com', Constants::DEFAULT_DIAGNOSTICS_ENDPOINT];
+        yield 'DEFAULT_DIAGNOSTICS_TOKEN' => ['dgk_sdk_diag_3f9a2c7e1b8d4065af2e9c1d7b6a4f80', Constants::DEFAULT_DIAGNOSTICS_TOKEN];
     }
 
     #[DataProvider('shortConstants')]

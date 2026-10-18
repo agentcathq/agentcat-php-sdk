@@ -92,6 +92,25 @@ final class ExporterGolden
         return $requests;
     }
 
+    /**
+     * The `=== diagnostics` section of `golden2-output.txt`: its first line is `<url> <headers JSON> `, the rest is the
+     * pretty-printed body.
+     *
+     * @return array{url: string, headers: \stdClass, body: \stdClass}
+     */
+    public static function diagnostics(): array
+    {
+        $lines = self::section('exporters/golden2-output.txt', 'diagnostics');
+        [$url, $headers] = explode(' ', array_shift($lines) ?? '', 2) + ['', ''];
+        $headers = Json::decode(trim($headers));
+        $body = Json::decode(implode("\n", $lines));
+        if (!$headers instanceof \stdClass || !$body instanceof \stdClass) {
+            throw new \RuntimeException('The golden diagnostics section has no headers or no body');
+        }
+
+        return ['url' => $url, 'headers' => $headers, 'body' => $body];
+    }
+
     /** Decoded and re-encoded: escaping no longer differs, key order stays. */
     public static function normalized(string $json): string
     {
