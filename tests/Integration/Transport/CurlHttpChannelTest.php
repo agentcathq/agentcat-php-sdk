@@ -6,6 +6,7 @@ namespace AgentCat\Tests\Integration\Transport;
 
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Support\ErrorText;
+use AgentCat\Internal\Transport\CallbackFlag;
 use AgentCat\Internal\Transport\CurlHttpChannel;
 use AgentCat\Internal\Transport\CurlTransport;
 use AgentCat\Internal\Transport\HttpChannel;
@@ -241,10 +242,10 @@ final class CurlHttpChannelTest extends TestCase
 
     /**
      * I2 and the N1 ruling: a signal handler (the SIGTERM drain) that runs inside a callback pumps, waits on and posts
-     * to the channel it interrupted. The `header` seam runs where PHP 8.4+ runs a signal, at the callback's entry before
-     * it marks the channel busy: the nested pump's add and run are refused, the refusal marks the channel busy, and
-     * the request waits. The `write` seam runs inside the body, where the channel is busy already. Either way: nothing
-     * pending, no wait, nothing failed, and every request completes.
+     * to the channel it interrupted. In the `header` callback the seam clears the busy flag first, as at PHP 8.4+'s
+     * callback entry: the nested pump's add and run are refused, the refusal marks the channel busy, and the request
+     * waits. In the `write` callback the channel is busy already. Either way: nothing pending, no wait, nothing failed,
+     * and every request completes.
      */
     #[MaximumDuration(5000)]
     public function testAPumpFromInsideATransferCallbackLeavesTheChannelAlone(): void
@@ -258,9 +259,12 @@ final class CurlHttpChannelTest extends TestCase
         };
         $nested = [];
         $channel = null;
-        $channel = $this->channel(onCallback: static function (string $kind) use (&$channel, &$nested, $url, $record): void {
+        $channel = $this->channel(onCallback: static function (string $kind, CallbackFlag $busy) use (&$channel, &$nested, $url, $record): void {
             if (isset($nested[$kind]) || !$channel instanceof CurlHttpChannel) {
                 return;
+            }
+            if ($kind === 'header') {
+                $busy->active = false; // PHP 8.4+ runs a pending signal at the callback's entry, before the flag is set
             }
             $begin = hrtime(true);
             $channel->post(new HttpRequest($url . '/' . $kind, [], ''), $record($kind));
@@ -623,7 +627,7 @@ final class CurlHttpChannelTest extends TestCase
 
     /**
      * @param (\Closure(string, int): int)|null $multiStatus
-     * @param (\Closure(string): void)|null     $onCallback
+     * @param (\Closure(string, CallbackFlag): void)|null $onCallback
      */
     private function channel(
         float $connectTimeoutSeconds = CurlTransport::CONNECT_TIMEOUT_SECONDS,

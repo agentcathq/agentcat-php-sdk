@@ -100,6 +100,39 @@ final class SignalAfterExecTest extends TestCase
         $this->assertContains('/drain', array_map(static fn(\stdClass $request): mixed => $request->path, $this->collector()->requests($exports)), 'and its export on the side channel');
     }
 
+    /**
+     * I1: an application's own handler that throws right after curl_multi_exec() returns (five times per process). On
+     * PHP 8.3 this corrupted the frame while the exec call was nested in another call's arguments: before the fix the
+     * fixture crashed in most runs (see the report). Now the server goes on, delivers every event and exits 0.
+     */
+    #[MaximumDuration(15000)]
+    public function testAHandlerThatThrowsRightAfterCurlMultiExecLeavesTheServerRunning(): void
+    {
+        $large = $this->collector()->scenario([], ['status' => 202, 'body' => str_repeat('x', 4_000_000)]);
+        $process = new Process(
+            [PHP_BINARY, __DIR__ . '/../Fixtures/throw-after-exec.php', $large, '5'],
+            null,
+            ['HOME' => $this->dir, 'AGENTCAT_DIAGNOSTICS_ENDPOINT' => MockCollector::closedPortUrl()],
+        );
+        $process->setTimeout(30);
+
+        try {
+            $process->run();
+        } catch (ProcessSignaledException $e) {
+            self::fail('the fixture crashed: signal ' . $e->getSignal() . ' ' . $process->getErrorOutput());
+        }
+
+        $this->assertSame(0, $process->getExitCode(), $process->getOutput() . $process->getErrorOutput());
+        $this->assertSame('', $process->getErrorOutput());
+        $this->assertSame(1, preg_match('/\Athrows=(\d+) left=0\n\z/', $process->getOutput(), $match), $process->getOutput());
+        $throws = (int) $match[1];
+        $this->assertGreaterThan(0, $throws, 'the probe found the moment');
+        $names = $this->resourceNames($large);
+        for ($i = 1; $i <= $throws; ++$i) {
+            $this->assertContains('thrown-' . $i, $names, 'the event queued by the throwing handler went out');
+        }
+    }
+
     /** @return list<mixed> the `resource_name` of each event the scenario received */
     private function resourceNames(string $base): array
     {

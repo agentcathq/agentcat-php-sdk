@@ -9,14 +9,15 @@ use AgentCat\Internal\Support\ErrorText;
 
 /**
  * The second curl_multi handle of a queue: exporter and diagnostics requests, no retries (TypeScript sends each once),
- * connect and total timeouts (the request's, else the channel's), http/https only, no redirects. `pump()` never blocks. PHP warnings are suppressed and
- * every throwable is swallowed (D32; tests see them through `$onSwallowed`): a failed request reaches only its
- * callback. `CurlMulti` runs the transfers.
+ * connect and total timeouts (the request's, else the channel's), http/https only, no redirects. `pump()` never
+ * blocks. PHP warnings are suppressed and every throwable is swallowed (D32; tests see them through `$onSwallowed`): a
+ * failed request reaches only its callback. `CurlMulti` runs the transfers.
  *
  * At most 1 000 requests with at most 16 MiB of bodies wait; the oldest are dropped, with one line per pass. While one
  * of its PHP callbacks runs (`busy()`), a signal handler there (the SIGTERM drain) gets nothing pending and its pumps
- * and waits do nothing: libcurl refuses every multi call from inside a callback. PHP 8.4+ also runs a pending signal
- * at the entry of a callback, before it marks the channel busy; the first refused `curl_multi_exec()` marks it then.
+ * and waits do nothing: libcurl refuses every multi call from inside a callback. Each callback marks the channel busy
+ * in its first statement; only PHP 8.4+ can run a signal before that, at the callback's entry, and there the first
+ * refused `curl_multi_exec()` marks the channel busy (`curlOptions()`).
  *
  * @internal
  */
@@ -68,10 +69,10 @@ final class CurlHttpChannel implements HttpChannel
      * @param (\Closure(string, int): int)|null   $multiStatus    tests only: receives the function name and the CURLM code of each
      *                                                            `curl_multi_add_handle()` and `curl_multi_exec()` call, returns the code to act on
      * @param (\Closure(\Throwable): void)|null $onSwallowed    tests only: sees every throwable the channel swallows (D32); must not throw
-     * @param (\Closure(string): void)|null    $onCallback     tests only: where a signal handler can run, with `header` at the
-     *                                                            very start of every header callback, before it marks the
-     *                                                            channel busy (PHP 8.4+ runs signals there), and with
-     *                                                            `write` inside every write callback
+     * @param (\Closure(string, CallbackFlag): void)|null $onCallback tests only: runs inside every write and header
+     *                                                            callback (`write` or `header`), where a signal handler can
+     *                                                            run too, with the busy flag: a test clears it to stand for
+     *                                                            PHP 8.4+'s callback entry
      *
      * @throws \InvalidArgumentException for a timeout curl cannot take (`CurlSupport::timeoutMilliseconds()`)
      */
@@ -262,11 +263,14 @@ final class CurlHttpChannel implements HttpChannel
      * `$transfer` and the callback flag, so a finished handle frees the transfer and no handle holds the channel. The
      * request's timeouts win over the channel's (diagnostics: 250 ms and 1 s, D49).
      *
-     * Each callback sets the flag as its first statement and clears it as its last one before `return`. PHP runs a
-     * pending signal at a function call or a backward jump, so a handler inside the callback always sees the flag. A
-     * `finally` would not do: leaving it jumps back to the `return`, and a handler run there would see the flag
-     * cleared while libcurl is still in `curl_multi_exec()`. An `exit()` or a throwable inside the callback leaves the
-     * flag set; `busy()` clears it once no `curl_multi_exec()` is on the stack.
+     * Each callback sets the flag as its first statement and clears it as its last one before `return`, with no call
+     * and no jump after it. PHP runs a pending signal after a function call and at a jump (PHP 8.3, 8.4 and 8.5), and
+     * PHP 8.4+ also at the entry of a callback that C calls. So a handler inside the callback sees the flag, except one
+     * that PHP 8.4+ runs at the entry; for that one, the first `curl_multi_exec()` it attempts is refused, and the
+     * refusal marks the channel busy (`collect()`). A `finally` would not do: leaving it jumps back to the `return`,
+     * and a handler run there would see the flag cleared while libcurl is still in `curl_multi_exec()`. An `exit()` or
+     * a throwable inside the callback leaves the flag set; `busy()` clears it once no `curl_multi_exec()` is on the
+     * stack.
      *
      * @return array<int, mixed>
      *
@@ -284,7 +288,7 @@ final class CurlHttpChannel implements HttpChannel
             CURLOPT_WRITEFUNCTION => static function (\CurlHandle $handle, string $data) use ($transfer, $inCallback, $onCallback): int {
                 $inCallback->active = true;
                 if ($onCallback instanceof \Closure) {
-                    $onCallback('write');
+                    $onCallback('write', $inCallback);
                 }
                 // Up to MAX_BODY_BYTES are kept; the rest is read and dropped.
                 $transfer->body .= substr($data, 0, self::MAX_BODY_BYTES - strlen($transfer->body));
@@ -294,10 +298,10 @@ final class CurlHttpChannel implements HttpChannel
                 return $taken;
             },
             CURLOPT_HEADERFUNCTION => static function (\CurlHandle $handle, string $line) use ($transfer, $inCallback, $onCallback): int {
-                if ($onCallback instanceof \Closure) {
-                    $onCallback('header');
-                }
                 $inCallback->active = true;
+                if ($onCallback instanceof \Closure) {
+                    $onCallback('header', $inCallback);
+                }
                 if (preg_match(self::STATUS_LINE, $line, $match) === 1) {
                     $transfer->reason = $match[1] ?? '';
                 }

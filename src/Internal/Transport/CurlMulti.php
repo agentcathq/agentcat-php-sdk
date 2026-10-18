@@ -17,6 +17,10 @@ namespace AgentCat\Internal\Transport;
  * there would free a handle that libcurl still uses, and PHP would crash when the callback returns. A refused add
  * waits for the next `run()`. (`CurlHttpChannel` keeps its drains out of its callbacks; this rule is the safety net.)
  *
+ * PHP runs a signal that arrived during a `curl_*` call right after the call returns. Each such call is a statement of
+ * its own, never an argument of another call: on PHP 8.3, a handler that throws or calls `exit()` there, while an
+ * outer call is still being set up, corrupts the frame (a crash, a hang or an out-of-memory error).
+ *
  * @template TPayload
  *
  * @internal
@@ -88,7 +92,8 @@ final class CurlMulti
                 $failed($transfer['payload'], $error);
             }
         }
-        $code = ($this->multiStatus)('curl_multi_exec', curl_multi_exec($this->multi(), $running));
+        $result = curl_multi_exec($this->multi(), $running); // its own statement: see the class docblock
+        $code = ($this->multiStatus)('curl_multi_exec', $result);
         if ($code === self::RECURSIVE_API_CALL) {
             return false; // from inside a callback of the running curl_multi_exec(): every transfer stays as it is
         }
@@ -143,7 +148,8 @@ final class CurlMulti
      */
     private function add(int $id, \CurlHandle $handle): ?string
     {
-        $code = ($this->multiStatus)('curl_multi_add_handle', curl_multi_add_handle($this->multi(), $handle));
+        $result = curl_multi_add_handle($this->multi(), $handle); // its own statement: see the class docblock
+        $code = ($this->multiStatus)('curl_multi_add_handle', $result);
         if ($code === CURLM_OK) {
             unset($this->unadded[$id]);
 

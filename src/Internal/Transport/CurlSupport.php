@@ -135,6 +135,8 @@ final class CurlSupport
     /** `cURL multi error <n>: <message>` for a `curl_multi_*` call that did not return `CURLM_OK`. */
     public static function multiError(int $code): string
     {
-        return sprintf('cURL multi error %d: %s', $code, curl_multi_strerror($code));
+        $message = curl_multi_strerror($code); // not nested in sprintf()'s arguments: see `CurlMulti`
+
+        return sprintf('cURL multi error %d: %s', $code, $message);
     }
 }
