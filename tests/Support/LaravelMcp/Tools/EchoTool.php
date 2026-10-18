@@ -13,8 +13,10 @@ use Laravel\Mcp\Server\Attributes\Name;
 use Laravel\Mcp\Server\Tool;
 
 /**
- * `echo`: `{msg: string}`, required; answers `echo: <msg>`. The attributes name the tools of these tests: overriding
- * `$name` would need `#[\Override]` on a property, which PHP accepts only from 8.5 (see `EmptyServer`).
+ * `echo`: `{msg: string}`, required; answers `echo: <msg>`. Like mcp/sdk, which checks a tool's input schema, it
+ * validates its arguments before it records them: without `msg`, laravel/mcp answers the `ValidationException` with an
+ * error result. The attributes name the tools of these tests: overriding `$name` would need `#[\Override]` on a
+ * property, which PHP accepts only from 8.5 (see `EmptyServer`).
  */
 #[Name('echo')]
 #[Description('Echo')]
@@ -29,6 +31,7 @@ final class EchoTool extends Tool
 
     public function handle(Request $request): Response
     {
+        $request->validate(['msg' => 'required|string']);
         ToolCalls::record('echo', $request->all());
 
         return Response::text('echo: ' . (is_string($request->get('msg')) ? $request->get('msg') : ''));

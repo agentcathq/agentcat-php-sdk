@@ -102,6 +102,15 @@ final class Tools
         return $tool;
     }
 
+    /** A tool without input, named `$name`. Answers `ok`. */
+    public static function named(Builder $builder, string $name): RecordingTool
+    {
+        $tool = new RecordingTool();
+        $builder->add(new Tool(name: $name, title: null, inputSchema: self::NO_ARGUMENTS, description: $name, annotations: null), $tool);
+
+        return $tool;
+    }
+
     /** `own`: declares its own required `session_id`. Answers `ok`. */
     public static function own(Builder $builder): RecordingTool
     {

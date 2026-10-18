@@ -10,21 +10,23 @@ use Laravel\Mcp\Server;
 use PHPUnit\Framework\Assert;
 
 /**
- * Drives one laravel/mcp server instance the way `artisan mcp:start` does: one server, built by the container, answers
- * every message, one line each, on a `LineTransport`.
+ * Drives one laravel/mcp server instance the way `artisan mcp:start` does: one server, built by the container or by the
+ * test, answers every message, one line each, on a `LineTransport`.
  */
 final readonly class LaravelStdioHarness
 {
     private LineTransport $transport;
 
     /**
-     * @param class-string<Server> $serverClass
+     * @param class-string<Server>|(\Closure(LineTransport): Server) $server the server class, which the container
+     *                                                                     builds on the harness's transport, or a
+     *                                                                     function that builds the server on it
      * @param (\Closure(Server): void)|null $track runs on the server before `start()`
      */
-    public function __construct(string $serverClass, ?\Closure $track = null)
+    public function __construct(string|\Closure $server, ?\Closure $track = null)
     {
         $this->transport = new LineTransport();
-        $server = Container::getInstance()->make($serverClass, ['transport' => $this->transport]);
+        $server = $server instanceof \Closure ? $server($this->transport) : Container::getInstance()->make($server, ['transport' => $this->transport]);
         Assert::assertInstanceOf(Server::class, $server);
         if ($track instanceof \Closure) {
             $track($server);
