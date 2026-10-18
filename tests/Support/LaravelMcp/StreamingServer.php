@@ -10,6 +10,8 @@ use Laravel\Mcp\Server;
 use Laravel\Mcp\Server\Attributes\Name;
 use Laravel\Mcp\Server\Attributes\Version;
 use Laravel\Mcp\Server\Contracts\Transport;
+use Laravel\Mcp\Transport\JsonRpcRequest;
+use Laravel\Mcp\Transport\JsonRpcResponse;
 
 /** `streaming-server` with two streamed tools: `stream` and `stream-fails`. */
 #[Name('streaming-server')]
@@ -20,5 +22,16 @@ final class StreamingServer extends Server
     {
         parent::__construct($transport);
         $this->tools = [StreamingTool::class, FailingStreamTool::class];
+    }
+
+    /**
+     * The answer to one request, as `handleMessage()` gets it, without sending it: a test drives a stream itself, like
+     * a client that goes away midway.
+     *
+     * @return iterable<JsonRpcResponse>|JsonRpcResponse
+     */
+    public function answer(JsonRpcRequest $request): iterable|JsonRpcResponse
+    {
+        return $this->runMethodHandle($request, $this->createContext());
     }
 }

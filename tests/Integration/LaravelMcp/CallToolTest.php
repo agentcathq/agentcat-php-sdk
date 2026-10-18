@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace AgentCat\Tests\Integration\LaravelMcp;
 
 use AgentCat\Event;
+use AgentCat\Identity;
 use AgentCat\Internal\Constants;
 use AgentCat\Internal\Pipeline\QueuedEvent;
 use AgentCat\Internal\Tools\GetMoreTools;
+use AgentCat\LaravelMcp\LaravelMcpAdapter;
 use AgentCat\Options;
 use AgentCat\Tests\Support\JsonAssert;
 use AgentCat\Tests\Support\LaravelMcp\ConformanceServer;
@@ -25,13 +27,17 @@ use AgentCat\Tests\Support\LaravelMcp\StreamingServer;
 use AgentCat\Tests\Support\LaravelMcp\ToolCalls;
 use AgentCat\Tests\Support\LaravelMcp\Tools\EchoTool;
 use AgentCat\Tests\Support\LaravelMcp\Tools\StructuredTool;
+use AgentCat\ToolCall;
 use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
+use Illuminate\Http\Request;
 use Laravel\Mcp\Server;
 use Laravel\Mcp\Server\Contracts\Transport;
 use Laravel\Mcp\Server\Methods\CallTool;
 use Laravel\Mcp\Server\ServerContext;
+use Laravel\Mcp\Server\Transport\HttpTransport;
 use Laravel\Mcp\Transport\JsonRpcRequest;
 use Laravel\Mcp\Transport\JsonRpcResponse;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 
 final class CallToolTest extends LaravelTestCase
@@ -209,6 +215,62 @@ final class CallToolTest extends LaravelTestCase
         $this->assertSame('http://localhost/mcp/conformance', JsonAssert::at($info, 'url'));
     }
 
+    /** Task 5 review minor 2: the client controls the `Host` header; Symfony refuses an invalid one. */
+    public function testAnInvalidHostHeaderCostsTheHttpContextOnly(): void
+    {
+        $fixture = new LaravelTrackingFixture();
+        $twin = (new LaravelHarness(ConformanceServer::class))->callTool('echo', ['msg' => 'hi', 'session_id' => self::SESSION], headers: ['Host' => 'bad host!']);
+
+        $answer = (new LaravelHarness(ConformanceServer::class, $fixture->tracker()))->callTool('echo', ['msg' => 'hi', 'session_id' => self::SESSION], headers: ['Host' => 'bad host!']);
+
+        $this->assertEquals($twin, $answer);
+        $extra = JsonAssert::at($fixture->event()->parameters, 'extra');
+        $this->assertInstanceOf(\stdClass::class, $extra);
+        $this->assertObjectNotHasProperty('requestInfo', $extra);
+        $this->assertNotContains(LaravelMcpAdapter::COMPATIBILITY_LINE, $fixture->lines());
+    }
+
+    /** @return iterable<string, array{array<string, mixed>}> */
+    public static function callsWithoutAToolName(): iterable
+    {
+        yield 'no name' => [['arguments' => ['msg' => 'hi']]];
+        yield 'a number' => [['name' => 7, 'arguments' => ['msg' => 'hi']]];
+    }
+
+    /**
+     * TypeScript and mcp/sdk reject such a call before any handler, so none is recorded (D15, Task 5 review minor 4).
+     *
+     * @param array<string, mixed> $params
+     */
+    #[DataProvider('callsWithoutAToolName')]
+    public function testACallWithoutAToolNameIsLaravelsAnswerAndNoEvent(array $params): void
+    {
+        $fixture = new LaravelTrackingFixture();
+        $params['_meta'] = LaravelHarness::meta([], null);
+        $twin = (new LaravelHarness(ConformanceServer::class))->request('tools/call', $params);
+
+        $answer = (new LaravelHarness(ConformanceServer::class, $fixture->tracker()))->request('tools/call', $params);
+
+        $this->assertEquals($twin, $answer);
+        $this->assertObjectHasProperty('error', $answer);
+        $this->assertSame([], $fixture->events());
+        $this->assertSame([], $fixture->lines());
+    }
+
+    public function testACustomHandlersAnswerToACallWithoutAToolNameIsNoEvent(): void
+    {
+        $this->answer(static fn(JsonRpcRequest $request): JsonRpcResponse => JsonRpcResponse::result($request->id, ['content' => [['type' => 'text', 'text' => 'nameless']]]));
+        $params = ['arguments' => ['session_id' => 'start'], '_meta' => LaravelHarness::meta([], null)];
+        $fixture = new LaravelTrackingFixture();
+        $twin = (new LaravelHarness(RecordingCallServer::class))->request('tools/call', $params);
+
+        $answer = (new LaravelHarness(RecordingCallServer::class, $fixture->tracker()))->request('tools/call', $params);
+
+        $this->assertEquals($twin, $answer);
+        $this->assertSame('nameless', JsonAssert::at($answer, 'result', 'content', 0, 'text'));
+        $this->assertSame([], $fixture->events());
+    }
+
     #[Group('ac-02-44')]
     public function testALegacyStdioClientIsKnownFromItsInitialize(): void
     {
@@ -331,6 +393,58 @@ final class CallToolTest extends LaravelTestCase
         $this->assertSame([[]], ToolCalls::of('stream'));
     }
 
+    /**
+     * Over HTTP laravel/mcp sends a stream from `StreamedResponse::sendContent()`, after `Server::handle()` returned
+     * (Review Focus 5): the SSE bytes are the library's, the event comes from the final result, and the hooks run later
+     * (D04).
+     */
+    #[Group('ac-02-43')]
+    #[Group('ac-05-E5')]
+    #[MaximumDuration(2000)]
+    public function testAStreamedAnswerOverHttpIsTheLibrarysAndRecordedWhenItEnds(): void
+    {
+        $hooks = new \ArrayObject();
+        $fixture = new LaravelTrackingFixture();
+        $twin = $this->httpStream(null, 'stream');
+
+        $tracked = $this->httpStream($fixture->tracker(new Options(identify: static function (ToolCall $call) use ($hooks): Identity {
+            $hooks->append($call->headers['x-one'] ?? null);
+
+            return new Identity('u1');
+        })), 'stream');
+
+        $this->assertSame([], $hooks->getArrayCopy(), 'no hook ran during the request');
+        $this->assertSame($twin, $tracked);
+        $this->assertSame(3, substr_count($tracked, 'data: '));
+        $event = $fixture->event();
+        $this->assertSame(['a'], $hooks->getArrayCopy());
+        $this->assertGreaterThanOrEqual(100, $event->duration); // the stream sleeps 2 × 50 ms
+        $this->assertSame('u1', $event->identifyActorGivenId);
+        $this->assertSame('a', JsonAssert::at($event->parameters, 'extra', 'requestInfo', 'headers', 'x-one'));
+        $failing = new LaravelTrackingFixture();
+        $this->assertSame($this->httpStream(null, 'stream-fails'), $this->httpStream($failing->tracker(), 'stream-fails'));
+        $this->assertSame('DomainException', JsonAssert::at($failing->event()->error, 'type'));
+    }
+
+    /** A stream the client abandons publishes nothing (plan E1 header conflict 6). */
+    public function testAStreamTheClientAbandonsPublishesNothing(): void
+    {
+        $fixture = new LaravelTrackingFixture();
+        $server = $this->app?->make(StreamingServer::class, ['transport' => new LineTransport()]);
+        $this->assertInstanceOf(StreamingServer::class, $server);
+        $fixture->track($server);
+        $stream = $server->answer(new JsonRpcRequest(3, 'tools/call', ['name' => 'stream', 'arguments' => ['session_id' => 'start']]));
+        $this->assertInstanceOf(\Generator::class, $stream);
+        $this->assertInstanceOf(JsonRpcResponse::class, $stream->current()); // the first progress notification
+
+        unset($stream);
+        gc_collect_cycles();
+
+        $this->assertSame([], $fixture->events());
+        $this->assertSame([[]], ToolCalls::of('stream'));
+        $this->assertFalse($this->app?->bound('mcp.request'));
+    }
+
     #[Group('ac-05-E5')]
     public function testAStreamThatThrowsIsOneErrorEvent(): void
     {
@@ -434,6 +548,39 @@ final class CallToolTest extends LaravelTestCase
         $harness->callTool('echo', ['msg' => 'hi']);
 
         $this->assertSame(['queueLength' => 0, 'activeRequests' => 1], $fixture->queue->stats());
+    }
+
+    /**
+     * The SSE bytes of one streamed `tools/call` over laravel/mcp's HTTP transport, sent the way Laravel sends a
+     * `StreamedResponse`, with a supplied session (no mint-back).
+     *
+     * @param (\Closure(Server): void)|null $track
+     */
+    private function httpStream(?\Closure $track, string $tool): string
+    {
+        $body = json_encode(['jsonrpc' => '2.0', 'id' => 7, 'method' => 'tools/call', 'params' => ['name' => $tool, 'arguments' => ['session_id' => self::SESSION], '_meta' => LaravelHarness::meta([], ['name' => 'c', 'version' => '1'])]], JSON_THROW_ON_ERROR);
+        $transport = new HttpTransport(Request::create('/mcp/s', 'POST', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_HOST' => 'localhost', 'HTTP_X_ONE' => 'a'], content: $body));
+        $server = $this->app?->make(StreamingServer::class, ['transport' => $transport]);
+        $this->assertInstanceOf(StreamingServer::class, $server);
+        if ($track instanceof \Closure) {
+            $track($server);
+        }
+        $server->start();
+        $response = $transport->run();
+        $this->assertSame('text/event-stream', $response->headers->get('Content-Type')); // a StreamedResponse
+        $sent = new \ArrayObject();
+        ob_start(static function (string $chunk) use ($sent): string {
+            $sent->append($chunk);
+
+            return '';
+        }, 1);
+        try {
+            $response->sendContent();
+        } finally {
+            ob_end_clean();
+        }
+
+        return implode('', $sent->getArrayCopy());
     }
 
     private function text(mixed $value): string

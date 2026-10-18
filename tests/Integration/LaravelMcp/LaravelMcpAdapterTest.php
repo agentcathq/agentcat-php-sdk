@@ -209,8 +209,11 @@ final class LaravelMcpAdapterTest extends LaravelTestCase
         $this->assertSame([null, null], $info());
     }
 
-    /** Task 4 review M3: the events of such a server have no name and version, and one line says so. */
-    public function testAServerInfoThatCannotBeReadIsUnknownAndLoggedOncePerServer(): void
+    /**
+     * `createContext()` is public customer code, not a protected-member read (Task 5 review minor 3): what it throws
+     * leaves the name and version unknown and logs nothing; a deprecation it triggers costs nothing.
+     */
+    public function testAServerInfoThatCannotBeReadIsUnknownWithoutALine(): void
     {
         $logger = new MemoryLogger();
         Log::setLogger($logger);
@@ -221,24 +224,19 @@ final class LaravelMcpAdapterTest extends LaravelTestCase
                 throw new \RuntimeException('no context');
             }
         };
-        $warning = new class (new LineTransport()) extends Server {
+        $deprecated = new class (new LineTransport()) extends Server {
             #[\Override]
             public function createContext(): ServerContext
             {
-                trigger_error('deprecated context', E_USER_DEPRECATED);
+                @trigger_error('deprecated context', E_USER_DEPRECATED);
 
                 return parent::createContext();
             }
         };
-        $info = LaravelMcpAdapter::serverInfo($server);
 
-        $this->assertSame([null, null], $info());
-        $this->assertSame([null, null], $info());
-        $this->assertSame([null, null], (LaravelMcpAdapter::serverInfo($warning))(), 'a warning counts as a failure');
-        $this->assertSame([
-            ['level' => LogLevel::WARNING, 'message' => LaravelMcpAdapter::COMPATIBILITY_LINE],
-            ['level' => LogLevel::WARNING, 'message' => LaravelMcpAdapter::COMPATIBILITY_LINE],
-        ], $logger->records);
+        $this->assertSame([null, null], (LaravelMcpAdapter::serverInfo($server))());
+        $this->assertSame(['Laravel MCP Server', '0.0.1'], (LaravelMcpAdapter::serverInfo($deprecated))(), 'a deprecation is no failure');
+        $this->assertSame([], $logger->records);
     }
 
     #[Group('ac-02-43')]
@@ -254,6 +252,20 @@ final class LaravelMcpAdapterTest extends LaravelTestCase
         $this->assertSame('http://example.test/mcp/weather?unit=c', $http->url);
         $this->assertSame('t1', $http->headers['x-trace'] ?? null);
         $this->assertSame('example.test', $http->headers['host'] ?? null);
+    }
+
+    /**
+     * Symfony refuses an invalid `Host` header, which the client controls: no HTTP context, and no compatibility line
+     * (Task 5 review minor 2).
+     */
+    public function testARequestLaravelCannotReadHasNoHttpContextAndLogsNothing(): void
+    {
+        $logger = new MemoryLogger();
+        Log::setLogger($logger);
+        $server = $this->conformanceServer(new HttpTransport(Request::create('/mcp', 'POST', server: ['HTTP_HOST' => 'bad host!'])));
+
+        $this->assertNull((LaravelMcpAdapter::httpContext($server))());
+        $this->assertSame([], $logger->records);
     }
 
     public function testAServerOnAnotherTransportOrGoneHasNoHttpContext(): void

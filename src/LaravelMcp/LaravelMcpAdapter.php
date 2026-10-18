@@ -10,12 +10,12 @@ use AgentCat\Internal\Engine\Publisher;
 use AgentCat\Internal\Engine\ThrowableStash;
 use AgentCat\Internal\Engine\TrackedServer;
 use AgentCat\Internal\Logging\Log;
+use AgentCat\Internal\Logging\OncePerObject;
 use AgentCat\Internal\SdkVersion;
 use AgentCat\Internal\Support\ErrorText;
 use AgentCat\Internal\Support\StrictErrors;
 use AgentCat\LaravelMcp\Internal\Access\HttpTransportAccess;
 use AgentCat\LaravelMcp\Internal\Access\ServerAccess;
-use AgentCat\LaravelMcp\Internal\Drift;
 use AgentCat\LaravelMcp\Internal\HandshakeClient;
 use AgentCat\LaravelMcp\Internal\LaravelHttpContext;
 use AgentCat\LaravelMcp\Internal\LaravelRequestReader;
@@ -25,7 +25,6 @@ use AgentCat\LaravelMcp\Internal\TrackedInitialize;
 use AgentCat\LaravelMcp\Internal\TrackedListTools;
 use Illuminate\Container\Container;
 use Illuminate\Http\Request;
-use Laravel\Mcp\Schema\Implementation;
 use Laravel\Mcp\Server;
 use Laravel\Mcp\Server\Contracts\Method;
 use Laravel\Mcp\Server\Transport\HttpTransport;
@@ -83,8 +82,8 @@ final class LaravelMcpAdapter
 
     /**
      * The server name and version, read when an event is published. Holds the server weakly: the tracking state must
-     * not keep a finished request's server alive. When they cannot be read (the server's `createContext()` fails or
-     * warns), they are unknown, and the compatibility line is logged once per server.
+     * not keep a finished request's server alive. `createContext()` is public code that a server can override, not a
+     * protected-member read: when it throws, they are unknown, and AgentCat logs nothing.
      *
      * @return \Closure(): array{0: ?string, 1: ?string}
      */
@@ -98,12 +97,10 @@ final class LaravelMcpAdapter
                 return [null, null];
             }
             try {
-                $implementation = StrictErrors::run(static fn(): Implementation => $server->createContext()->implementation);
+                $implementation = $server->createContext()->implementation;
 
                 return [$implementation->name, $implementation->version];
             } catch (\Throwable) {
-                Drift::report($server);
-
                 return [null, null];
             }
         };
@@ -111,9 +108,11 @@ final class LaravelMcpAdapter
 
     /**
      * The HTTP request the server answers, read from its own transport when a call is recorded (plan E1 header
-     * conflict 9); null on stdio and once the server is gone. Holds the server weakly, like `serverInfo()`. When the
-     * transport or its request cannot be read (drift), the call is recorded without HTTP context, and the
-     * compatibility line is logged once per server. Never throws.
+     * conflict 9); null on stdio and once the server is gone. Holds the server weakly, like `serverInfo()`. Never
+     * throws; the call is then recorded without HTTP context:
+     * - when the transport or its request cannot be read (drift), and the compatibility line is logged once per server;
+     * - when Laravel cannot read the request (Symfony refuses an invalid `Host` header, which the client sends), and
+     *   nothing is logged.
      *
      * @return \Closure(): ?HttpContext
      */
@@ -123,22 +122,11 @@ final class LaravelMcpAdapter
 
         return static function () use ($reference): ?HttpContext {
             $server = $reference->get();
-            if (!$server instanceof Server) {
-                return null;
-            }
+            $request = $server instanceof Server ? self::request($server) : null;
             try {
-                // Warnings count as drift for the protected-member reads only, not for Laravel's own request methods.
-                $request = StrictErrors::run(static function () use ($server): ?Request {
-                    $transport = ServerAccess::transport($server);
-
-                    return $transport instanceof HttpTransport ? HttpTransportAccess::request($transport) : null;
-                });
-
                 return $request instanceof Request ? LaravelHttpContext::of($request) : null;
             } catch (\Throwable) {
-                Drift::report($server);
-
-                return null;
+                return null; // Laravel cannot read the request, which the client controls: this is no drift
             }
         };
     }
@@ -180,6 +168,25 @@ final class LaravelMcpAdapter
         $entry = $methods[$method] ?? null;
 
         return is_string($entry) && is_a($entry, Method::class, true) ? $entry : null;
+    }
+
+    /**
+     * The request of the server's HTTP transport; null on another transport, and when the transport or its request
+     * cannot be read (drift), which logs the compatibility line once per server.
+     */
+    private static function request(Server $server): ?Request
+    {
+        try {
+            return StrictErrors::run(static function () use ($server): ?Request {
+                $transport = ServerAccess::transport($server);
+
+                return $transport instanceof HttpTransport ? HttpTransportAccess::request($transport) : null;
+            });
+        } catch (\Throwable) {
+            OncePerObject::warn($server, self::COMPATIBILITY_LINE);
+
+            return null;
+        }
     }
 
     /** Binds AgentCat's method under this server's own key and points the server's entry at it. */

@@ -19,7 +19,8 @@ use Laravel\Mcp\Transport\JsonRpcResponse;
  * Answers `tools/call` (TS callWrap): `CallInterceptor` resolves the handles, strips them, lets the handler the
  * server's entry named before AgentCat's run the tool, decorates the answer and queues one event. For laravel/mcp's
  * own `CallTool`, AgentCat answers with `CapturingCallTool`, which keeps the tool's exception (plan E1 header
- * conflict 5); a customer's handler, or a container binding of `CallTool`, answers itself (header conflict 4).
+ * conflict 5); a customer's handler, or a container binding of `CallTool`, answers itself (header conflict 4). A call
+ * without a string tool name goes to the handler untraced.
  *
  * @internal
  */
@@ -49,6 +50,9 @@ final readonly class TrackedCallTool implements Method
         $delegate = $original === CallTool::class && !Container::getInstance()->bound(CallTool::class)
             ? static fn(JsonRpcRequest $sent): iterable|JsonRpcResponse => (new CapturingCallTool($stash))->handle($sent, $context)
             : static fn(JsonRpcRequest $sent): iterable|JsonRpcResponse => Delegate::handle($original, $sent, $context);
+        if (!is_string($request->get('name'))) {
+            return $delegate($request); // TypeScript and mcp/sdk reject it before any handler: no event (D15)
+        }
         $list = $this->listOriginal;
         $seam = new LaravelCallSeam(
             $request,
