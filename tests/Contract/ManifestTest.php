@@ -6,6 +6,7 @@ namespace AgentCat\Tests\Contract;
 
 use AgentCat\Internal\Access\TouchesPrivateMember;
 use AgentCat\Internal\Json\Json;
+use AgentCat\LaravelMcp\Internal\Access\ServerAccess;
 use AgentCat\McpSdk\Internal\Access\BuilderAccess;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -17,6 +18,9 @@ final class ManifestTest extends TestCase
         // A new private member or extended class must change this list, so a reviewer sees it.
         $this->assertSame(
             [
+                'Laravel\Mcp\Server::$methods',
+                'Laravel\Mcp\Server::$transport',
+                'Laravel\Mcp\Server\Transport\HttpTransport::$request',
                 'Mcp\Schema\Result\CallToolResult::__construct(array $content, bool $isError = false, mixed $structuredContent = null, ?array $meta = null)',
                 'Mcp\Schema\Result\ListToolsResult::__construct(array $tools, ?string $nextCursor = null)',
                 'Mcp\Server::$protocol',
@@ -34,6 +38,7 @@ final class ManifestTest extends TestCase
     {
         $classes = PrivateMemberManifest::accessorClasses();
         $this->assertContains(BuilderAccess::class, $classes);
+        $this->assertContains(ServerAccess::class, $classes);
 
         foreach ($classes as $class) {
             foreach ((new \ReflectionClass($class))->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
@@ -65,5 +70,7 @@ final class ManifestTest extends TestCase
         }
         $this->assertObjectHasProperty('mcp/sdk', $composer->suggest);
         $this->assertSame('<0.8.1', $composer->conflict->{'mcp/sdk'});
+        $this->assertObjectHasProperty('laravel/mcp', $composer->suggest);
+        $this->assertSame('<1.0', $composer->conflict->{'laravel/mcp'});
     }
 }

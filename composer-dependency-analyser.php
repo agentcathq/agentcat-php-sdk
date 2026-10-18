@@ -19,4 +19,12 @@ return (new Configuration())
     // Psr\EventDispatcher\EventDispatcherInterface arrives with mcp/sdk; the test double stands in for a customer's dispatcher.
     ->ignoreErrorsOnPackageAndPath('psr/event-dispatcher', __DIR__ . '/tests/Support/McpSdk/RecordingDispatcher.php', [ErrorType::SHADOW_DEPENDENCY])
     // Http\Discovery\Psr17Factory arrives with mcp/sdk; the HTTP fixture builds its request from the globals with it, like a customer.
-    ->ignoreErrorsOnPackageAndPath('php-http/discovery', __DIR__ . '/tests/E2E/Fixtures', [ErrorType::SHADOW_DEPENDENCY]);
+    ->ignoreErrorsOnPackageAndPath('php-http/discovery', __DIR__ . '/tests/E2E/Fixtures', [ErrorType::SHADOW_DEPENDENCY])
+    // laravel/mcp and Laravel are optional (01 AC-90): dev dependencies used only by the Laravel adapter and bridge.
+    ->ignoreErrorsOnPackageAndPath('laravel/mcp', __DIR__ . '/src/LaravelMcp', [ErrorType::DEV_DEPENDENCY_IN_PROD])
+    ->ignoreErrorsOnPackageAndPath('laravel/framework', __DIR__ . '/src/LaravelMcp', [ErrorType::DEV_DEPENDENCY_IN_PROD])
+    // False positives: the analyser reads AgentCat's own `Env::get()` and `new Event(` as Laravel's global env() and
+    // event() helpers. PHPat keeps Laravel out of both files (LayeringTest).
+    ->ignoreErrorsOnPackageAndPaths('laravel/framework', [__DIR__ . '/src/Internal/Support/TestMode.php', __DIR__ . '/src/Client.php'], [ErrorType::DEV_DEPENDENCY_IN_PROD])
+    // Orchestra\Testbench\TestCase lives in orchestra/testbench-core, which orchestra/testbench requires; the Laravel tests extend it.
+    ->ignoreErrorsOnPackageAndPath('orchestra/testbench-core', __DIR__ . '/tests', [ErrorType::SHADOW_DEPENDENCY]);

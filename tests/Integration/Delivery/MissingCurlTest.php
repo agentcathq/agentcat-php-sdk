@@ -41,12 +41,17 @@ final class MissingCurlTest extends TestCase
         rmdir($this->dir);
     }
 
-    /** @return iterable<string, array{list<string>}> */
+    /**
+     * Every curl function except `curl_version()`, which the SDK never calls: before PHP 8.4 the vendor autoloader
+     * itself calls it (symfony/polyfill-php84, a Laravel dependency), so no script could start without it.
+     *
+     * @return iterable<string, array{list<string>}>
+     */
     public static function disabled(): iterable
     {
         $curl = get_extension_funcs('curl');
         yield 'curl_multi_init' => [['curl_multi_init']];
-        yield 'every curl function' => [$curl === false ? [] : $curl];
+        yield 'every curl function' => [array_values(array_diff($curl === false ? [] : $curl, ['curl_version']))];
     }
 
     /** @param list<string> $functions */
