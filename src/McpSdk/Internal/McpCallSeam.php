@@ -8,6 +8,7 @@ use AgentCat\Internal\Engine\CallContext;
 use AgentCat\Internal\Engine\CallSeam;
 use AgentCat\Internal\Engine\Observed;
 use AgentCat\Internal\Engine\ThrowableStash;
+use AgentCat\Internal\Json\JsonTree;
 use Mcp\Schema\JsonRpc\Error;
 use Mcp\Schema\JsonRpc\Response;
 use Mcp\Schema\Request\CallToolRequest;
@@ -49,7 +50,7 @@ final class McpCallSeam implements CallSeam
     #[\Override]
     public function arguments(): mixed
     {
-        return Trees::arguments($this->request->arguments);
+        return JsonTree::object($this->request->arguments);
     }
 
     #[\Override]

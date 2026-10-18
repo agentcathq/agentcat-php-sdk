@@ -73,12 +73,6 @@ final class McpSdkAdapter
         return $signals;
     }
 
-    /** The signals, comma-joined (TS `fingerprintServerShape`); empty when none applies. */
-    public static function fingerprint(object $server): string
-    {
-        return implode(',', self::signals($server));
-    }
-
     public static function version(): string
     {
         return SdkVersion::installed('mcp/sdk') ?? 'unknown';

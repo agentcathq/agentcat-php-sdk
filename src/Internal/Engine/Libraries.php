@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AgentCat\Internal\Engine;
 
+use AgentCat\LaravelMcp\LaravelMcpLibrary;
 use AgentCat\McpSdk\McpSdkLibrary;
 
 /**
@@ -17,7 +18,7 @@ final class Libraries
     /** @return list<Library> */
     public static function all(): array
     {
-        return [new McpSdkLibrary()];
+        return [new McpSdkLibrary(), new LaravelMcpLibrary()];
     }
 
     public static function for(object $server): ?Library
