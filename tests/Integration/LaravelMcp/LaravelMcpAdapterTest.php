@@ -255,14 +255,14 @@ final class LaravelMcpAdapterTest extends LaravelTestCase
     }
 
     /**
-     * Symfony refuses an invalid `Host` header, which the client controls: no HTTP context, and no compatibility line
+     * Symfony refuses an invalid method override, which the client controls: no HTTP context, and no compatibility line
      * (Task 5 review minor 2).
      */
     public function testARequestLaravelCannotReadHasNoHttpContextAndLogsNothing(): void
     {
         $logger = new MemoryLogger();
         Log::setLogger($logger);
-        $server = $this->conformanceServer(new HttpTransport(Request::create('/mcp', 'POST', server: ['HTTP_HOST' => 'bad host!'])));
+        $server = $this->conformanceServer(new HttpTransport(Request::create('/mcp', 'POST', server: ['HTTP_X_HTTP_METHOD_OVERRIDE' => 'NOT A METHOD'])));
 
         $this->assertNull((LaravelMcpAdapter::httpContext($server))());
         $this->assertSame([], $logger->records);

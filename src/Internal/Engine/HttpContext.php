@@ -66,8 +66,13 @@ final readonly class HttpContext
         return $info;
     }
 
-    /** @param array<array-key, mixed> $server */
-    private static function url(array $server): ?string
+    /**
+     * The full URL as a web server passes it to PHP: the scheme `HTTPS` gives, the `HTTP_HOST` and the raw
+     * `REQUEST_URI`, query and trailing slash as sent. Null without a host (C15).
+     *
+     * @param array<array-key, mixed> $server
+     */
+    public static function url(array $server): ?string
     {
         $host = $server['HTTP_HOST'] ?? null;
         if (!is_string($host) || $host === '') {

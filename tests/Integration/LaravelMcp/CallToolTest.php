@@ -215,8 +215,25 @@ final class CallToolTest extends LaravelTestCase
         $this->assertSame('http://localhost/mcp/conformance', JsonAssert::at($info, 'url'));
     }
 
-    /** Task 5 review minor 2: the client controls the `Host` header; Symfony refuses an invalid one. */
-    public function testAnInvalidHostHeaderCostsTheHttpContextOnly(): void
+    /** Task 5 review minor 2: the client controls the headers; Symfony refuses an invalid method override. */
+    public function testAnInvalidMethodOverrideCostsTheHttpContextOnly(): void
+    {
+        $fixture = new LaravelTrackingFixture();
+        $headers = ['X-HTTP-Method-Override' => 'NOT A METHOD'];
+        $twin = (new LaravelHarness(ConformanceServer::class))->callTool('echo', ['msg' => 'hi', 'session_id' => self::SESSION], headers: $headers);
+
+        $answer = (new LaravelHarness(ConformanceServer::class, $fixture->tracker()))->callTool('echo', ['msg' => 'hi', 'session_id' => self::SESSION], headers: $headers);
+
+        $this->assertEquals($twin, $answer);
+        $extra = JsonAssert::at($fixture->event()->parameters, 'extra');
+        $this->assertInstanceOf(\stdClass::class, $extra);
+        $this->assertObjectNotHasProperty('requestInfo', $extra);
+        $this->assertNotContains(LaravelMcpAdapter::COMPATIBILITY_LINE, $fixture->lines());
+    }
+
+    /** The URL is built like the SAPI reading's (Task 6 review): an invalid `Host` header is recorded as it was sent. */
+    #[Group('ac-02-43')]
+    public function testAnInvalidHostHeaderIsRecordedAsSent(): void
     {
         $fixture = new LaravelTrackingFixture();
         $twin = (new LaravelHarness(ConformanceServer::class))->callTool('echo', ['msg' => 'hi', 'session_id' => self::SESSION], headers: ['Host' => 'bad host!']);
@@ -224,9 +241,9 @@ final class CallToolTest extends LaravelTestCase
         $answer = (new LaravelHarness(ConformanceServer::class, $fixture->tracker()))->callTool('echo', ['msg' => 'hi', 'session_id' => self::SESSION], headers: ['Host' => 'bad host!']);
 
         $this->assertEquals($twin, $answer);
-        $extra = JsonAssert::at($fixture->event()->parameters, 'extra');
-        $this->assertInstanceOf(\stdClass::class, $extra);
-        $this->assertObjectNotHasProperty('requestInfo', $extra);
+        $info = JsonAssert::at($fixture->event()->parameters, 'extra', 'requestInfo');
+        $this->assertSame('http://bad host!/mcp/conformance', JsonAssert::at($info, 'url'));
+        $this->assertSame('bad host!', JsonAssert::at($info, 'headers', 'host'));
         $this->assertNotContains(LaravelMcpAdapter::COMPATIBILITY_LINE, $fixture->lines());
     }
 

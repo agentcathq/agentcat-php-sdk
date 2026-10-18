@@ -37,12 +37,38 @@ final class LaravelHarness
      */
     public function request(string $method, array $params = [], array $headers = []): \stdClass
     {
-        $body = json_encode(['jsonrpc' => '2.0', 'id' => $this->nextId++, 'method' => $method, 'params' => $params === [] ? new \stdClass() : $params], WireEncoder::FLAGS);
         $server = ['CONTENT_TYPE' => 'application/json', 'HTTP_HOST' => 'localhost'];
         foreach ($headers as $name => $value) {
             $server['HTTP_' . strtoupper(str_replace('-', '_', $name))] = $value;
         }
-        $transport = new HttpTransport(Request::create('/mcp/conformance', 'POST', server: $server, content: $body));
+
+        return $this->answer(Request::create('/mcp/conformance', 'POST', server: $server, content: $this->body($method, $params)));
+    }
+
+    /**
+     * One JSON-RPC request in an HTTP request that PHP received with exactly these server variables, as
+     * `Request::capture()` builds it under PHP-FPM; the whole answer.
+     *
+     * @param array<string, string> $server
+     * @param array<string, mixed> $params
+     */
+    public function requestFromServer(array $server, string $method, array $params = []): \stdClass
+    {
+        return $this->answer(new Request(server: $server, content: $this->body($method, $params)));
+    }
+
+    /**
+     * @param array<string, mixed> $params
+     */
+    private function body(string $method, array $params): string
+    {
+        return json_encode(['jsonrpc' => '2.0', 'id' => $this->nextId++, 'method' => $method, 'params' => $params === [] ? new \stdClass() : $params], WireEncoder::FLAGS);
+    }
+
+    /** Builds a new server on an `HttpTransport` over the request, and runs it. */
+    private function answer(Request $request): \stdClass
+    {
+        $transport = new HttpTransport($request);
         $instance = Container::getInstance()->make($this->serverClass, ['transport' => $transport]);
         Assert::assertInstanceOf(Server::class, $instance);
         if ($this->track instanceof \Closure) {

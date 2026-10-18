@@ -6,6 +6,7 @@ namespace AgentCat\Tests\Integration\Conformance;
 
 use AgentCat\Options;
 use AgentCat\Tests\Support\JsonAssert;
+use AgentCat\Tests\Support\LaravelMcp\ConformanceServer;
 use AgentCat\Tests\Support\LaravelMcp\LaravelConformanceHarness;
 use AgentCat\Tests\Support\LaravelMcp\LaravelHarness;
 use AgentCat\Tests\Support\LaravelMcp\LaravelStdioHarness;
@@ -162,5 +163,18 @@ final class LaravelMcpConformanceTest extends LaravelTestCase
     protected function fullPage(): ConformanceHarness
     {
         return LaravelConformanceHarness::fullPage();
+    }
+
+    /** One HTTP request to a tracked server, built from the server variables like `Request::capture()` does. */
+    #[\Override]
+    protected function requestInfoOf(array $server): \stdClass
+    {
+        $fixture = new LaravelTrackingFixture();
+        (new LaravelHarness(ConformanceServer::class, $fixture->tracker()))->requestFromServer($server, 'tools/call', ['name' => 'echo', 'arguments' => ['msg' => 'hi', 'session_id' => self::SESSION]]);
+
+        $info = JsonAssert::at($fixture->event()->parameters, 'extra', 'requestInfo');
+        $this->assertInstanceOf(\stdClass::class, $info);
+
+        return $info;
     }
 }

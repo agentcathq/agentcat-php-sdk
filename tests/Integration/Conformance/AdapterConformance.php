@@ -9,6 +9,7 @@ use AgentCat\Internal\Constants;
 use AgentCat\Internal\Tools\GetMoreTools;
 use AgentCat\Options;
 use AgentCat\Tests\Support\JsonAssert;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
@@ -42,6 +43,28 @@ trait AdapterConformance
      * size, and a page size of 15.
      */
     abstract protected function fullPage(): ConformanceHarness;
+
+    /**
+     * The `parameters.extra.requestInfo` that the leg records for one `tools/call` of `echo` (a supplied session) that
+     * a web server hands to PHP with these server variables. The mcp/sdk adapter reads the SAPI's variables, so its
+     * leg reads them as `fpm-fcgi` would give them; a leg whose library takes a request object builds it from them.
+     *
+     * @param array<string, string> $server
+     */
+    abstract protected function requestInfoOf(array $server): \stdClass;
+
+    /**
+     * Two authenticated requests to `/mcp/?b=2&a=1`: Basic as PHP-FPM passes it (with `PHP_AUTH_USER` and
+     * `PHP_AUTH_PW`), and Digest as php-cgi behind a rewrite passes it (without `PHP_AUTH_DIGEST`).
+     *
+     * @return iterable<string, array{array<string, string>}>
+     */
+    public static function authenticatedRequests(): iterable
+    {
+        $request = ['REQUEST_METHOD' => 'POST', 'REQUEST_URI' => '/mcp/?b=2&a=1', 'QUERY_STRING' => 'b=2&a=1', 'SCRIPT_NAME' => '/index.php', 'SERVER_NAME' => 'example.test', 'SERVER_PORT' => '80', 'HTTP_HOST' => 'example.test'];
+        yield 'Basic' => [$request + ['HTTP_AUTHORIZATION' => 'Basic dTpzZWNyZXQ=', 'CONTENT_TYPE' => 'application/json', 'PHP_AUTH_USER' => 'u', 'PHP_AUTH_PW' => 'secret']];
+        yield 'Digest' => [$request + ['HTTP_AUTHORIZATION' => 'Digest username="u", realm="r", nonce="n", uri="/mcp/?b=2&a=1", response="x"', 'CONTENT_TYPE' => 'application/json']];
+    }
 
     #[Group('ac-02-6')]
     public function testConformanceListing(): void
@@ -223,6 +246,23 @@ trait AdapterConformance
 
         $this->assertNotContains('session_id', $this->memberNames(JsonAssert::at($tools, 0, 'inputSchema', 'properties')));
         $this->assertSame([], $harness->events());
+    }
+
+    /**
+     * The HTTP request as the client sent it (D06, D34): the URL with its own query order and trailing slash, and the
+     * headers it sent, `Authorization` included, but none that a library makes up from them.
+     *
+     * @param array<string, string> $server
+     */
+    #[DataProvider('authenticatedRequests')]
+    #[Group('ac-02-43')]
+    public function testConformanceRequestInfo(array $server): void
+    {
+        $info = $this->requestInfoOf($server);
+
+        $this->assertSame('http://example.test/mcp/?b=2&a=1', JsonAssert::at($info, 'url'));
+        $this->assertSame(['host', 'authorization', 'content-type'], $this->memberNames(JsonAssert::at($info, 'headers')));
+        $this->assertSame($server['HTTP_AUTHORIZATION'] ?? null, JsonAssert::at($info, 'headers', 'authorization'));
     }
 
     /** Plan E1 header conflict 3: a reused object ID belongs to a dead server, so the new server's state replaces it. */

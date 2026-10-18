@@ -4,14 +4,19 @@ declare(strict_types=1);
 
 namespace AgentCat\Tests\Integration\Conformance;
 
+use AgentCat\Internal\Engine\HttpContext;
 use AgentCat\Internal\Engine\TrackedServers;
 use AgentCat\Internal\Logging\Log;
+use AgentCat\McpSdk\Internal\RequestReader;
 use AgentCat\Options;
 use AgentCat\Tests\Support\JsonAssert;
 use AgentCat\Tests\Support\McpSdk\McpSdkConformanceHarness;
 use AgentCat\Tests\Support\McpSdk\Tools;
 use AgentCat\Tests\Support\McpSdk\TrackingFixture;
 use Mcp\Schema\JsonRpc\Error;
+use Mcp\Schema\Request\CallToolRequest;
+use Mcp\Server\Session\InMemorySessionStore;
+use Mcp\Server\Session\Session;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
@@ -152,5 +157,18 @@ final class McpSdkConformanceTest extends TestCase
     protected function fullPage(): ConformanceHarness
     {
         return McpSdkConformanceHarness::fullPage();
+    }
+
+    /** The adapter's reader with what `HttpContext::capture()` gives under PHP-FPM for these server variables. */
+    #[\Override]
+    protected function requestInfoOf(array $server): \stdClass
+    {
+        $reader = new RequestReader(static fn(): ?HttpContext => HttpContext::fromServer('fpm-fcgi', $server));
+        $request = (new CallToolRequest('echo', ['msg' => 'hi', 'session_id' => self::SESSION]))->withId(1);
+
+        $info = JsonAssert::at($reader->read($request, new Session(new InMemorySessionStore()))->extra, 'requestInfo');
+        $this->assertInstanceOf(\stdClass::class, $info);
+
+        return $info;
     }
 }

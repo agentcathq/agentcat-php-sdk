@@ -111,8 +111,8 @@ final class LaravelMcpAdapter
      * conflict 9); null on stdio and once the server is gone. Holds the server weakly, like `serverInfo()`. Never
      * throws; the call is then recorded without HTTP context:
      * - when the transport or its request cannot be read (drift), and the compatibility line is logged once per server;
-     * - when Laravel cannot read the request (Symfony refuses an invalid `Host` header, which the client sends), and
-     *   nothing is logged.
+     * - when Laravel cannot read the request (Symfony refuses an invalid `X-HTTP-Method-Override` header, which the
+     *   client sends), and nothing is logged.
      *
      * @return \Closure(): ?HttpContext
      */
