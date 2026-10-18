@@ -255,9 +255,8 @@ trait AdapterConformance
         $this->assertSame(array_fill(0, 14, ['session_id', 'context']), array_map(fn(mixed $tool): array => $this->memberNames(JsonAssert::at($tool, 'inputSchema', 'properties')), array_slice($tools, 1, 14)));
     }
 
-    /** The library validates the tool's own arguments, after the strip (ac-02-17); the event records the failure. */
+    /** The library's validation of the tool's own arguments fails: the tool does not run, and the event records it. */
     #[Group('ac-05-E6')]
-    #[Group('ac-02-17')]
     public function testConformanceValidationError(): void
     {
         $harness = $this->conformance();
