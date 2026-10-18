@@ -132,6 +132,33 @@ final class InstallCommandTest extends LaravelTestCase
         $this->assertStringStartsWith($this->dir . '/config/', $this->configFile());
     }
 
+    #[MaximumDuration(500)]
+    public function testAnUnreadableEnvIsOneErrorLineAndNothingIsWritten(): void
+    {
+        if (posix_geteuid() === 0) {
+            self::markTestSkipped('File modes do not apply to root');
+        }
+        chmod($this->dir . '/.env', 0o200);
+
+        $this->install('agentcat:install', ['project' => self::PROJECT])
+            ->expectsOutputToContain('Cannot read ' . $this->dir . '/.env')
+            ->assertExitCode(1);
+
+        chmod($this->dir . '/.env', 0o600);
+        $this->assertSame("APP_NAME=Demo\n", file_get_contents($this->dir . '/.env'));
+        $this->assertSame("APP_NAME=\n", file_get_contents($this->dir . '/.env.example'));
+    }
+
+    #[MaximumDuration(500)]
+    public function testTheConfigOptionLeavesAnExistingFileAlone(): void
+    {
+        file_put_contents($this->configFile(), "<?php // mine\n");
+
+        $this->install('agentcat:install', ['project' => self::PROJECT, '--config' => true])->assertExitCode(0);
+
+        $this->assertSame("<?php // mine\n", file_get_contents($this->configFile()));
+    }
+
     /** @param array<string, mixed> $arguments */
     private function install(string $name, array $arguments = []): PendingCommand
     {

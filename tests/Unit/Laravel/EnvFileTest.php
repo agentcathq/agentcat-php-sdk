@@ -54,6 +54,31 @@ final class EnvFileTest extends TestCase
         $this->assertSame("A.B=v\nAXB=2\nA.B=3\n", file_get_contents($path));
     }
 
+    public function testSetReplacesAnExportedLineAndKeepsTheExport(): void
+    {
+        $path = $this->file("A=1\nexport  K=old\nB=2\n");
+
+        EnvFile::set($path, 'K', 'v');
+        EnvFile::ensure($path, 'K');
+
+        $this->assertSame("A=1\nexport  K=v\nB=2\n", file_get_contents($path));
+    }
+
+    public function testSetRefusesAnUnreadableFileAndWritesNothing(): void
+    {
+        if (posix_geteuid() === 0) {
+            self::markTestSkipped('File modes do not apply to root');
+        }
+        $path = $this->file("A=1\nK=old\n");
+        chmod($path, 0o200);
+
+        $e = Thrown::by(\RuntimeException::class, static fn() => EnvFile::set($path, 'K', 'new'));
+        chmod($path, 0o600);
+
+        $this->assertSame('Cannot read ' . $path, $e->getMessage());
+        $this->assertSame("A=1\nK=old\n", file_get_contents($path));
+    }
+
     public function testSetAppendsOnANewLine(): void
     {
         $path = $this->file('APP_NAME=Demo');

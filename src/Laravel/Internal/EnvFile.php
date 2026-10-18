@@ -13,13 +13,13 @@ namespace AgentCat\Laravel\Internal;
  */
 final class EnvFile
 {
-    /** Replaces the first `KEY=` line with `KEY=value`, or appends one. The value is written literally. */
+    /** Replaces the first `KEY=` line (an `export ` prefix stays) with `KEY=value`, or appends one. The value is written literally. */
     public static function set(string $path, string $key, string $value): void
     {
         $contents = self::read($path);
         $line = $key . '=' . $value;
         $count = 0;
-        $changed = preg_replace_callback(self::pattern($key), static fn(): string => $line, $contents, 1, $count);
+        $changed = preg_replace_callback(self::pattern($key), static fn(array $match): string => ($match[1] ?? '') . $line, $contents, 1, $count);
         if ($changed === null || $count === 0) {
             $changed = self::append($contents, $line);
         }
@@ -42,14 +42,20 @@ final class EnvFile
 
     private static function pattern(string $key): string
     {
-        return '/^' . preg_quote($key, '/') . '=[^\r\n]*/m';
+        return '/^(export[ \t]+)?' . preg_quote($key, '/') . '=[^\r\n]*/m';
     }
 
     private static function read(string $path): string
     {
-        $contents = is_file($path) ? @file_get_contents($path) : '';
+        if (!is_file($path)) {
+            return '';
+        }
+        $contents = @file_get_contents($path);
+        if ($contents === false) {
+            throw new \RuntimeException('Cannot read ' . $path); // never write over a file whose lines we cannot see
+        }
 
-        return $contents === false ? '' : $contents;
+        return $contents;
     }
 
     private static function append(string $contents, string $line): string
