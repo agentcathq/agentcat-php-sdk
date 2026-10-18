@@ -7,6 +7,7 @@ namespace AgentCat\Laravel;
 use AgentCat\AgentCat;
 use AgentCat\Client;
 use AgentCat\Internal\Support\TestMode;
+use AgentCat\Laravel\Console\InstallCommand;
 use AgentCat\Laravel\Internal\AfterRequest;
 use AgentCat\Laravel\Internal\ServerTracker;
 use Illuminate\Contracts\Container\Container;
@@ -32,6 +33,9 @@ final class AgentCatServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->publishes([self::CONFIG => $this->app->configPath('agentcat.php')], 'agentcat-config');
+        if ($this->app->runningInConsole()) {
+            $this->commands([InstallCommand::class]);
+        }
         // `agentcat.enabled` decides for every client, the shared one too, before AGENTCAT_ENABLED, which a cached
         // configuration hides (header conflict 12). Unset or unknown: no switch. A fake still records.
         TestMode::configure(TestMode::word($this->app->make('config')->get('agentcat.enabled')));
