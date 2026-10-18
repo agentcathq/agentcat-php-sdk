@@ -44,8 +44,11 @@ final readonly class Options
      *        AgentCat to find broken installs. The lines can contain session IDs, actor IDs, tool names and error messages.
      *        The first track() in the process decides. DISABLE_DIAGNOSTICS also turns them off, or on with false; they are
      *        off in test environments.
-     * @param bool $disableSignalHandlers Does not install the SIGTERM and SIGINT handlers that deliver queued events before
-     *        the process ends. Use it when your application installs its own handlers. Default: false.
+     * @param bool $disableSignalHandlers Keeps AgentCat from installing its SIGTERM and SIGINT handlers in CLI servers, so a
+     *        signal ends the process as it did before, without the last delivery. Needed when the process must keep an
+     *        ignored signal that it inherited. Applies only until the handlers are installed, at the first event or log
+     *        line: set it on the first track() of the process. It is process-wide, and the first track() that installs the
+     *        handlers decides; a later call with the switch only logs a warning. Default: false.
      */
     public function __construct(
         public bool $enableReportMissing = true,

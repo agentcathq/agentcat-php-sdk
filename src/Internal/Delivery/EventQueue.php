@@ -61,6 +61,8 @@ final class EventQueue
 
     private bool $accepting = true;
 
+    private bool $signalWarningLogged = false;
+
     /** True while `pump()` or `flush()` runs: guards against re-entrant calls from hooks and exporters. */
     private bool $busy = false;
 
@@ -113,6 +115,15 @@ final class EventQueue
     public function disableSignalHandlers(): bool
     {
         return $this->signalDrain?->disable() ?? true;
+    }
+
+    /** True once per queue (one per process for the global queue): for the "ignored" warning of `disableSignalHandlers`. */
+    public function claimSignalHandlersWarning(): bool
+    {
+        $first = !$this->signalWarningLogged;
+        $this->signalWarningLogged = true;
+
+        return $first;
     }
 
     /** Tests only: replaces the global queue; null makes `global()` build a new one. */

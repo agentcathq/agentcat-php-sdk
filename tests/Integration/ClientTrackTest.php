@@ -112,7 +112,7 @@ final class ClientTrackTest extends TestCase
     }
 
     #[RequiresPhpExtension('pcntl')]
-    public function testTrackWarnsOncePerCallWhenTheSignalHandlersAreInstalledAlready(): void
+    public function testTrackWarnsOncePerProcessWhenTheSignalHandlersAreInstalledAlready(): void
     {
         $queue = new EventQueue(transport: $this->transport, signalDrain: $this->installedDrain());
         $client = new Client(ClientSeams::of($queue, static fn(): bool => true));
@@ -121,7 +121,7 @@ final class ClientTrackTest extends TestCase
         $client->track(TrackingFixture::builder(), self::PROJECT, new Options(disableSignalHandlers: true));
         $client->track(TrackingFixture::builder(), self::PROJECT);
 
-        $this->assertCount(2, array_keys($this->logger->messages(), self::SIGNALS_INSTALLED, true));
+        $this->assertCount(1, array_keys($this->logger->messages(), self::SIGNALS_INSTALLED, true));
     }
 
     #[RequiresPhpExtension('pcntl')]

@@ -316,13 +316,16 @@ final class SignalDrainTest extends TestCase
     public function testDisableBeforeInstallKeepsTheHandlersAsTheyWere(): void
     {
         $before = pcntl_signal_get_handler(\SIGTERM);
+        $beforeInt = pcntl_signal_get_handler(\SIGINT);
+        $async = pcntl_async_signals();
         $drain = new SignalDrain(fn(): EventQueue => $this->queue, static function (int $signal): void {}, static fn(string $f): bool => true, 'cli');
 
         $this->assertTrue($drain->disable());
         $drain->install();
 
         $this->assertSame($before, pcntl_signal_get_handler(\SIGTERM));
-        $this->assertSame(\SIG_DFL, pcntl_signal_get_handler(\SIGINT));
+        $this->assertSame($beforeInt, pcntl_signal_get_handler(\SIGINT));
+        $this->assertSame($async, pcntl_async_signals(), 'the switch leaves the async-signal mode alone');
     }
 
     #[RequiresPhpExtension('pcntl')]

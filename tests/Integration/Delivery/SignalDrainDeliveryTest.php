@@ -115,6 +115,19 @@ final class SignalDrainDeliveryTest extends TestCase
         $this->assertSame([], $this->resourceNames($base));
     }
 
+    #[MaximumDuration(10000)]
+    public function testWithTheHandlersDisabledANormalExitStillDeliversThroughTheShutdownFunction(): void
+    {
+        $base = $this->collector()->scenario();
+        $process = $this->fixture($base, 'disabled-shutdown');
+
+        $process->run();
+
+        $this->assertSame(0, $process->getExitCode(), $process->getErrorOutput());
+        $this->assertSame("ending\n", $process->getOutput());
+        $this->assertSame(['signal-drain'], $this->resourceNames($base));
+    }
+
     #[Group('ac-03-11')]
     #[MaximumDuration(10000)]
     public function testWithACustomerHandlerTheQueueDrainsThenTheHandlerRunsAndTheProcessGoesOn(): void

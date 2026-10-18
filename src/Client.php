@@ -91,7 +91,7 @@ final readonly class Client
                 // TS: the first statement of track(), before the server is checked; the first call in the process decides.
                 Diagnostics::init($projectId, $options->disableDiagnostics, $this->publisher->queue());
             }
-            if ($options->disableSignalHandlers && !$this->publisher->queue()->disableSignalHandlers()) {
+            if ($options->disableSignalHandlers && !$this->publisher->queue()->disableSignalHandlers() && $this->publisher->queue()->claimSignalHandlersWarning()) {
                 Log::write('WARN: AgentCat signal handlers are already installed; disableSignalHandlers is ignored');
             }
             if (!McpSdkAdapter::supports($server)) {
