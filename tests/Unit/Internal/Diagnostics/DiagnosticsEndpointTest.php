@@ -19,8 +19,8 @@ final class DiagnosticsEndpointTest extends TestCase
     #[\Override]
     protected function setUp(): void
     {
-        $this->environment = Environment::clear('DIAGNOSTICS_ENDPOINT', 'DIAGNOSTICS_TOKEN');
-        putenv('DIAGNOSTICS_ENDPOINT=' . MockCollector::closedPortUrl()); // fail closed (ruling P8)
+        $this->environment = Environment::clear('AGENTCAT_DIAGNOSTICS_ENDPOINT', 'AGENTCAT_DIAGNOSTICS_TOKEN', 'DIAGNOSTICS_ENDPOINT', 'DIAGNOSTICS_TOKEN');
+        putenv('AGENTCAT_DIAGNOSTICS_ENDPOINT=' . MockCollector::closedPortUrl()); // fail closed (ruling P8)
     }
 
     #[\Override]
@@ -32,7 +32,7 @@ final class DiagnosticsEndpointTest extends TestCase
     #[Group('ac-06-54')]
     public function testWithoutVariablesTheDefaultCollectorAndTokenAreUsed(): void
     {
-        putenv('DIAGNOSTICS_ENDPOINT'); // this test posts nothing
+        putenv('AGENTCAT_DIAGNOSTICS_ENDPOINT'); // this test posts nothing
 
         $this->assertSame('https://otel.agentcat.com/v1/logs', DiagnosticsEndpoint::url());
         $this->assertSame('dgk_sdk_diag_3f9a2c7e1b8d4065af2e9c1d7b6a4f80', DiagnosticsEndpoint::token());
@@ -52,28 +52,42 @@ final class DiagnosticsEndpointTest extends TestCase
     #[Group('ac-06-55')]
     public function testTheVariableSetsTheCollector(string $base, string $expected): void
     {
-        putenv('DIAGNOSTICS_ENDPOINT=' . $base);
+        putenv('AGENTCAT_DIAGNOSTICS_ENDPOINT=' . $base);
 
         $this->assertSame($expected, DiagnosticsEndpoint::url());
     }
 
     public function testTheVariableIsReadFromTheServerArrayToo(): void
     {
-        putenv('DIAGNOSTICS_ENDPOINT');
-        $_SERVER['DIAGNOSTICS_ENDPOINT'] = 'https://fpm.example';
-        $_SERVER['DIAGNOSTICS_TOKEN'] = 'fpm';
+        putenv('AGENTCAT_DIAGNOSTICS_ENDPOINT');
+        $_SERVER['AGENTCAT_DIAGNOSTICS_ENDPOINT'] = 'https://fpm.example';
+        $_SERVER['AGENTCAT_DIAGNOSTICS_TOKEN'] = 'fpm';
 
         $this->assertSame('https://fpm.example/v1/logs', DiagnosticsEndpoint::url());
         $this->assertSame('fpm', DiagnosticsEndpoint::token());
     }
 
+    /** A10 (D50): the unprefixed names belong to the application; AgentCat never reads them. */
+    #[Group('ac-06-55')]
+    public function testTheUnprefixedVariablesOfTheApplicationAreIgnored(): void
+    {
+        putenv('AGENTCAT_DIAGNOSTICS_ENDPOINT');
+        putenv('DIAGNOSTICS_ENDPOINT=https://diagnostics.app.example');
+        putenv('DIAGNOSTICS_TOKEN=the-applications-own-secret');
+        $_SERVER['DIAGNOSTICS_ENDPOINT'] = $_ENV['DIAGNOSTICS_ENDPOINT'] = 'https://diagnostics.app.example';
+        $_SERVER['DIAGNOSTICS_TOKEN'] = $_ENV['DIAGNOSTICS_TOKEN'] = 'the-applications-own-secret';
+
+        $this->assertSame('https://otel.agentcat.com/v1/logs', DiagnosticsEndpoint::url());
+        $this->assertSame(Constants::DEFAULT_DIAGNOSTICS_TOKEN, DiagnosticsEndpoint::token());
+    }
+
     #[Group('ac-06-55')]
     public function testTheTokenVariableReplacesTheDefaultUnlessItIsEmpty(): void
     {
-        putenv('DIAGNOSTICS_TOKEN=t');
+        putenv('AGENTCAT_DIAGNOSTICS_TOKEN=t');
         $this->assertSame('t', DiagnosticsEndpoint::token());
 
-        putenv('DIAGNOSTICS_TOKEN=');
+        putenv('AGENTCAT_DIAGNOSTICS_TOKEN=');
         $this->assertSame(Constants::DEFAULT_DIAGNOSTICS_TOKEN, DiagnosticsEndpoint::token());
     }
 }

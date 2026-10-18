@@ -7,8 +7,9 @@ namespace AgentCat\Internal\Diagnostics;
 use AgentCat\Internal\Support\Js;
 
 /**
- * TypeScript `initDiagnostics`'s decision: the `disableDiagnostics` option, then `DISABLE_DIAGNOSTICS`, then the test
- * environment.
+ * TypeScript `initDiagnostics`'s decision: the `disableDiagnostics` option, then `AGENTCAT_DISABLE_DIAGNOSTICS`, then
+ * the test environment. While `AGENTCAT_DISABLE_DIAGNOSTICS` is blank, the unprefixed `DISABLE_DIAGNOSTICS` (the
+ * TypeScript name) can turn diagnostics off, never on (D50).
  *
  * @internal
  */
@@ -20,7 +21,7 @@ final class DiagnosticsSwitch
 
     public const string FORCE_ENABLED = 'force-enabled';
 
-    /** The words of `DISABLE_DIAGNOSTICS` that keep diagnostics on (trimmed, any case). */
+    /** The words of `AGENTCAT_DISABLE_DIAGNOSTICS` that keep diagnostics on (trimmed, any case). */
     private const array OFF = ['false', '0', 'no', 'off'];
 
     /** The words that turn diagnostics off in the `disableDiagnostics` option (`option()`). */
@@ -42,8 +43,9 @@ final class DiagnosticsSwitch
 
     /**
      * The `disableDiagnostics` option of a config array (`Options::fromArray()`), in the vocabulary of
-     * `DISABLE_DIAGNOSTICS`: a bool; int 1 or 0; `true`, `1`, `yes` or `on` (trimmed, any case) for true; `false`, `0`,
-     * `no`, `off` or blank for false. Null for any other value: the caller decides (the option is an opt-out).
+     * `AGENTCAT_DISABLE_DIAGNOSTICS`: a bool; int 1 or 0; `true`, `1`, `yes` or `on` (trimmed, any case) for true;
+     * `false`, `0`, `no`, `off` or blank for false. Null for any other value: the caller decides (the option is an
+     * opt-out).
      */
     public static function option(mixed $value): ?bool
     {
@@ -64,9 +66,17 @@ final class DiagnosticsSwitch
         return in_array($word, self::ON, true) ? true : null;
     }
 
-    public static function enabled(bool $disabledOption, ?string $raw, bool $testEnvironment): bool
+    /**
+     * @param ?string $variable `AGENTCAT_DISABLE_DIAGNOSTICS`
+     * @param ?string $fallback `DISABLE_DIAGNOSTICS`, read only while `$variable` is blank; it can only turn
+     *                          diagnostics off
+     */
+    public static function enabled(bool $disabledOption, ?string $variable, ?string $fallback, bool $testEnvironment): bool
     {
-        $flag = self::flag($raw);
+        $flag = self::flag($variable);
+        if ($flag === self::UNSET && self::flag($fallback) === self::DISABLED) {
+            $flag = self::DISABLED; // a false value there never turns diagnostics on
+        }
 
         return !$disabledOption && $flag !== self::DISABLED && ($flag === self::FORCE_ENABLED || !$testEnvironment);
     }

@@ -85,7 +85,7 @@ final class Diagnostics implements QueueCompanion
             }
             self::$initialized = true;
             $testEnvironment = $inTestEnvironment instanceof \Closure ? $inTestEnvironment() : TestMode::inTestEnvironment();
-            if (!DiagnosticsSwitch::enabled($disabled, Env::get('DISABLE_DIAGNOSTICS'), $testEnvironment)) {
+            if (!DiagnosticsSwitch::enabled($disabled, Env::get('AGENTCAT_DISABLE_DIAGNOSTICS'), Env::get('DISABLE_DIAGNOSTICS'), $testEnvironment)) {
                 return;
             }
             $diagnostics = new self(

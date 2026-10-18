@@ -46,7 +46,7 @@ final class HardenedHostTest extends TestCase
             [PHP_BINARY, '-d', 'disable_functions=php_uname,getmypid,gethostname', __DIR__ . '/../Fixtures/diagnostics-hardened.php', $result],
             null,
             // The script records its requests; a closed port in case it ever sends one.
-            ['HOME' => $this->dir, 'DIAGNOSTICS_ENDPOINT' => $collector, 'DISABLE_DIAGNOSTICS' => false, 'DIAGNOSTICS_TOKEN' => false, 'APP_ENV' => false],
+            ['HOME' => $this->dir, 'AGENTCAT_DIAGNOSTICS_ENDPOINT' => $collector, 'AGENTCAT_DISABLE_DIAGNOSTICS' => false, 'DISABLE_DIAGNOSTICS' => false, 'AGENTCAT_DIAGNOSTICS_TOKEN' => false, 'APP_ENV' => false],
         );
         $process->setTimeout(10);
 

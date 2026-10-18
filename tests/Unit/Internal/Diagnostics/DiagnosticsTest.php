@@ -32,6 +32,12 @@ final class DiagnosticsTest extends TestCase
 
     private const int WALL_MILLIS = 1_792_163_096_821;
 
+    /** Read by diagnostics (D50), and the unprefixed names an application can have for itself. */
+    private const array VARIABLES = [
+        'AGENTCAT_DISABLE_DIAGNOSTICS', 'AGENTCAT_DIAGNOSTICS_ENDPOINT', 'AGENTCAT_DIAGNOSTICS_TOKEN',
+        'DISABLE_DIAGNOSTICS', 'DIAGNOSTICS_ENDPOINT', 'DIAGNOSTICS_TOKEN', 'APP_ENV',
+    ];
+
     private Environment $environment;
 
     private MemoryLogger $logger;
@@ -47,8 +53,9 @@ final class DiagnosticsTest extends TestCase
     #[\Override]
     protected function setUp(): void
     {
-        $this->environment = Environment::clear('DISABLE_DIAGNOSTICS', 'DIAGNOSTICS_ENDPOINT', 'DIAGNOSTICS_TOKEN', 'APP_ENV');
-        putenv('DIAGNOSTICS_ENDPOINT=' . MockCollector::closedPortUrl()); // fail closed (ruling P8)
+        $this->environment = Environment::clear(...self::VARIABLES);
+        putenv('AGENTCAT_DIAGNOSTICS_ENDPOINT=' . MockCollector::closedPortUrl()); // fail closed (ruling P8)
+        putenv('DIAGNOSTICS_ENDPOINT=' . MockCollector::closedPortUrl()); // an application's own variable: never read (D50)
         Diagnostics::reset();
         $this->logger = new MemoryLogger();
         Log::setLogger($this->logger);
@@ -67,7 +74,7 @@ final class DiagnosticsTest extends TestCase
     #[Group('ac-06-54')]
     public function testAWarningLineIsPostedToTheDefaultCollector(): void
     {
-        putenv('DIAGNOSTICS_ENDPOINT'); // the default URL, with a recording channel (ruling F8)
+        putenv('AGENTCAT_DIAGNOSTICS_ENDPOINT'); // the default URL, with a recording channel (ruling F8)
         $this->init('proj_ABC');
         Log::write('Warning: something');
 
@@ -361,7 +368,7 @@ final class DiagnosticsTest extends TestCase
         };
 
         try {
-            putenv('DIAGNOSTICS_ENDPOINT=file://' . $dir . '/v1/logs');
+            putenv('AGENTCAT_DIAGNOSTICS_ENDPOINT=file://' . $dir . '/v1/logs');
             $this->queue = $this->queueOn($channel);
             $this->init('proj_ABC');
             Log::write('one');
@@ -385,7 +392,7 @@ final class DiagnosticsTest extends TestCase
     public static function anyVariable(): iterable
     {
         yield 'unset' => [null];
-        yield 'DISABLE_DIAGNOSTICS=false' => ['false'];
+        yield 'AGENTCAT_DISABLE_DIAGNOSTICS=false' => ['false'];
     }
 
     #[DataProvider('anyVariable')]
@@ -394,7 +401,7 @@ final class DiagnosticsTest extends TestCase
     public function testTheDisableOptionBuffersAndSendsNothing(?string $variable): void
     {
         if ($variable !== null) {
-            putenv('DISABLE_DIAGNOSTICS=' . $variable);
+            putenv('AGENTCAT_DISABLE_DIAGNOSTICS=' . $variable);
         }
         $this->init('p', disabled: true);
         Log::write('x');
@@ -410,12 +417,48 @@ final class DiagnosticsTest extends TestCase
     #[Group('ac-01-62')]
     public function testATrueVariableTurnsDiagnosticsOff(): void
     {
-        putenv('DISABLE_DIAGNOSTICS=true');
+        putenv('AGENTCAT_DISABLE_DIAGNOSTICS=true');
         $this->init('p');
         Log::write('x');
 
         $this->assertFalse(Diagnostics::enabled());
         $this->assertFalse($this->queue->hasWork());
+    }
+
+    /** A10 (D50): the unprefixed `DISABLE_DIAGNOSTICS` is only a fallback that can turn diagnostics off. */
+    #[Group('ac-06-49')]
+    public function testTheUnprefixedVariableCanOnlyTurnDiagnosticsOff(): void
+    {
+        putenv('DISABLE_DIAGNOSTICS=true');
+        $this->init('p');
+        $this->assertFalse(Diagnostics::enabled(), 'true turns them off');
+
+        Diagnostics::reset();
+        putenv('DISABLE_DIAGNOSTICS=false');
+        $this->init('p', testEnvironment: true);
+        $this->assertFalse(Diagnostics::enabled(), 'false never turns them on');
+
+        Diagnostics::reset();
+        putenv('DISABLE_DIAGNOSTICS=true');
+        putenv('AGENTCAT_DISABLE_DIAGNOSTICS=false');
+        $this->init('p', testEnvironment: true);
+        $this->assertTrue(Diagnostics::enabled(), 'the AgentCat name, when set, decides');
+    }
+
+    /** A10 (D50): an application's own `DIAGNOSTICS_ENDPOINT` and `DIAGNOSTICS_TOKEN` never reach AgentCat. */
+    #[Group('ac-06-55')]
+    public function testTheApplicationsOwnCollectorVariablesAreIgnored(): void
+    {
+        putenv('AGENTCAT_DIAGNOSTICS_ENDPOINT'); // the default URL, with a recording channel (ruling F8)
+        putenv('DIAGNOSTICS_ENDPOINT=https://diagnostics.app.example');
+        putenv('DIAGNOSTICS_TOKEN=the-applications-own-secret');
+        $this->init('proj_ABC');
+        Log::write('one');
+
+        $this->queue->shutdown();
+
+        $this->assertSame(['https://otel.agentcat.com/v1/logs'], $this->http->urls());
+        $this->assertSame('Bearer ' . Constants::DEFAULT_DIAGNOSTICS_TOKEN, $this->http->requests[0]->headers['Authorization'] ?? null);
     }
 
     #[Group('ac-06-53')]
@@ -443,12 +486,12 @@ final class DiagnosticsTest extends TestCase
     #[Group('ac-06-53')]
     public function testALaterDisablingCallIsSilentWhenDiagnosticsNeverStarted(): void
     {
-        putenv('DISABLE_DIAGNOSTICS=true');
+        putenv('AGENTCAT_DISABLE_DIAGNOSTICS=true');
         $this->init('p');
         $this->init('p', disabled: true);
 
         Diagnostics::reset();
-        putenv('DISABLE_DIAGNOSTICS');
+        putenv('AGENTCAT_DISABLE_DIAGNOSTICS');
         $this->init('p', testEnvironment: true);
         $this->init('p', disabled: true);
 
@@ -464,7 +507,7 @@ final class DiagnosticsTest extends TestCase
         $this->assertFalse(Diagnostics::enabled());
 
         Diagnostics::reset();
-        putenv('DISABLE_DIAGNOSTICS=false');
+        putenv('AGENTCAT_DISABLE_DIAGNOSTICS=false');
         $this->init('p', testEnvironment: true);
         $this->assertTrue(Diagnostics::enabled());
     }
@@ -481,7 +524,7 @@ final class DiagnosticsTest extends TestCase
     #[Group('ac-06-50')]
     public function testTheDefaultClocksStampTheRecordAndKeepTheWindowOpen(): void
     {
-        putenv('DISABLE_DIAGNOSTICS=false');
+        putenv('AGENTCAT_DISABLE_DIAGNOSTICS=false');
         Diagnostics::init('p', false, $this->queue);
         $before = (int) floor(microtime(true) * 1000);
         Log::write('x');
@@ -504,14 +547,14 @@ final class DiagnosticsTest extends TestCase
     public function testTheCollectorAndTokenAreReadAtEachFlush(): void
     {
         $this->init('proj_ABC');
-        putenv('DIAGNOSTICS_ENDPOINT=https://c.example/');
-        putenv('DIAGNOSTICS_TOKEN=t');
+        putenv('AGENTCAT_DIAGNOSTICS_ENDPOINT=https://c.example/');
+        putenv('AGENTCAT_DIAGNOSTICS_TOKEN=t');
         Log::write('one');
         $this->now += 2.0;
         $this->queue->pump();
 
-        putenv('DIAGNOSTICS_ENDPOINT=https://c.example/v1/logs//');
-        putenv('DIAGNOSTICS_TOKEN=');
+        putenv('AGENTCAT_DIAGNOSTICS_ENDPOINT=https://c.example/v1/logs//');
+        putenv('AGENTCAT_DIAGNOSTICS_TOKEN=');
         Log::write('two');
         $this->now += 2.0;
         $this->queue->pump();

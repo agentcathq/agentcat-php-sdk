@@ -47,7 +47,9 @@ final readonly class Options
      *        answers of exporters that failed, quoted. Each batch also carries your project ID (without one, an install
      *        ID: a hash of the host name and the install path), the OS type and version, the architecture, the PHP,
      *        AgentCat SDK and mcp/sdk versions, the process ID and APP_ENV. The first track() in the process decides.
-     *        DISABLE_DIAGNOSTICS also turns them off, or on with false; they are off in test environments.
+     *        AGENTCAT_DISABLE_DIAGNOSTICS also turns them off, or on with false; DISABLE_DIAGNOSTICS can only turn
+     *        them off. They are off in test environments. AGENTCAT_DIAGNOSTICS_ENDPOINT and AGENTCAT_DIAGNOSTICS_TOKEN
+     *        change where they go.
      * @param bool $disableSignalHandlers Keeps AgentCat from installing its SIGTERM and SIGINT handlers in CLI servers, so a
      *        signal ends the process as it did before, without the last delivery. Needed when the process must keep an
      *        ignored signal that it inherited. Applies only until the handlers are installed, at the first event or log
@@ -78,9 +80,10 @@ final readonly class Options
      * An unknown key, or a value of the wrong type, logs one warning and the default is used. The bool options
      * reject an explicit null too. A callable that is not a closure is converted to one.
      *
-     * `disableDiagnostics` also takes what an `.env` file gives: int 1 or 0, and the words of `DISABLE_DIAGNOSTICS`
-     * (`true`, `1`, `yes`, `on` turn diagnostics off; `false`, `0`, `no`, `off` and blank keep them on; trimmed, any
-     * case). Any other value, null included, logs the warning and turns diagnostics off: an opt-out fails closed.
+     * `disableDiagnostics` also takes what an `.env` file gives: int 1 or 0, and the words of
+     * `AGENTCAT_DISABLE_DIAGNOSTICS` (`true`, `1`, `yes`, `on` turn diagnostics off; `false`, `0`, `no`, `off` and
+     * blank keep them on; trimmed, any case). Any other value, null included, logs the warning and turns diagnostics
+     * off: an opt-out fails closed.
      *
      * @param array<array-key, mixed> $config
      */

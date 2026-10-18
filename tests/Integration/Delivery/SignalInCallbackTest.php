@@ -68,7 +68,7 @@ final class SignalInCallbackTest extends TestCase
         $process = new Process(
             [PHP_BINARY, __DIR__ . '/../Fixtures/signal-in-callback.php', $events, $side, (string) self::ROUNDS],
             null,
-            ['HOME' => $this->dir, 'DIAGNOSTICS_ENDPOINT' => MockCollector::closedPortUrl()],
+            ['HOME' => $this->dir, 'AGENTCAT_DIAGNOSTICS_ENDPOINT' => MockCollector::closedPortUrl()],
         );
         $process->setTimeout(20);
 
@@ -100,7 +100,7 @@ final class SignalInCallbackTest extends TestCase
         $process = new Process(
             [PHP_BINARY, __DIR__ . '/../Fixtures/exit-in-callback.php', $side],
             null,
-            ['HOME' => $this->dir, 'DIAGNOSTICS_ENDPOINT' => MockCollector::closedPortUrl()],
+            ['HOME' => $this->dir, 'AGENTCAT_DIAGNOSTICS_ENDPOINT' => MockCollector::closedPortUrl()],
         );
         $process->setTimeout(10);
 

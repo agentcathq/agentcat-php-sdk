@@ -252,7 +252,7 @@ final class StdioEndToEndTest extends TestCase
     {
         $diagnostics = $this->collector()->scenario();
         $startedAt = microtime(true);
-        $client = $this->start(env: ['DISABLE_DIAGNOSTICS' => 'false', 'DIAGNOSTICS_ENDPOINT' => $diagnostics]);
+        $client = $this->start(env: ['AGENTCAT_DISABLE_DIAGNOSTICS' => 'false', 'AGENTCAT_DIAGNOSTICS_ENDPOINT' => $diagnostics]);
         $this->handshake($client);
         $this->resultOf($client, 'tools/call', ['name' => 'echo', 'arguments' => ['msg' => 'one', 'session_id' => 'start']]);
 
@@ -295,9 +295,10 @@ final class StdioEndToEndTest extends TestCase
     }
 
     /**
-     * Starts this test's server with its own collector scenario and HOME. `AGENTCAT_API_URL` and `DIAGNOSTICS_ENDPOINT`
-     * are closed local ports, so an event without the scenario can never reach the AgentCat API, and diagnostics, which
-     * stay off by the inherited `DISABLE_DIAGNOSTICS=true`, can never reach AgentCat's collector.
+     * Starts this test's server with its own collector scenario and HOME. `AGENTCAT_API_URL` and
+     * `AGENTCAT_DIAGNOSTICS_ENDPOINT` are closed local ports, so an event without the scenario can never reach the
+     * AgentCat API, and diagnostics, which stay off by the inherited `AGENTCAT_DISABLE_DIAGNOSTICS=true`, can never reach
+     * AgentCat's collector.
      *
      * @param array{status: int, delayMs?: int, body?: string} $default the collector's answer to every event
      * @param array<string, string>                            $env     more environment variables of the server, applied last
@@ -310,7 +311,7 @@ final class StdioEndToEndTest extends TestCase
         $this->client = StdioMcpClient::start(__DIR__ . '/Fixtures/stdio-server.php', [
             'AGENTCAT_ENABLED' => 'true',
             'AGENTCAT_API_URL' => MockCollector::closedPortUrl(),
-            'DIAGNOSTICS_ENDPOINT' => MockCollector::closedPortUrl(),
+            'AGENTCAT_DIAGNOSTICS_ENDPOINT' => MockCollector::closedPortUrl(),
             'AGENTCAT_E2E_COLLECTOR' => $this->scenario,
             'HOME' => $this->home,
             ...$env,

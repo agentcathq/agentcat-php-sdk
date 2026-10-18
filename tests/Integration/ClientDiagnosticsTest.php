@@ -37,7 +37,7 @@ final class ClientDiagnosticsTest extends TestCase
 
     private Environment $environment;
 
-    /** `DIAGNOSTICS_ENDPOINT`: a closed local port (ruling P8). */
+    /** `AGENTCAT_DIAGNOSTICS_ENDPOINT`: a closed local port (ruling P8). */
     private string $endpoint = '';
 
     private MemoryLogger $logger;
@@ -45,9 +45,10 @@ final class ClientDiagnosticsTest extends TestCase
     #[\Override]
     protected function setUp(): void
     {
-        $this->environment = Environment::clear('DISABLE_DIAGNOSTICS', 'DIAGNOSTICS_ENDPOINT', 'DIAGNOSTICS_TOKEN', 'AGENTCAT_PROJECT_ID', 'AGENTCAT_API_URL', 'MCPCAT_API_URL', 'AGENTCAT_ENABLED', 'APP_ENV');
+        $this->environment = Environment::clear('AGENTCAT_DISABLE_DIAGNOSTICS', 'AGENTCAT_DIAGNOSTICS_ENDPOINT', 'AGENTCAT_DIAGNOSTICS_TOKEN', 'DISABLE_DIAGNOSTICS', 'DIAGNOSTICS_ENDPOINT', 'DIAGNOSTICS_TOKEN', 'AGENTCAT_PROJECT_ID', 'AGENTCAT_API_URL', 'MCPCAT_API_URL', 'AGENTCAT_ENABLED', 'APP_ENV');
         $this->endpoint = MockCollector::closedPortUrl();
-        putenv('DIAGNOSTICS_ENDPOINT=' . $this->endpoint); // fail closed: never otel.agentcat.com
+        putenv('AGENTCAT_DIAGNOSTICS_ENDPOINT=' . $this->endpoint); // fail closed: never otel.agentcat.com
+        putenv('DIAGNOSTICS_ENDPOINT=' . MockCollector::closedPortUrl()); // an application's own variable: never read (D50)
         Diagnostics::reset();
         TrackedServers::resetIncomplete();
         TrackedServers::resetSkipped();
@@ -70,7 +71,7 @@ final class ClientDiagnosticsTest extends TestCase
     #[Group('ac-01-60')]
     public function testTrackSetsDiagnosticsUpBeforeTheCompatibilityCheck(): void
     {
-        putenv('DISABLE_DIAGNOSTICS=false'); // PHPUnit is a test environment: force it on, as a customer CI could
+        putenv('AGENTCAT_DISABLE_DIAGNOSTICS=false'); // PHPUnit is a test environment: force it on, as a customer CI could
         $http = new RecordingHttpChannel();
         $queue = new EventQueue(transport: new RecordingTransport(), channel: $http);
         $client = new Client(ClientSeams::of($queue, static fn(): bool => true));
@@ -99,7 +100,7 @@ final class ClientDiagnosticsTest extends TestCase
     #[Group('ac-01-11')]
     public function testAFirstTrackWithDiagnosticsDisabledKeepsThemOff(): void
     {
-        putenv('DISABLE_DIAGNOSTICS=false');
+        putenv('AGENTCAT_DISABLE_DIAGNOSTICS=false');
         $client = $this->client(new RecordingHttpChannel());
 
         $client->track(TrackingFixture::builder(), self::PROJECT, new Options(disableDiagnostics: true));
@@ -113,7 +114,7 @@ final class ClientDiagnosticsTest extends TestCase
     #[Group('ac-01-11')]
     public function testALaterTrackCannotDisableDiagnosticsAndWarnsOnce(): void
     {
-        putenv('DISABLE_DIAGNOSTICS=false');
+        putenv('AGENTCAT_DISABLE_DIAGNOSTICS=false');
         $client = $this->client(new RecordingHttpChannel());
 
         $client->track(TrackingFixture::builder(), self::PROJECT);
@@ -127,7 +128,7 @@ final class ClientDiagnosticsTest extends TestCase
     /** D44 and spec conflict 9: the enabled gate runs before the diagnostics setup. */
     public function testADisabledClientNeverSetsDiagnosticsUp(): void
     {
-        putenv('DISABLE_DIAGNOSTICS=false');
+        putenv('AGENTCAT_DISABLE_DIAGNOSTICS=false');
         $client = new Client(ClientSeams::of(new EventQueue(transport: new RecordingTransport(), channel: new RecordingHttpChannel()), static fn(): bool => false));
 
         $client->track(TrackingFixture::builder(), self::PROJECT);
@@ -138,7 +139,7 @@ final class ClientDiagnosticsTest extends TestCase
     /** `AgentCat::fake()`'s client: no telemetry, so no diagnostics either. */
     public function testWithoutTheTelemetrySeamNoDiagnosticsAreSetUp(): void
     {
-        putenv('DISABLE_DIAGNOSTICS=false');
+        putenv('AGENTCAT_DISABLE_DIAGNOSTICS=false');
         $client = new Client(ClientSeams::of(new EventQueue(transport: new RecordingTransport(), channel: new RecordingHttpChannel()), static fn(): bool => true, telemetry: false));
 
         $client->track(TrackingFixture::builder(), self::PROJECT);
@@ -151,7 +152,7 @@ final class ClientDiagnosticsTest extends TestCase
     #[MaximumDuration(5000)]
     public function testOnlyTheSentEventLineCarriesTheActorId(): void
     {
-        putenv('DISABLE_DIAGNOSTICS=false');
+        putenv('AGENTCAT_DISABLE_DIAGNOSTICS=false');
         $collector = MockCollector::start();
 
         try {
@@ -191,7 +192,7 @@ final class ClientDiagnosticsTest extends TestCase
     #[Group('ac-06-62')]
     public function testShutdownSendsTheDiagnosticsOnceWithinItsBudget(): void
     {
-        putenv('DISABLE_DIAGNOSTICS=false');
+        putenv('AGENTCAT_DISABLE_DIAGNOSTICS=false');
         $transport = new RecordingTransport(); // its clock is simulated: waits jump ahead, nothing sleeps
         $http = new RecordingHttpChannel(complete: false);
         $queue = new EventQueue(transport: $transport, shutdownTimeoutSeconds: 1.0, channel: $http);

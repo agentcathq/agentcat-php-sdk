@@ -74,7 +74,7 @@ final class HttpEndToEndTest extends TestCase
             self::$server = BuiltInServer::start(__DIR__ . '/Fixtures/http-server.php', [
                 'AGENTCAT_ENABLED' => 'true',
                 'AGENTCAT_API_URL' => self::$fallbackUrl,
-                'DIAGNOSTICS_ENDPOINT' => MockCollector::closedPortUrl(), // a request without X-E2E-Diagnostics stays local
+                'AGENTCAT_DIAGNOSTICS_ENDPOINT' => MockCollector::closedPortUrl(), // a request without X-E2E-Diagnostics stays local
                 'HOME' => self::$dir . '/home',
                 'AGENTCAT_E2E_SESSIONS' => self::$dir . '/sessions',
                 'AGENTCAT_E2E_MARKERS' => self::$dir . '/markers',

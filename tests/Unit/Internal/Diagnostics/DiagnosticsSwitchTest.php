@@ -15,7 +15,7 @@ final class DiagnosticsSwitchTest extends TestCase
     #[Group('ac-01-60')]
     public function testWithoutOptionOrVariableOutsideTestsDiagnosticsAreOn(): void
     {
-        $this->assertTrue(DiagnosticsSwitch::enabled(false, null, false));
+        $this->assertTrue(DiagnosticsSwitch::enabled(false, null, null, false));
     }
 
     /** @return iterable<string, array{string}> */
@@ -32,8 +32,8 @@ final class DiagnosticsSwitchTest extends TestCase
     public function testATrueOrUnknownValueTurnsDiagnosticsOff(string $value): void
     {
         $this->assertSame(DiagnosticsSwitch::DISABLED, DiagnosticsSwitch::flag($value));
-        $this->assertFalse(DiagnosticsSwitch::enabled(false, $value, false));
-        $this->assertFalse(DiagnosticsSwitch::enabled(false, $value, true));
+        $this->assertFalse(DiagnosticsSwitch::enabled(false, $value, null, false));
+        $this->assertFalse(DiagnosticsSwitch::enabled(false, $value, null, true));
     }
 
     /** @return iterable<string, array{string}> */
@@ -50,8 +50,8 @@ final class DiagnosticsSwitchTest extends TestCase
     public function testAFalseValueTurnsDiagnosticsOnEvenUnderATestRunner(string $value): void
     {
         $this->assertSame(DiagnosticsSwitch::FORCE_ENABLED, DiagnosticsSwitch::flag($value));
-        $this->assertTrue(DiagnosticsSwitch::enabled(false, $value, true));
-        $this->assertTrue(DiagnosticsSwitch::enabled(false, $value, false));
+        $this->assertTrue(DiagnosticsSwitch::enabled(false, $value, null, true));
+        $this->assertTrue(DiagnosticsSwitch::enabled(false, $value, null, false));
     }
 
     /** @return iterable<string, array{?string}> */
@@ -68,14 +68,27 @@ final class DiagnosticsSwitchTest extends TestCase
     public function testABlankValueLetsTheTestEnvironmentDecide(?string $value): void
     {
         $this->assertSame(DiagnosticsSwitch::UNSET, DiagnosticsSwitch::flag($value));
-        $this->assertTrue(DiagnosticsSwitch::enabled(false, $value, false));
-        $this->assertFalse(DiagnosticsSwitch::enabled(false, $value, true));
+        $this->assertTrue(DiagnosticsSwitch::enabled(false, $value, null, false));
+        $this->assertFalse(DiagnosticsSwitch::enabled(false, $value, null, true));
+    }
+
+    /** A10 (D50): `DISABLE_DIAGNOSTICS`, the unprefixed name, is read only while `AGENTCAT_DISABLE_DIAGNOSTICS` is blank. */
+    #[Group('ac-06-49')]
+    public function testTheUnprefixedFallbackCanOnlyTurnDiagnosticsOff(): void
+    {
+        $this->assertFalse(DiagnosticsSwitch::enabled(false, null, 'true', false), 'true turns them off');
+        $this->assertFalse(DiagnosticsSwitch::enabled(false, ' ', 'anything', false), 'any other value too');
+        $this->assertFalse(DiagnosticsSwitch::enabled(false, null, 'false', true), 'false never turns them on');
+        $this->assertTrue(DiagnosticsSwitch::enabled(false, null, 'false', false), 'and does not turn them off');
+        $this->assertTrue(DiagnosticsSwitch::enabled(false, null, '', false));
+        $this->assertTrue(DiagnosticsSwitch::enabled(false, 'false', 'true', true), 'a set AGENTCAT_DISABLE_DIAGNOSTICS decides');
+        $this->assertFalse(DiagnosticsSwitch::enabled(false, 'true', 'false', false));
     }
 
     #[Group('ac-06-48')]
     public function testTheOptionWinsOverTheVariable(): void
     {
-        $this->assertFalse(DiagnosticsSwitch::enabled(true, 'false', false));
-        $this->assertFalse(DiagnosticsSwitch::enabled(true, null, false));
+        $this->assertFalse(DiagnosticsSwitch::enabled(true, 'false', null, false));
+        $this->assertFalse(DiagnosticsSwitch::enabled(true, null, null, false));
     }
 }
