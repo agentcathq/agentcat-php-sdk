@@ -14,17 +14,20 @@ use AgentCat\Internal\Transport\HttpRequest;
 
 /**
  * TypeScript diagnostics: every SDK log line (D07), as OTLP/JSON logs to AgentCat's collector. The first `init()` of
- * the process decides. Lines are buffered (1 000 at most, the oldest dropped) and posted as a background request
- * (`flush()` does not wait for it) at the first queue pass (`pump()`, `flush()`, `shutdown()`) once the oldest of them
- * is 2 s old, and once more when the queue shuts down, after the events (D47: under PHP-FPM one post per request, after
- * the response). Lines logged in the last shutdown pass, after `finish()`, are dropped unless a later `shutdown()`
- * runs. A failure is silent: a log line would feed the buffer it reports on.
+ * the process decides. Lines are buffered (1 000 at most, with at most 1 MiB of bodies; the oldest are dropped) and
+ * posted as a background request (`flush()` does not wait for it) at the first queue pass (`pump()`, `flush()`,
+ * `shutdown()`) once the oldest of them is 2 s old, and once more when the queue shuts down, after the events (D47:
+ * under PHP-FPM one post per request, after the response). Lines logged in the last shutdown pass, after `finish()`,
+ * are dropped unless a later `shutdown()` runs. A failure is silent: a log line would feed the buffer it reports on.
  *
  * @internal
  */
 final class Diagnostics implements QueueCompanion
 {
     public const int MAX_BUFFER = 1000;
+
+    /** The bodies of the buffered records, at most (1 MiB). */
+    public const int MAX_BUFFER_BYTES = 1_048_576;
 
     public const float BATCH_FLUSH_SECONDS = 2.0;
 
@@ -38,6 +41,9 @@ final class Diagnostics implements QueueCompanion
 
     /** @var list<array{timeUnixNano: string, severityNumber: int, severityText: string, body: array{stringValue: string}, attributes: list<array{key: string, value: array{stringValue: string}}>}> */
     private array $buffer = [];
+
+    /** The body bytes of `$buffer`. */
+    private int $bufferBytes = 0;
 
     /** The clock reading of the oldest buffered line; null while the buffer is empty. */
     private ?float $firstAt = null;
@@ -141,9 +147,13 @@ final class Diagnostics implements QueueCompanion
             $now = ($this->clock)();
             [$number, $text] = Severity::of($line);
             $millis = ($this->wallMillis)();
-            if (count($this->buffer) >= self::MAX_BUFFER) {
-                array_shift($this->buffer);
+            $bytes = strlen($line);
+            // The oldest go until this one fits; it is kept even when its body alone is over the budget.
+            while ($this->buffer !== [] && (count($this->buffer) >= self::MAX_BUFFER || $this->bufferBytes + $bytes > self::MAX_BUFFER_BYTES)) {
+                $oldest = array_shift($this->buffer);
+                $this->bufferBytes -= strlen($oldest['body']['stringValue']);
             }
+            $this->bufferBytes += $bytes;
             $this->buffer[] = [
                 'timeUnixNano' => $millis === 0 ? '0' : $millis . '000000',
                 'severityNumber' => $number,
@@ -169,6 +179,7 @@ final class Diagnostics implements QueueCompanion
         }
         $records = $this->buffer;
         $this->buffer = [];
+        $this->bufferBytes = 0;
         $this->firstAt = null;
 
         try {

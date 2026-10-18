@@ -10,6 +10,7 @@ use AgentCat\Internal\Diagnostics\Diagnostics;
 use AgentCat\Internal\Diagnostics\DiagnosticsAttributes;
 use AgentCat\Internal\Json\Json;
 use AgentCat\Internal\Logging\Log;
+use AgentCat\Internal\Logging\LogLine;
 use AgentCat\Internal\SdkVersion;
 use AgentCat\Internal\Transport\CurlHttpChannel;
 use AgentCat\Internal\Transport\HttpChannel;
@@ -137,6 +138,70 @@ final class DiagnosticsTest extends TestCase
         $this->assertCount(1000, $records);
         $this->assertStringEndsWith('] line 1', $this->text($records[0]));
         $this->assertStringEndsWith('] line 1000', $this->text($records[999] ?? null));
+    }
+
+    /** A6: the buffer holds at most 1 MiB of record bodies; the oldest records go first, silently. */
+    #[Group('ac-06-58')]
+    public function testTheBufferKeepsItsRecordBodiesWithinOneMebibyte(): void
+    {
+        $this->init('proj_ABC');
+        $text = str_repeat('x', 100_000);
+        for ($i = 0; $i < 12; ++$i) {
+            Log::write($i . ' ' . $text);
+        }
+
+        $this->queue->shutdown();
+
+        $records = $this->records(0);
+        $this->assertCount(10, $records, 'ten bodies of about 100 KB fit in 1 MiB, eleven do not');
+        $this->assertStringEndsWith('] 2 ' . $text, $this->text($records[0]));
+        $this->assertStringEndsWith('] 11 ' . $text, $this->text($records[9]));
+        $bytes = array_sum(array_map(fn(mixed $record): int => strlen($this->text($record)), $records));
+        $this->assertLessThanOrEqual(Diagnostics::MAX_BUFFER_BYTES, $bytes);
+        $this->assertCount(12, $this->logger->messages(), 'no line about the dropped records');
+    }
+
+    /** A6: records that fill the budget exactly all stay, one byte more drops the oldest; each batch starts a new budget. */
+    public function testTheByteBudgetHoldsExactlyOneMebibyte(): void
+    {
+        $this->init('proj_ABC');
+        $half = intdiv(Diagnostics::MAX_BUFFER_BYTES, 2) - strlen(LogLine::format(''));
+        Log::write(str_repeat('a', $half));
+        Log::write(str_repeat('b', $half));
+        $this->now += 2.0;
+        $this->queue->pump();
+        Log::write(str_repeat('c', $half));
+        Log::write(str_repeat('d', $half + 1));
+
+        $this->queue->shutdown();
+
+        $this->assertCount(2, $this->records(0), 'exactly 1 MiB of bodies fits');
+        $second = $this->records(1);
+        $this->assertCount(1, $second, 'one byte more does not');
+        $this->assertStringContainsString('] dd', $this->text($second[0]));
+    }
+
+    /** A6: a line larger than the whole budget is kept alone, until the next line drops it; each batch starts a new budget. */
+    public function testALineOverTheBudgetIsKeptAlone(): void
+    {
+        $this->init('proj_ABC');
+        Log::write('small');
+        Log::write('huge ' . str_repeat('x', Diagnostics::MAX_BUFFER_BYTES));
+        $this->now += 2.0;
+        $this->queue->pump();
+        Log::write('first after the batch');
+        Log::write('huge again ' . str_repeat('x', Diagnostics::MAX_BUFFER_BYTES));
+        Log::write('last');
+
+        $this->queue->shutdown();
+
+        $this->assertSame(2, $this->posts());
+        $first = $this->records(0);
+        $this->assertCount(1, $first);
+        $this->assertStringContainsString('] huge xxx', $this->text($first[0]));
+        $second = $this->records(1);
+        $this->assertCount(1, $second, 'each line drops the older records that do not fit beside it');
+        $this->assertStringEndsWith('] last', $this->text($second[0]));
     }
 
     /** Q3: no timer — a queue pass after the 2 s window posts; a pass before it does not. */

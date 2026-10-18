@@ -71,6 +71,58 @@ final class CurlHttpChannelUnitTest extends TestCase
         $this->assertSame([], $swallowed);
     }
 
+    /** A6: the waiting requests hold at most 16 MiB of bodies; the oldest go first, with the same line. */
+    public function testTheWaitingBodiesStayWithinTheirByteBudget(): void
+    {
+        $swallowed = [];
+        $channel = $this->refusingChannel($swallowed);
+        $mib = str_repeat('x', 1_048_576);
+        $ran = [];
+        for ($i = 0; $i < 18; ++$i) {
+            $channel->post(new HttpRequest('http://127.0.0.1:9/r' . $i, [], $mib), static function () use (&$ran, $i): void {
+                $ran[] = $i;
+            });
+        }
+
+        $this->assertSame(16, $channel->pending(), '16 MiB of bodies');
+        $channel->pump();
+        $this->assertSame(range(2, 17), $ran, 'r0 and r1, the oldest, were dropped');
+        $this->assertSame([sprintf(self::FULL, 2)], $this->logger->messages());
+
+        // The budget is free again once the requests have left the waiting list.
+        for ($i = 0; $i < 16; ++$i) {
+            $channel->post(new HttpRequest('http://127.0.0.1:9/s' . $i, [], $mib), static function (): void {});
+        }
+        $this->assertSame(16, $channel->pending());
+        $channel->pump();
+        $this->assertCount(1, $this->logger->messages(), 'nothing dropped');
+        $this->assertSame([], $swallowed);
+    }
+
+    /** A6: a body larger than the whole budget still waits, alone: the newest request is never dropped. */
+    public function testABodyOverTheBudgetWaitsAlone(): void
+    {
+        $swallowed = [];
+        $channel = $this->refusingChannel($swallowed);
+        $ran = [];
+        $record = static function (string $name) use (&$ran): \Closure {
+            return static function () use ($name, &$ran): void {
+                $ran[] = $name;
+            };
+        };
+
+        $channel->post(new HttpRequest('http://127.0.0.1:9/small', [], '{}'), $record('small'));
+        $channel->post(new HttpRequest('http://127.0.0.1:9/huge', [], str_repeat('x', CurlHttpChannel::MAX_WAITING_BYTES + 1)), $record('huge'));
+        $this->assertSame(1, $channel->pending());
+        $channel->post(new HttpRequest('http://127.0.0.1:9/next', [], '{}'), $record('next'));
+        $this->assertSame(1, $channel->pending());
+
+        $channel->pump();
+        $this->assertSame(['next'], $ran);
+        $this->assertSame([sprintf(self::FULL, 2)], $this->logger->messages());
+        $this->assertSame([], $swallowed);
+    }
+
     /** @return iterable<string, array{float, float}> */
     public static function badTimeouts(): iterable
     {

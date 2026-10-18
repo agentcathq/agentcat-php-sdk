@@ -13,8 +13,8 @@ use AgentCat\Internal\Support\ErrorText;
  * every throwable is swallowed (D32; tests see them through `$onSwallowed`): a failed request reaches only its
  * callback. `CurlMulti` runs the transfers.
  *
- * At most 1 000 requests wait; the oldest are dropped, with one line per pass. A call from inside one of its own
- * transfer callbacks (a signal handler) leaves the transfers alone (`CurlMulti`).
+ * At most 1 000 requests with at most 16 MiB of bodies wait; the oldest are dropped, with one line per pass. A call
+ * from inside one of its own transfer callbacks (a signal handler) leaves the transfers alone (`CurlMulti`).
  *
  * @internal
  */
@@ -23,6 +23,9 @@ final class CurlHttpChannel implements HttpChannel
     public const int MAX_CONCURRENT = 10;
 
     public const int MAX_WAITING = 1000;
+
+    /** The bodies of the waiting requests, at most (16 MiB). */
+    public const int MAX_WAITING_BYTES = 16_777_216;
 
     public const int MAX_BODY_BYTES = 65_536;
 
@@ -48,6 +51,9 @@ final class CurlHttpChannel implements HttpChannel
 
     /** @var list<array{request: HttpRequest, onDone: \Closure(HttpResponse): void}> */
     private array $waiting = [];
+
+    /** The body bytes of `$waiting`. */
+    private int $waitingBytes = 0;
 
     /** Requests dropped from a full queue since the last pass; `pump()` logs them in one line. */
     private int $dropped = 0;
@@ -82,11 +88,15 @@ final class CurlHttpChannel implements HttpChannel
         if (!$this->curl->usable()) {
             return; // dropped: nothing can send it
         }
-        if (count($this->waiting) >= self::MAX_WAITING) {
-            array_shift($this->waiting);
+        $bytes = strlen($request->body);
+        // The oldest go until this one fits; it is never dropped itself, even when its body alone is over the budget.
+        while ($this->waiting !== [] && (count($this->waiting) >= self::MAX_WAITING || $this->waitingBytes + $bytes > self::MAX_WAITING_BYTES)) {
+            $oldest = array_shift($this->waiting);
+            $this->waitingBytes -= strlen($oldest['request']->body);
             ++$this->dropped;
         }
         $this->waiting[] = ['request' => $request, 'onDone' => $onDone];
+        $this->waitingBytes += $bytes;
     }
 
     /** Also logs the requests dropped since the last pass, in one line. */
@@ -173,6 +183,7 @@ final class CurlHttpChannel implements HttpChannel
     {
         while (!$this->multi->executing() && $this->multi->count() < self::MAX_CONCURRENT && $this->waiting !== []) {
             $next = array_shift($this->waiting);
+            $this->waitingBytes -= strlen($next['request']->body);
             $transfer = new HttpTransfer($next['onDone'], $next['request']->background);
 
             try {
