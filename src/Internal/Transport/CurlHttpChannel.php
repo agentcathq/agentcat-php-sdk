@@ -13,6 +13,8 @@ use AgentCat\Internal\Support\ErrorText;
  * every throwable is swallowed (D32; tests see them through `$onSwallowed`): a failed request reaches only its
  * callback. `CurlMulti` runs the transfers.
  *
+ * A call from inside one of its own transfer callbacks (a signal handler) leaves the transfers alone (`CurlMulti`).
+ *
  * @internal
  */
 final class CurlHttpChannel implements HttpChannel
@@ -51,6 +53,8 @@ final class CurlHttpChannel implements HttpChannel
      * @param (\Closure(string, int): int)|null   $multiStatus    tests only: receives the function name and the CURLM code of each
      *                                                            `curl_multi_add_handle()` and `curl_multi_exec()` call, returns the code to act on
      * @param (\Closure(\Throwable): void)|null $onSwallowed    tests only: sees every throwable the channel swallows (D32); must not throw
+     * @param (\Closure(): void)|null          $onWrite        tests only: runs at the start of every write callback, inside
+     *                                                            `curl_multi_exec()`, where a signal handler can run too
      *
      * @throws \InvalidArgumentException for a timeout curl cannot take (`CurlSupport::timeoutMilliseconds()`)
      */
@@ -60,6 +64,7 @@ final class CurlHttpChannel implements HttpChannel
         ?\Closure $functionExists = null,
         ?\Closure $multiStatus = null,
         private readonly ?\Closure $onSwallowed = null,
+        private readonly ?\Closure $onWrite = null,
     ) {
         $this->connectTimeoutMs = CurlSupport::timeoutMilliseconds($connectTimeoutSeconds);
         $this->totalTimeoutMs = CurlSupport::timeoutMilliseconds($totalTimeoutSeconds);
@@ -93,9 +98,13 @@ final class CurlHttpChannel implements HttpChannel
         });
     }
 
+    /** 0 from inside one of its own transfer callbacks (a signal drain): nothing can progress there, so nothing can be waited for. */
     #[\Override]
     public function pending(bool $includeBackground = true): int
     {
+        if ($this->multi->executing()) {
+            return 0;
+        }
         if ($includeBackground) {
             return count($this->waiting) + $this->multi->count();
         }
@@ -148,10 +157,13 @@ final class CurlHttpChannel implements HttpChannel
         }
     }
 
-    /** Starts waiting requests while slots are free; the next collect() runs their first curl_multi_exec(). */
+    /**
+     * Starts waiting requests while slots are free; the next collect() runs their first curl_multi_exec(). From inside
+     * a transfer callback none starts: they wait for the next pump.
+     */
     private function launch(): void
     {
-        while ($this->multi->count() < self::MAX_CONCURRENT && $this->waiting !== []) {
+        while (!$this->multi->executing() && $this->multi->count() < self::MAX_CONCURRENT && $this->waiting !== []) {
             $next = array_shift($this->waiting);
             $transfer = new HttpTransfer($next['onDone'], $next['request']->background);
 
@@ -203,8 +215,12 @@ final class CurlHttpChannel implements HttpChannel
         foreach ($request->headers as $name => $value) {
             $headers[] = $name . ': ' . $value;
         }
+        $onWrite = $this->onWrite;
         $capture = [
-            CURLOPT_WRITEFUNCTION => static function (\CurlHandle $handle, string $data) use ($transfer): int {
+            CURLOPT_WRITEFUNCTION => static function (\CurlHandle $handle, string $data) use ($transfer, $onWrite): int {
+                if ($onWrite instanceof \Closure) {
+                    $onWrite();
+                }
                 // Up to MAX_BODY_BYTES are kept; the rest is read and dropped.
                 $transfer->body .= substr($data, 0, self::MAX_BODY_BYTES - strlen($transfer->body));
 

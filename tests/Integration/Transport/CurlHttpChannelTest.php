@@ -240,6 +240,50 @@ final class CurlHttpChannelTest extends TestCase
     }
 
     /**
+     * I2: a signal handler (the SIGTERM drain) that runs inside a write callback pumps, waits on and posts to the channel
+     * it interrupted. libcurl refuses every multi call from inside a callback; the nested calls leave the transfers
+     * alone, the new request waits for the next pump, and both complete.
+     */
+    #[MaximumDuration(3000)]
+    public function testAPumpFromInsideATransferCallbackLeavesTheChannelAlone(): void
+    {
+        $url = $this->collector()->scenario([], ['status' => 200, 'body' => str_repeat('x', 200_000)]);
+        $responses = [];
+        $record = static function (string $name) use (&$responses): \Closure {
+            return static function (HttpResponse $response) use ($name, &$responses): void {
+                $responses[$name] = [$response->status, $response->error];
+            };
+        };
+        $nested = [];
+        $channel = null;
+        $channel = $this->channel(onWrite: static function () use (&$channel, &$nested, $url, $record): void {
+            if ($nested !== [] || !$channel instanceof CurlHttpChannel) {
+                return;
+            }
+            $begin = hrtime(true);
+            $channel->post(new HttpRequest($url . '/b', [], ''), $record('b'));
+            $channel->pump();
+            $channel->waitForActivity(1.0);
+            $nested = [
+                'seconds' => (hrtime(true) - $begin) / 1e9,
+                'pending' => $channel->pending(),
+                'inTransfer' => $channel->inTransfer(),
+            ];
+        });
+        $channel->post(new HttpRequest($url . '/a', [], ''), $record('a'));
+
+        $this->assertTrue($this->drain($channel, 2.0));
+
+        ksort($responses);
+        $this->assertSame(['a' => [200, null], 'b' => [200, null]], $responses, 'no curl error, no lost transfer');
+        $this->assertSame(['seconds', 'pending', 'inTransfer'], array_keys($nested), 'the seam ran inside a write callback');
+        $this->assertLessThan(0.5, $nested['seconds'] ?? INF, 'the nested wait returned at once');
+        $this->assertSame(0, $nested['pending'] ?? null, 'inside a callback nothing can be waited for');
+        $this->assertSame(1, $nested['inTransfer'] ?? null, 'b waited: libcurl refuses an add from inside a callback');
+        $this->assertCount(2, $this->collector()->requests($url));
+    }
+
+    /**
      * php -S hands the 12 requests to its workers unevenly (3 to 8 at once): 200 ms each drains in 0.6-1.2 s. Its 8
      * workers cannot show the cap, so the channel's own count is checked on every pass.
      */
@@ -544,15 +588,19 @@ final class CurlHttpChannelTest extends TestCase
         $this->assertMatchesRegularExpression('/\AcURL error \d+: /', (string) $errors[0]);
     }
 
-    /** @param (\Closure(string, int): int)|null $multiStatus */
+    /**
+     * @param (\Closure(string, int): int)|null $multiStatus
+     * @param (\Closure(): void)|null           $onWrite
+     */
     private function channel(
         float $connectTimeoutSeconds = CurlTransport::CONNECT_TIMEOUT_SECONDS,
         float $totalTimeoutSeconds = CurlTransport::TOTAL_TIMEOUT_SECONDS,
         ?\Closure $multiStatus = null,
+        ?\Closure $onWrite = null,
     ): CurlHttpChannel {
         return new CurlHttpChannel($connectTimeoutSeconds, $totalTimeoutSeconds, multiStatus: $multiStatus, onSwallowed: function (\Throwable $error): void {
             $this->swallowed[] = $error;
-        });
+        }, onWrite: $onWrite);
     }
 
     private function drain(HttpChannel $channel, float $seconds): bool

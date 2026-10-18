@@ -4,12 +4,20 @@ declare(strict_types=1);
 
 namespace AgentCat\Internal\Transport;
 
+use AgentCat\Internal\Support\OnRelease;
+
 /**
  * The curl_multi engine of `CurlTransport` and `CurlHttpChannel`: one multi handle, made at the first use, and its
  * transfers, each with its caller's payload. It keeps the rules that stop a waiting caller from hanging: a transfer
  * counts before its handle is added (a signal drain that runs right after the add must see it), a refused handle
  * leaves the multi handle again, a failed `curl_multi_exec()` fails every transfer, and every finished handle leaves
  * the multi handle. The callers choose what a result means (retries, callbacks) and suppress PHP warnings.
+ *
+ * A signal handler runs between two opcodes, so also inside a PHP callback of `curl_multi_exec()` (the write and header
+ * functions of `CurlHttpChannel`; `CurlTransport` sets none). libcurl refuses every multi call from there
+ * (`CURLM_RECURSIVE_API_CALL`), and failing the transfers there would free a handle that libcurl still uses: PHP
+ * crashes when the callback returns. So while `curl_multi_exec()` runs (`executing()`), `run()` and `select()` return
+ * at once, and `CurlHttpChannel` starts no transfer: a SIGTERM drain in that callback leaves this handle alone.
  *
  * @template TPayload
  *
@@ -26,6 +34,9 @@ final class CurlMulti
     /** @var \Closure(string, int): int */
     private readonly \Closure $multiStatus;
 
+    /** True while `curl_multi_exec()` runs. */
+    private bool $executing = false;
+
     /**
      * @param (\Closure(string, int): int)|null $multiStatus tests only: receives the function name and the CURLM code of each
      *                                                       `curl_multi_add_handle()` and `curl_multi_exec()` call, returns the code to act on
@@ -37,7 +48,8 @@ final class CurlMulti
 
     /**
      * Starts a transfer with `$options`. Null when it runs; else the error text, and nothing of it is left behind.
-     * A throwable of curl_setopt_array() (a NUL byte in a string option) reaches the caller.
+     * A throwable of curl_setopt_array() (a NUL byte in a string option) reaches the caller. Not while `executing()`:
+     * libcurl refuses the add from inside a callback, so a caller keeps its request waiting then.
      *
      * @param array<int, mixed> $options
      * @param TPayload          $payload
@@ -68,14 +80,26 @@ final class CurlMulti
     /**
      * Runs the transfers, then hands each transfer this run finished to `$finished` with its handle and CURLE
      * result. When the multi handle cannot run them, every transfer goes to `$failed` with the error text first,
-     * so that nothing waits for them forever.
+     * so that nothing waits for them forever. While `executing()` (a call from inside a callback of the running
+     * `curl_multi_exec()`), it does nothing.
      *
      * @param \Closure(TPayload, \CurlHandle, int): void $finished
      * @param \Closure(TPayload, string): void           $failed
      */
     public function run(\Closure $finished, \Closure $failed): void
     {
-        $code = ($this->multiStatus)('curl_multi_exec', curl_multi_exec($this->multi(), $running));
+        if ($this->executing) {
+            return;
+        }
+        $this->executing = true;
+        // Cleared when released below, and also when exit() in a signal handler inside a callback unwinds this frame
+        // (no finally block runs then): the shutdown functions can use the handle again.
+        $executing = new OnRelease(function (): void {
+            $this->executing = false;
+        });
+        $result = curl_multi_exec($this->multi(), $running);
+        unset($executing);
+        $code = ($this->multiStatus)('curl_multi_exec', $result);
         if ($code !== CURLM_OK) {
             $transfers = $this->transfers;
             $this->transfers = [];
@@ -100,12 +124,24 @@ final class CurlMulti
         }
     }
 
-    /** Blocks until a transfer can progress or `$seconds` pass (0 or more, see `CurlSupport::waitSeconds()`). Does no work. */
+    /**
+     * Blocks until a transfer can progress or `$seconds` pass (0 or more, see `CurlSupport::waitSeconds()`). Does no
+     * work. While `executing()`, it returns at once: nothing progresses until the callback returns.
+     */
     public function select(float $seconds): void
     {
+        if ($this->executing) {
+            return;
+        }
         if (curl_multi_select($this->multi(), $seconds) === -1) {
             usleep(1000); // the wait failed: a caller's loop must not spin
         }
+    }
+
+    /** True while `curl_multi_exec()` runs: a call from inside one of its callbacks (a signal handler) must leave the handle alone. */
+    public function executing(): bool
+    {
+        return $this->executing;
     }
 
     /** Transfers in the multi handle. */
