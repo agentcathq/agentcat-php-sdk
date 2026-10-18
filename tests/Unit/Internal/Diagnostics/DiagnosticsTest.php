@@ -163,6 +163,43 @@ final class DiagnosticsTest extends TestCase
         $this->assertSame(2, $this->posts());
     }
 
+    /**
+     * I1: a collector that never answers (black-holed otel.agentcat.com). The flush pass posts the batch, as its window
+     * is over, and returns true at once: AgentCat's own request is neither counted nor waited for.
+     */
+    public function testFlushNeitherCountsNorWaitsForTheBatchItPosts(): void
+    {
+        $this->http = new RecordingHttpChannel(complete: false);
+        $this->queue = $this->queueOn($this->http);
+        $this->init('proj_ABC');
+        Log::write('a line');
+        $this->now += 2.0;
+
+        $this->assertTrue($this->queue->flush(0.3));
+
+        $this->assertSame(1, $this->posts(), 'the flush pass posted the batch');
+        $this->assertTrue(($this->http->requests[0] ?? null)?->background);
+        $this->assertSame([], $this->http->waits, 'and did not wait for it');
+        $this->assertSame(1, $this->http->pending());
+    }
+
+    /** D47: `shutdown()` still waits for the batch inside its budget. */
+    public function testShutdownWaitsForTheBatchItPosts(): void
+    {
+        $this->http = new RecordingHttpChannel(complete: false, onWait: function (): void {
+            $this->http->complete = true; // the collector answers during the first wait
+        });
+        $this->queue = $this->queueOn($this->http);
+        $this->init('proj_ABC');
+        Log::write('a line');
+
+        $this->queue->shutdown();
+
+        $this->assertSame(1, $this->posts());
+        $this->assertCount(1, $this->http->waits);
+        $this->assertSame(0, $this->http->pending(), 'the batch was sent');
+    }
+
     #[Group('ac-06-59')]
     public function testAnUnreachableCollectorDiscardsTheRecordsSilently(): void
     {
@@ -195,7 +232,7 @@ final class DiagnosticsTest extends TestCase
             public function pump(): void {}
 
             #[\Override]
-            public function pending(): int
+            public function pending(bool $includeBackground = true): int
             {
                 return 0;
             }
@@ -246,9 +283,9 @@ final class DiagnosticsTest extends TestCase
             }
 
             #[\Override]
-            public function pending(): int
+            public function pending(bool $includeBackground = true): int
             {
-                return $this->inner->pending();
+                return $this->inner->pending($includeBackground);
             }
 
             #[\Override]

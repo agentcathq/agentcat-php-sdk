@@ -114,6 +114,12 @@ final class CurlMulti
         return count($this->transfers);
     }
 
+    /** @return list<TPayload> the payloads of the transfers in the multi handle */
+    public function payloads(): array
+    {
+        return array_column($this->transfers, 'payload');
+    }
+
     private function multi(): \CurlMultiHandle
     {
         return $this->multi ??= curl_multi_init();

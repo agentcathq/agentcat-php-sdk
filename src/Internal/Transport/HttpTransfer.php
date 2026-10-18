@@ -18,6 +18,12 @@ final class HttpTransfer
     /** At most `CurlHttpChannel::MAX_BODY_BYTES` of the body. */
     public string $body = '';
 
-    /** @param \Closure(HttpResponse): void $onDone */
-    public function __construct(public readonly \Closure $onDone) {}
+    /**
+     * @param \Closure(HttpResponse): void $onDone
+     * @param bool                        $background `HttpRequest::$background`
+     */
+    public function __construct(
+        public readonly \Closure $onDone,
+        public readonly bool $background,
+    ) {}
 }

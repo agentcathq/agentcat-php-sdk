@@ -14,11 +14,11 @@ use AgentCat\Internal\Transport\HttpRequest;
 
 /**
  * TypeScript diagnostics: every SDK log line (D07), as OTLP/JSON logs to AgentCat's collector. The first `init()` of
- * the process decides. Lines are buffered (1 000 at most, the oldest dropped) and posted at the first queue pass
- * (`pump()`, `flush()`, `shutdown()`) once the oldest of them is 2 s old, and once more when the queue shuts down, after
- * the events (D47: under PHP-FPM one post per request, after the response). Lines logged in the last shutdown pass,
- * after `finish()`, are dropped unless a later `shutdown()` runs. A failure is silent: a log line would feed the buffer
- * it reports on.
+ * the process decides. Lines are buffered (1 000 at most, the oldest dropped) and posted as a background request
+ * (`flush()` does not wait for it) at the first queue pass (`pump()`, `flush()`, `shutdown()`) once the oldest of them
+ * is 2 s old, and once more when the queue shuts down, after the events (D47: under PHP-FPM one post per request, after
+ * the response). Lines logged in the last shutdown pass, after `finish()`, are dropped unless a later `shutdown()`
+ * runs. A failure is silent: a log line would feed the buffer it reports on.
  *
  * @internal
  */
@@ -173,7 +173,7 @@ final class Diagnostics implements QueueCompanion
 
         try {
             $this->queue->channel()->post(
-                new HttpRequest(DiagnosticsEndpoint::url(), ['Content-Type' => 'application/json', 'Authorization' => 'Bearer ' . DiagnosticsEndpoint::token()], DiagnosticsPayload::encode($this->resource, $records, SdkVersion::get())),
+                new HttpRequest(DiagnosticsEndpoint::url(), ['Content-Type' => 'application/json', 'Authorization' => 'Bearer ' . DiagnosticsEndpoint::token()], DiagnosticsPayload::encode($this->resource, $records, SdkVersion::get()), background: true),
                 static function (): void {}, // the answer is ignored (TS)
             );
         } catch (\Throwable) {

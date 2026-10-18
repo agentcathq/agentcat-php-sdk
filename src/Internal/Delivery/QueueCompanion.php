@@ -6,7 +6,8 @@ namespace AgentCat\Internal\Delivery;
 
 /**
  * Work that runs beside the events in the queue's passes (diagnostics): `EventQueue::attach()` adds one. Its HTTP
- * requests go through `EventQueue::channel()`. A thrown error is swallowed and never stops the queue.
+ * requests go through `EventQueue::channel()`, as background requests when `flush()` must not wait for them
+ * (`HttpRequest::$background`). A thrown error is swallowed and never stops the queue.
  *
  * @internal
  */

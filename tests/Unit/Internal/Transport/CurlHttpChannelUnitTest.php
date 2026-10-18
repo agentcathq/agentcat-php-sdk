@@ -214,5 +214,20 @@ final class CurlHttpChannelUnitTest extends TestCase
         $this->assertSame('https://example.test/v1/logs', $request->url);
         $this->assertSame(['b' => '2', 'a' => '1'], $request->headers);
         $this->assertSame('{}', $request->body);
+        $this->assertFalse($request->background, 'an exporter request by default');
     }
+
+    /** I1: `flush()` asks for the requests without the background ones (diagnostics). */
+    public function testPendingCanLeaveOutTheBackgroundRequests(): void
+    {
+        $channel = new CurlHttpChannel();
+        $channel->post(new HttpRequest('http://127.0.0.1:9/a', [], ''), static function (): void {});
+        $channel->post(new HttpRequest('http://127.0.0.1:9/b', [], '', background: true), static function (): void {});
+        $channel->post(new HttpRequest('http://127.0.0.1:9/c', [], '', background: true), static function (): void {});
+
+        $this->assertSame(3, $channel->pending());
+        $this->assertSame(3, $channel->pending(true));
+        $this->assertSame(1, $channel->pending(false));
+    }
+
 }

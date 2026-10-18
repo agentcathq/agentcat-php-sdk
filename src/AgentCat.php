@@ -84,7 +84,8 @@ final class AgentCat
      * @param float|null $timeoutSeconds The longest wait in seconds; null waits until nothing is left to send.
      *
      * @return bool True when nothing is left to send (every event delivered, or given up after its retries, and no
-     *              exporter request left; diagnostics batches are not counted); false when the timeout ended first.
+     *              exporter request left); false when the timeout ended first. AgentCat's own diagnostics are neither
+     *              counted nor waited for: they go out on their own, between requests and when the process ends.
      */
     public static function flush(?float $timeoutSeconds = null): bool
     {

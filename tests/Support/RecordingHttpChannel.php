@@ -17,7 +17,7 @@ final class RecordingHttpChannel implements HttpChannel
     /** @var list<float> the `$seconds` of every waitForActivity() call */
     public array $waits = [];
 
-    /** @var list<array{index: int, onDone: \Closure(HttpResponse): void}> */
+    /** @var list<array{index: int, onDone: \Closure(HttpResponse): void, background: bool}> */
     private array $held = [];
 
     private readonly HttpResponse $default;
@@ -39,7 +39,7 @@ final class RecordingHttpChannel implements HttpChannel
     public function post(HttpRequest $request, \Closure $onDone): void
     {
         $this->requests[] = $request;
-        $this->held[] = ['index' => count($this->requests) - 1, 'onDone' => $onDone];
+        $this->held[] = ['index' => count($this->requests) - 1, 'onDone' => $onDone, 'background' => $request->background];
     }
 
     #[\Override]
@@ -52,9 +52,16 @@ final class RecordingHttpChannel implements HttpChannel
     }
 
     #[\Override]
-    public function pending(): int
+    public function pending(bool $includeBackground = true): int
     {
-        return count($this->held);
+        $pending = 0;
+        foreach ($this->held as $held) {
+            if ($includeBackground || !$held['background']) {
+                ++$pending;
+            }
+        }
+
+        return $pending;
     }
 
     #[\Override]

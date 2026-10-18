@@ -222,6 +222,23 @@ final class CurlHttpChannelTest extends TestCase
         $this->assertSame(CurlHttpChannel::MAX_BODY_BYTES, strlen((string) $body));
     }
 
+    /** I1: a background request in transfer is left out of `pending(false)` too. */
+    #[MaximumDuration(3000)]
+    public function testABackgroundRequestInTransferIsLeftOutOfTheForegroundCount(): void
+    {
+        $url = $this->collector()->scenario([], ['status' => 200, 'delayMs' => 300]);
+        $channel = $this->channel();
+        $channel->post(new HttpRequest($url . '/v1/logs', [], '{}', background: true), static function (): void {});
+        $channel->post(new HttpRequest($url . '/batch', [], '{}'), static function (): void {});
+        $channel->post(new HttpRequest($url . '/v1/traces', [], '{}'), static function (): void {});
+        $channel->pump();
+
+        $this->assertSame(3, $channel->inTransfer());
+        $this->assertSame(3, $channel->pending());
+        $this->assertSame(2, $channel->pending(false));
+        $this->assertTrue($this->drain($channel, 2.0));
+    }
+
     /**
      * php -S hands the 12 requests to its workers unevenly (3 to 8 at once): 200 ms each drains in 0.6-1.2 s. Its 8
      * workers cannot show the cap, so the channel's own count is checked on every pass.

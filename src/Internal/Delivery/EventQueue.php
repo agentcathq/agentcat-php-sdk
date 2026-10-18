@@ -25,8 +25,8 @@ use AgentCat\Internal\Wire\WireMapper;
  * at most 10 000 wait (the oldest is dropped). No method throws.
  *
  * The queue also drives the side channel of the exporter and diagnostics requests (`channel()`) and its companions
- * (`attach()`): every pass ticks each companion (except the pass after `finish()`), then pumps the channel; `flush()`
- * and `shutdown()` wait for the channel inside the same timeout.
+ * (`attach()`): every pass ticks each companion (except the pass after `finish()`), then pumps the channel. `flush()`
+ * waits for the exporter requests inside its timeout, `shutdown()` for the background ones (diagnostics) too.
  *
  * @internal
  */
@@ -226,20 +226,21 @@ final class EventQueue
     }
 
     /**
-     * Blocking: delivers the events and the side channel's exporter and diagnostics requests until no event waits
-     * or is in flight and no side request is pending (true), or the timeout passes (false); null = no limit. A
+     * Blocking: delivers the events and the side channel's exporter requests until no event waits or is in flight
+     * and no exporter request is pending (true), or the timeout passes (false); null = no limit. The background
+     * requests (diagnostics) are neither counted nor waited for: they go on in later passes and at `shutdown()`. A
      * re-entrant call (from a hook or an exporter) returns false at once.
      */
     public function flush(?float $timeoutSeconds = null): bool
     {
-        return $this->deliverUntil(fn(): float => $timeoutSeconds === null ? INF : $this->transport->now() + $this->budget($timeoutSeconds));
+        return $this->deliverUntil(fn(): float => $timeoutSeconds === null ? INF : $this->transport->now() + $this->budget($timeoutSeconds), background: false);
     }
 
     /**
-     * Stops accepting events, then delivers the events and the side requests for at most the shutdown timeout
-     * (TypeScript `destroy()`). The first call fixes the deadline; a later call delivers only until that same deadline,
-     * and dispatches nothing once it has passed. So a signal drain and the shutdown function after it, or a signal
-     * during the shutdown function's flush, share one budget.
+     * Stops accepting events, then delivers the events and the side requests, background ones included, for at most
+     * the shutdown timeout (TypeScript `destroy()`). The first call fixes the deadline; a later call delivers only until
+     * that same deadline, and dispatches nothing once it has passed. So a signal drain and the shutdown function after
+     * it, or a signal during the shutdown function's flush, share one budget.
      *
      * With companions, the end of the budget is kept for them: 10 % of the shutdown timeout, at most 0.5 s. The
      * delivery stops when everything is delivered or only that reserve is left. Then each companion finishes
@@ -326,13 +327,14 @@ final class EventQueue
     }
 
     /**
-     * The delivery loop of `flush()` and `shutdown()`: done when no event waits or is in flight and the side channel is
-     * idle. A re-entrant call returns false at once.
+     * The delivery loop of `flush()` and `shutdown()`: done when no event waits or is in flight and no side request is
+     * pending (the background ones count only with `$background`). A re-entrant call returns false at once.
      *
-     * @param \Closure(): float $deadline read once, after the re-entrancy guard is taken
-     * @param bool              $tick     false after `finish()`: the passes tick no companion
+     * @param \Closure(): float $deadline   read once, after the re-entrancy guard is taken
+     * @param bool              $tick       false after `finish()`: the passes tick no companion
+     * @param bool              $background whether it waits for the background requests (diagnostics): `shutdown()` does
      */
-    private function deliverUntil(\Closure $deadline, bool $tick = true): bool
+    private function deliverUntil(\Closure $deadline, bool $tick = true, bool $background = true): bool
     {
         if ($this->busy) {
             return false;
@@ -343,7 +345,7 @@ final class EventQueue
             $until = $deadline();
             while (true) {
                 $this->pumpOnce($tick);
-                if ($this->waiting->isEmpty() && $this->transport->inFlight() === 0 && $this->channel->pending() === 0) {
+                if ($this->waiting->isEmpty() && $this->transport->inFlight() === 0 && $this->channel->pending($background) === 0) {
                     return true;
                 }
                 if ($this->transport->now() >= $until) {

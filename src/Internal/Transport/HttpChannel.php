@@ -23,8 +23,8 @@ interface HttpChannel
     /** Starts waiting requests, collects finished ones and runs their callbacks. Never blocks or throws. */
     public function pump(): void;
 
-    /** Requests waiting to start plus requests in transfer. */
-    public function pending(): int;
+    /** Requests waiting to start plus requests in transfer; without the background ones when `$includeBackground` is false. */
+    public function pending(bool $includeBackground = true): int;
 
     /** Blocks until a transfer can progress or `$seconds` pass, at most 1 s. Does no work. */
     public function waitForActivity(float $seconds): void;

@@ -760,6 +760,75 @@ final class EventQueueTest extends TestCase
         $this->assertTrue($queue->hasWork());
     }
 
+    /** I1: AgentCat's own requests (diagnostics) never hold `flush()` up or make it false; `shutdown()` sends them. */
+    #[Group('ac-06-63')]
+    public function testFlushNeitherCountsNorWaitsForABackgroundRequest(): void
+    {
+        $channel = new RecordingHttpChannel(complete: false);
+        $queue = new EventQueue(transport: new RecordingTransport(), channel: $channel);
+        $channel->post(new HttpRequest('http://collector.test/v1/logs', [], '{}', background: true), static function (): void {});
+
+        $this->assertTrue($queue->flush(1.0));
+
+        $this->assertSame([], $channel->waits, 'flush() did not wait for it');
+        $this->assertSame(1, $channel->pending());
+        $this->assertTrue($queue->hasWork(), 'it is still there for shutdown()');
+    }
+
+    #[Group('ac-06-63')]
+    public function testFlushStillWaitsForAnExporterRequestBesideABackgroundOne(): void
+    {
+        $channel = new RecordingHttpChannel(complete: false);
+        $queue = new EventQueue(transport: new RecordingTransport(), channel: $channel);
+        $channel->post(new HttpRequest('http://collector.test/v1/logs', [], '{}', background: true), static function (): void {});
+        $channel->post(new HttpRequest('http://exporter.test/a', [], '{}'), static function (): void {});
+
+        $this->assertFalse($queue->flush(1.0));
+        $this->assertNotSame([], $channel->waits);
+    }
+
+    #[Group('ac-06-63')]
+    public function testShutdownWaitsForABackgroundRequestInsideItsBudget(): void
+    {
+        $answered = [];
+        $channel = new RecordingHttpChannel(complete: false, onWait: static function () use (&$channel): void {
+            if ($channel instanceof RecordingHttpChannel) {
+                $channel->complete = true; // the collector answers during the first wait
+            }
+        });
+        $queue = new EventQueue(transport: new RecordingTransport(), channel: $channel);
+        $channel->post(new HttpRequest('http://collector.test/v1/logs', [], '{}', background: true), static function () use (&$answered): void {
+            $answered[] = 'diagnostics';
+        });
+
+        $queue->shutdown();
+
+        $this->assertSame(['diagnostics'], $answered);
+        $this->assertCount(1, $channel->waits);
+    }
+
+    /** The last pass after `finish()` waits for the background request that `finish()` posted. */
+    #[Group('ac-06-63')]
+    public function testShutdownWaitsForTheBackgroundRequestOfAFinishingCompanion(): void
+    {
+        $answered = [];
+        $channel = new RecordingHttpChannel(complete: false, onWait: static function () use (&$channel): void {
+            if ($channel instanceof RecordingHttpChannel) {
+                $channel->complete = true;
+            }
+        });
+        $queue = new EventQueue(transport: new RecordingTransport(), channel: $channel);
+        $queue->attach(new RecordingCompanion(static function () use ($channel, &$answered): void {
+            $channel->post(new HttpRequest('http://collector.test/v1/logs', [], '{}', background: true), static function () use (&$answered): void {
+                $answered[] = 'diagnostics';
+            });
+        }));
+
+        $queue->shutdown();
+
+        $this->assertSame(['diagnostics'], $answered);
+    }
+
     /**
      * @return iterable<string, array{float, list<float>, list<float>}> the timeout, then where each transport slice ends
      *                                                               and how long each channel slice is

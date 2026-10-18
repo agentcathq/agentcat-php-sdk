@@ -94,9 +94,20 @@ final class CurlHttpChannel implements HttpChannel
     }
 
     #[\Override]
-    public function pending(): int
+    public function pending(bool $includeBackground = true): int
     {
-        return count($this->waiting) + $this->multi->count();
+        if ($includeBackground) {
+            return count($this->waiting) + $this->multi->count();
+        }
+        $pending = 0;
+        foreach ($this->waiting as $waiting) {
+            $pending += $waiting['request']->background ? 0 : 1;
+        }
+        foreach ($this->multi->payloads() as $transfer) {
+            $pending += $transfer->background ? 0 : 1;
+        }
+
+        return $pending;
     }
 
     #[\Override]
@@ -142,7 +153,7 @@ final class CurlHttpChannel implements HttpChannel
     {
         while ($this->multi->count() < self::MAX_CONCURRENT && $this->waiting !== []) {
             $next = array_shift($this->waiting);
-            $transfer = new HttpTransfer($next['onDone']);
+            $transfer = new HttpTransfer($next['onDone'], $next['request']->background);
 
             try {
                 $error = $this->multi->open($this->options($next['request'], $transfer), $transfer);
