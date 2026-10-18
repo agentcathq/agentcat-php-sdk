@@ -87,7 +87,44 @@ final readonly class CallInterceptor
             throw $e;
         }
 
+        $later = $this->later($call, $seam, $result);
+        if ($later !== null) {
+            return $later;
+        }
+
         return $this->finish($call, $seam, $result, null);
+    }
+
+    /**
+     * A result that completes later (a stream) is finished when it completes; null for an ordinary result. A seam
+     * that fails here leaves the result to an ordinary finish.
+     *
+     * @template TResult
+     *
+     * @param CallSeam<TResult> $seam
+     * @param TResult $result
+     *
+     * @return TResult|null
+     */
+    private function later(TracedCall $call, CallSeam $seam, mixed $result): mixed
+    {
+        try {
+            return $seam->later(
+                $result,
+                fn(mixed $final): mixed => $this->finish($call, $seam, $final, null),
+                function (\Throwable $e) use ($call, $seam): void {
+                    try {
+                        $this->publishFailure($call, $e);
+                    } catch (\Throwable $failure) {
+                        Log::write(sprintf(self::POST_HANDLER_FAILED, $seam->toolName(), ErrorText::of($failure)));
+                    }
+                },
+            );
+        } catch (\Throwable $e) {
+            Log::write(sprintf(self::POST_HANDLER_FAILED, $seam->toolName(), ErrorText::of($e)));
+
+            return null;
+        }
     }
 
     /**

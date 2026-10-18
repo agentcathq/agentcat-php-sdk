@@ -5,21 +5,30 @@ declare(strict_types=1);
 namespace AgentCat\LaravelMcp;
 
 use AgentCat\Internal\Engine\CallInterceptor;
+use AgentCat\Internal\Engine\HttpContext;
 use AgentCat\Internal\Engine\Publisher;
+use AgentCat\Internal\Engine\ThrowableStash;
 use AgentCat\Internal\Engine\TrackedServer;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\SdkVersion;
 use AgentCat\Internal\Support\ErrorText;
 use AgentCat\Internal\Support\StrictErrors;
+use AgentCat\LaravelMcp\Internal\Access\HttpTransportAccess;
 use AgentCat\LaravelMcp\Internal\Access\ServerAccess;
+use AgentCat\LaravelMcp\Internal\Drift;
 use AgentCat\LaravelMcp\Internal\HandshakeClient;
+use AgentCat\LaravelMcp\Internal\LaravelHttpContext;
+use AgentCat\LaravelMcp\Internal\LaravelRequestReader;
 use AgentCat\LaravelMcp\Internal\MethodKey;
+use AgentCat\LaravelMcp\Internal\TrackedCallTool;
 use AgentCat\LaravelMcp\Internal\TrackedInitialize;
 use AgentCat\LaravelMcp\Internal\TrackedListTools;
 use Illuminate\Container\Container;
+use Illuminate\Http\Request;
 use Laravel\Mcp\Schema\Implementation;
 use Laravel\Mcp\Server;
 use Laravel\Mcp\Server\Contracts\Method;
+use Laravel\Mcp\Server\Transport\HttpTransport;
 
 /**
  * Detects and instruments laravel/mcp servers. AgentCat changes a server only through its public `addMethod()`: the
@@ -74,7 +83,8 @@ final class LaravelMcpAdapter
 
     /**
      * The server name and version, read when an event is published. Holds the server weakly: the tracking state must
-     * not keep a finished request's server alive. Unknown when they cannot be read.
+     * not keep a finished request's server alive. When they cannot be read (the server's `createContext()` fails or
+     * warns), they are unknown, and the compatibility line is logged once per server.
      *
      * @return \Closure(): array{0: ?string, 1: ?string}
      */
@@ -92,25 +102,66 @@ final class LaravelMcpAdapter
 
                 return [$implementation->name, $implementation->version];
             } catch (\Throwable) {
+                Drift::report($server);
+
                 return [null, null];
             }
         };
     }
 
     /**
-     * Points the server's `tools/list` and `initialize` entries at AgentCat's methods, which delegate to the classes
-     * the entries named. An entry that names no method class (a container key, another package's binding) stays as it
-     * is. Every read comes before the first change, so a read that throws leaves the server untouched.
+     * The HTTP request the server answers, read from its own transport when a call is recorded (plan E1 header
+     * conflict 9); null on stdio and once the server is gone. Holds the server weakly, like `serverInfo()`. When the
+     * transport or its request cannot be read (drift), the call is recorded without HTTP context, and the
+     * compatibility line is logged once per server. Never throws.
+     *
+     * @return \Closure(): ?HttpContext
+     */
+    public static function httpContext(Server $server): \Closure
+    {
+        $reference = \WeakReference::create($server);
+
+        return static function () use ($reference): ?HttpContext {
+            $server = $reference->get();
+            if (!$server instanceof Server) {
+                return null;
+            }
+            try {
+                // Warnings count as drift for the protected-member reads only, not for Laravel's own request methods.
+                $request = StrictErrors::run(static function () use ($server): ?Request {
+                    $transport = ServerAccess::transport($server);
+
+                    return $transport instanceof HttpTransport ? HttpTransportAccess::request($transport) : null;
+                });
+
+                return $request instanceof Request ? LaravelHttpContext::of($request) : null;
+            } catch (\Throwable) {
+                Drift::report($server);
+
+                return null;
+            }
+        };
+    }
+
+    /**
+     * Points the server's `tools/list`, `tools/call` and `initialize` entries at AgentCat's methods, which delegate to
+     * the classes the entries named. An entry that names no method class (a container key, another package's binding)
+     * stays as it is. Every read comes before the first change, so a read that throws leaves the server untouched.
      */
     public static function install(Server $server, TrackedServer $state, Publisher $publisher, CallInterceptor $interceptor): void
     {
         $methods = ServerAccess::methods($server);
         $list = self::entry($methods, 'tools/list');
+        $call = self::entry($methods, 'tools/call');
         $initialize = self::entry($methods, 'initialize');
         $container = Container::getInstance();
         $handshake = new HandshakeClient(); // one per server: the client of a legacy handshake, for its tool calls
         if ($list !== null) {
             self::point($server, $container, 'tools/list', new TrackedListTools($state, $list, $publisher));
+        }
+        if ($call !== null) {
+            $reader = new LaravelRequestReader(self::httpContext($server), $handshake);
+            self::point($server, $container, 'tools/call', new TrackedCallTool($state, $call, $list, $interceptor, $publisher, new ThrowableStash(), $reader));
         }
         if ($initialize !== null) {
             self::point($server, $container, 'initialize', new TrackedInitialize($initialize, $handshake));

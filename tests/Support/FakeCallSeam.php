@@ -32,6 +32,14 @@ final class FakeCallSeam implements CallSeam
 
     public ?\Throwable $replaceFailure = null;
 
+    /**
+     * What `later()` does with a result: null answers null (an ordinary result); a closure gets the result and the
+     * interceptor's two callbacks and returns the result in its place.
+     *
+     * @var (\Closure(\stdClass, \Closure(\stdClass): \stdClass, \Closure(\Throwable): void): \stdClass)|null
+     */
+    public ?\Closure $later = null;
+
     public function __construct(
         public string $name,
         public mixed $arguments,
@@ -118,6 +126,12 @@ final class FakeCallSeam implements CallSeam
         }
 
         return $this->listing;
+    }
+
+    #[\Override]
+    public function later(mixed $result, \Closure $complete, \Closure $fail): ?\stdClass
+    {
+        return $this->later instanceof \Closure ? ($this->later)($result, $complete, $fail) : null;
     }
 
     private function respond(): \stdClass

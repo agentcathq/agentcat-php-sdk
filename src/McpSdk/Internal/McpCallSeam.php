@@ -131,4 +131,11 @@ final class McpCallSeam implements CallSeam
 
         return $answer instanceof Response ? (Trees::listing($answer->result)[2] ?? null) : null;
     }
+
+    /** mcp/sdk answers are complete when `handle()` returns: a tool that waits suspends its fiber inside it. */
+    #[\Override]
+    public function later(mixed $result, \Closure $complete, \Closure $fail): null
+    {
+        return null;
+    }
 }

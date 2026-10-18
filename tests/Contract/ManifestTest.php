@@ -20,6 +20,8 @@ final class ManifestTest extends TestCase
             [
                 'Laravel\Mcp\Server::$methods',
                 'Laravel\Mcp\Server::$transport',
+                'Laravel\Mcp\Server\Methods\CallTool::handle(Laravel\Mcp\Transport\JsonRpcRequest $request, Laravel\Mcp\Server\ServerContext $context): Generator|Laravel\Mcp\Transport\JsonRpcResponse',
+                'Laravel\Mcp\Server\ToolInvoker::toErrorResponse(Throwable $e): Laravel\Mcp\Response',
                 'Laravel\Mcp\Server\Transport\HttpTransport::$request',
                 'Mcp\Schema\Result\CallToolResult::__construct(array $content, bool $isError = false, mixed $structuredContent = null, ?array $meta = null)',
                 'Mcp\Schema\Result\ListToolsResult::__construct(array $tools, ?string $nextCursor = null)',

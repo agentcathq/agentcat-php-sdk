@@ -22,8 +22,10 @@ final class ToolCalls
         return self::$calls[$tool] ?? [];
     }
 
+    /** Forgets every call, `CustomCallTool`'s too. */
     public static function reset(): void
     {
         self::$calls = [];
+        CustomCallTool::reset();
     }
 }

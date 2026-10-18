@@ -25,6 +25,6 @@ final readonly class TrackedInitialize implements Method
     {
         $this->handshake->record($request->params['clientInfo'] ?? null);
 
-        return Delegate::of($this->original)->handle($request, $context);
+        return Delegate::handle($this->original, $request, $context);
     }
 }

@@ -7,8 +7,6 @@ namespace AgentCat\LaravelMcp\Internal;
 use AgentCat\Internal\Engine\Publisher;
 use AgentCat\Internal\Engine\ToolListing;
 use AgentCat\Internal\Engine\TrackedServer;
-use AgentCat\Internal\Logging\Log;
-use AgentCat\Internal\Support\ErrorText;
 use Laravel\Mcp\Server\Contracts\Method;
 use Laravel\Mcp\Server\ServerContext;
 use Laravel\Mcp\Transport\JsonRpcRequest;
@@ -30,7 +28,7 @@ final readonly class TrackedListTools implements Method
     public function handle(JsonRpcRequest $request, ServerContext $context): iterable|JsonRpcResponse
     {
         $this->publisher->pump(); // stdio servers deliver between requests
-        $response = Delegate::of($this->original)->handle($request, $context); // throws pass unchanged (02 AC-10)
+        $response = Delegate::handle($this->original, $request, $context); // throws pass unchanged (02 AC-10)
         if (!$response instanceof JsonRpcResponse || array_key_exists('error', $response->content)) {
             return $response; // a stream or a JSON-RPC error passes unchanged, like the mcp/sdk adapter's
         }
@@ -44,7 +42,7 @@ final readonly class TrackedListTools implements Method
 
             return new JsonRpcResponse([...$response->content, 'result' => [...$result, 'tools' => LaravelTrees::native($tools)]]);
         } catch (\Throwable $e) {
-            Log::write('Warning: AgentCat tool-list injection failed; serving the original tool list unmodified - ' . ErrorText::message($e));
+            ToolListing::injectionFailed($e);
 
             return $response;
         }

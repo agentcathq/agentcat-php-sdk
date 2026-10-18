@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use Rector\Config\RectorConfig;
-use Rector\DeadCode\Rector\ClassMethod\RemoveUnusedPublicMethodParameterRector;
 use Rector\Php55\Rector\String_\StringClassNameToClassConstantRector;
 use Rector\PHPUnit\CodeQuality\Rector\ClassMethod\NoSetupWithParentCallOverrideRector;
 
@@ -25,8 +24,5 @@ return RectorConfig::configure()
         // Names test-runner classes as strings: PHPUnit and Pest are not dependencies of the SDK (D31). AfterRequest
         // names the Octane event class, which is not a dependency either.
         StringClassNameToClassConstantRector::class => [__DIR__ . '/src/Internal/Support/TestMode.php', __DIR__ . '/src/Laravel/Internal/AfterRequest.php'],
-        // LaravelMcpAdapter::install() keeps the parameters of Library::install(): it does not wire tools/call yet, and
-        // that wiring takes the call interceptor.
-        RemoveUnusedPublicMethodParameterRector::class => [__DIR__ . '/src/LaravelMcp/LaravelMcpAdapter.php'],
     ])
     ->withCache(__DIR__ . '/.cache/rector');

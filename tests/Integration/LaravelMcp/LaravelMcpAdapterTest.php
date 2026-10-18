@@ -7,11 +7,13 @@ namespace AgentCat\Tests\Integration\LaravelMcp;
 use AgentCat\Client;
 use AgentCat\Internal\ClientSeams;
 use AgentCat\Internal\Delivery\EventQueue;
+use AgentCat\Internal\Engine\HttpContext;
 use AgentCat\Internal\Engine\Libraries;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\SdkVersion;
 use AgentCat\LaravelMcp\Internal\Access\ServerAccess;
 use AgentCat\LaravelMcp\Internal\MethodKey;
+use AgentCat\LaravelMcp\Internal\TrackedCallTool;
 use AgentCat\LaravelMcp\Internal\TrackedInitialize;
 use AgentCat\LaravelMcp\Internal\TrackedListTools;
 use AgentCat\LaravelMcp\LaravelMcpAdapter;
@@ -22,16 +24,19 @@ use AgentCat\Tests\Support\LaravelMcp\LaravelTestCase;
 use AgentCat\Tests\Support\LaravelMcp\LaravelTrackingFixture;
 use AgentCat\Tests\Support\LaravelMcp\LineTransport;
 use AgentCat\Tests\Support\LaravelMcp\RecordingMethod;
+use AgentCat\Tests\Support\Members;
 use AgentCat\Tests\Support\MemoryLogger;
 use AgentCat\Tests\Support\RecordingTransport;
 use AgentCat\Tests\Support\Thrown;
 use Illuminate\Container\Container;
+use Illuminate\Http\Request;
 use Laravel\Mcp\Server;
 use Laravel\Mcp\Server\Contracts\Transport;
-use Laravel\Mcp\Server\Methods\CallTool;
 use Laravel\Mcp\Server\ServerContext;
+use Laravel\Mcp\Server\Transport\HttpTransport;
 use Mcp\Server as McpServer;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use Psr\Log\LogLevel;
 
 final class LaravelMcpAdapterTest extends LaravelTestCase
@@ -139,8 +144,9 @@ final class LaravelMcpAdapterTest extends LaravelTestCase
         $methods = ServerAccess::methods($server);
         $this->assertSame('agentcat.laravel-mcp.' . spl_object_id($server) . '.tools/list', $methods['tools/list'] ?? null);
         $this->assertSame('agentcat.laravel-mcp.' . spl_object_id($server) . '.initialize', $methods['initialize'] ?? null);
-        $this->assertSame(CallTool::class, $methods['tools/call'] ?? null, 'tools/call is not wired yet');
+        $this->assertSame('agentcat.laravel-mcp.' . spl_object_id($server) . '.tools/call', $methods['tools/call'] ?? null);
         $this->assertInstanceOf(TrackedListTools::class, Container::getInstance()->make(MethodKey::for($server, 'tools/list')));
+        $this->assertInstanceOf(TrackedCallTool::class, Container::getInstance()->make(MethodKey::for($server, 'tools/call')));
         $this->assertInstanceOf(TrackedInitialize::class, Container::getInstance()->make(MethodKey::for($server, 'initialize')));
         $this->assertNotSame(Container::getInstance()->make(MethodKey::for($server, 'tools/list')), Container::getInstance()->make(MethodKey::for($other, 'tools/list')));
         $this->assertSame(MethodKey::for($other, 'tools/list'), ServerAccess::methods($other)['tools/list'] ?? null);
@@ -155,6 +161,8 @@ final class LaravelMcpAdapterTest extends LaravelTestCase
                 parent::__construct($transport);
                 // @phpstan-ignore argument.type (a container key, as another package could bind)
                 $this->addMethod('tools/list', 'customer.list');
+                // @phpstan-ignore argument.type (see above)
+                $this->addMethod('tools/call', 'customer.call');
                 unset($this->methods['initialize']);
             }
         };
@@ -163,6 +171,7 @@ final class LaravelMcpAdapterTest extends LaravelTestCase
 
         $methods = ServerAccess::methods($server);
         $this->assertSame('customer.list', $methods['tools/list'] ?? null);
+        $this->assertSame('customer.call', $methods['tools/call'] ?? null);
         $this->assertArrayNotHasKey('initialize', $methods);
     }
 
@@ -200,8 +209,11 @@ final class LaravelMcpAdapterTest extends LaravelTestCase
         $this->assertSame([null, null], $info());
     }
 
-    public function testAServerInfoThatCannotBeReadIsUnknown(): void
+    /** Task 4 review M3: the events of such a server have no name and version, and one line says so. */
+    public function testAServerInfoThatCannotBeReadIsUnknownAndLoggedOncePerServer(): void
     {
+        $logger = new MemoryLogger();
+        Log::setLogger($logger);
         $server = new class (new LineTransport()) extends Server {
             #[\Override]
             public function createContext(): ServerContext
@@ -218,14 +230,79 @@ final class LaravelMcpAdapterTest extends LaravelTestCase
                 return parent::createContext();
             }
         };
+        $info = LaravelMcpAdapter::serverInfo($server);
 
-        $this->assertSame([null, null], (LaravelMcpAdapter::serverInfo($server))());
+        $this->assertSame([null, null], $info());
+        $this->assertSame([null, null], $info());
         $this->assertSame([null, null], (LaravelMcpAdapter::serverInfo($warning))(), 'a warning counts as a failure');
+        $this->assertSame([
+            ['level' => LogLevel::WARNING, 'message' => LaravelMcpAdapter::COMPATIBILITY_LINE],
+            ['level' => LogLevel::WARNING, 'message' => LaravelMcpAdapter::COMPATIBILITY_LINE],
+        ], $logger->records);
     }
 
-    private function conformanceServer(): ConformanceServer
+    #[Group('ac-02-43')]
+    public function testTheHttpContextIsTheRequestOfTheServersOwnTransport(): void
     {
-        $server = $this->app?->make(ConformanceServer::class, ['transport' => new LineTransport()]);
+        $request = Request::create('/mcp/weather?unit=c', 'POST', server: ['HTTP_HOST' => 'example.test', 'HTTP_X_TRACE' => 't1']);
+        $server = $this->conformanceServer(new HttpTransport($request));
+
+        $http = (LaravelMcpAdapter::httpContext($server))();
+
+        $this->assertInstanceOf(HttpContext::class, $http);
+        $this->assertSame('POST', $http->method);
+        $this->assertSame('http://example.test/mcp/weather?unit=c', $http->url);
+        $this->assertSame('t1', $http->headers['x-trace'] ?? null);
+        $this->assertSame('example.test', $http->headers['host'] ?? null);
+    }
+
+    public function testAServerOnAnotherTransportOrGoneHasNoHttpContext(): void
+    {
+        $logger = new MemoryLogger();
+        Log::setLogger($logger);
+        $stdio = LaravelMcpAdapter::httpContext($this->conformanceServer());
+        $server = $this->conformanceServer(new HttpTransport(Request::create('/mcp', 'POST')));
+        $gone = LaravelMcpAdapter::httpContext($server);
+        unset($server);
+
+        $this->assertNull($stdio());
+        $this->assertNull($gone());
+        $this->assertSame([], $logger->messages());
+    }
+
+    /** @return iterable<string, array{\Closure(Server): void}> */
+    public static function unreadableTransports(): iterable
+    {
+        yield 'the server\'s transport' => [static function (Server $server): void {
+            Members::uninitialize(Server::class, 'transport')($server);
+        }];
+        yield 'the transport\'s request' => [static function (Server $server): void {
+            Members::uninitialize(HttpTransport::class, 'request')(ServerAccess::transport($server));
+        }];
+    }
+
+    /**
+     * A drifted transport costs the HTTP context, never the event: one line per server (plan E1 Task 4 carry, D32).
+     *
+     * @param \Closure(Server): void $drift
+     */
+    #[DataProvider('unreadableTransports')]
+    public function testAnUnreadableTransportIsNoHttpContextAndLoggedOncePerServer(\Closure $drift): void
+    {
+        $logger = new MemoryLogger();
+        Log::setLogger($logger);
+        $server = $this->conformanceServer(new HttpTransport(Request::create('/mcp', 'POST')));
+        $drift($server);
+        $http = LaravelMcpAdapter::httpContext($server);
+
+        $this->assertNull($http());
+        $this->assertNull($http());
+        $this->assertSame([['level' => LogLevel::WARNING, 'message' => LaravelMcpAdapter::COMPATIBILITY_LINE]], $logger->records);
+    }
+
+    private function conformanceServer(Transport $transport = new LineTransport()): ConformanceServer
+    {
+        $server = $this->app?->make(ConformanceServer::class, ['transport' => $transport]);
         $this->assertInstanceOf(ConformanceServer::class, $server);
 
         return $server;

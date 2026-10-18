@@ -463,6 +463,103 @@ final class CallInterceptorTest extends TestCase
         $this->assertSame([self::POST_HANDLER . 'LogicException: info'], $this->logger->messages());
     }
 
+    public function testAResultThatCompletesLaterIsPublishedWhenItCompletes(): void
+    {
+        $seam = $this->seam('echo', ['msg' => 'hi']);
+        $finish = null;
+        $seen = null;
+        $seam->later = static function (\stdClass $result, \Closure $complete, \Closure $fail) use (&$finish, &$seen): \stdClass {
+            $seen = $result;
+            $finish = $complete;
+
+            return (object) ['pending' => true];
+        };
+
+        $answer = $this->interceptor->intercept($this->server(), $seam);
+
+        $this->assertEquals((object) ['pending' => true], $answer);
+        $this->assertSame($seam->result, $seen);
+        $this->assertSame([], $this->events()); // nothing until the stream ends
+        $this->assertInstanceOf(\Closure::class, $finish);
+        $final = $finish(FakeCallSeam::ok());
+        $event = $this->onlyEvent();
+        $block = JsonAssert::at($final, 'content', 0, 'text');
+        $this->assertIsString($block);
+        $this->assertStringStartsWith(Constants::MINT_BACK_HEADER_ISSUED, $block);
+        $this->assertStringContainsString('session_id: ' . $event->sessionId, $block);
+        $this->assertEquals(FakeCallSeam::ok(), $event->response);
+        $this->assertSame([['stripped', self::HEURISTIC], ['replace']], $seam->calls);
+        $this->assertSame([], $this->logger->messages());
+    }
+
+    #[Group('ac-05-E5')]
+    public function testAStreamThatFailsIsOneErrorEvent(): void
+    {
+        $seam = $this->seam('echo', ['msg' => 'hi']);
+        $fail = null;
+        $seam->later = static function (\stdClass $result, \Closure $complete, \Closure $failed) use (&$fail): \stdClass {
+            $fail = $failed;
+
+            return (object) [];
+        };
+
+        $this->interceptor->intercept($this->server(), $seam);
+        $this->assertInstanceOf(\Closure::class, $fail);
+        $fail(new \DomainException('stream broke'));
+
+        $event = $this->onlyEvent();
+        $this->assertTrue($event->isError);
+        $this->assertSame('DomainException', JsonAssert::at($event->error, 'type'));
+        $this->assertSame('stream broke', JsonAssert::at($event->error, 'message'));
+        $this->assertNull($event->response);
+        $this->assertSame([], $this->logger->messages());
+    }
+
+    /** D32: a failure while recording a failed stream is logged; the stream's own exception stays the seam's. */
+    public function testAFailedStreamWhosePublishFailsIsLogged(): void
+    {
+        $seam = $this->seam('echo', ['msg' => 'hi']);
+        $fail = null;
+        $seam->later = static function (\stdClass $result, \Closure $complete, \Closure $failed) use (&$fail): \stdClass {
+            $fail = $failed;
+
+            return (object) [];
+        };
+
+        $this->interceptor->intercept($this->server(serverInfo: $this->failingServerInfo()), $seam);
+        $this->assertInstanceOf(\Closure::class, $fail);
+        $fail(new \DomainException('stream broke'));
+
+        $this->assertSame([], $this->events());
+        $this->assertSame([self::POST_HANDLER . 'LogicException: info'], $this->logger->messages());
+    }
+
+    public function testALaterThatThrowsFallsBackToAnOrdinaryFinish(): void
+    {
+        $seam = $this->seam('echo', ['msg' => 'hi']);
+        $seam->later = static fn(): never => throw new \LogicException('later broke');
+
+        $answer = $this->interceptor->intercept($this->server(), $seam);
+
+        $this->assertCount(1, $this->events());
+        $this->assertSame([self::POST_HANDLER . 'LogicException: later broke'], $this->logger->messages());
+        $block = JsonAssert::at($answer, 'content', 0, 'text');
+        $this->assertIsString($block);
+        $this->assertStringStartsWith(Constants::MINT_BACK_HEADER_ISSUED, $block);
+    }
+
+    public function testWithTracingOffAResultIsNeverAskedToCompleteLater(): void
+    {
+        $seam = $this->seam('echo', ['msg' => 'hi']);
+        $seam->later = static fn(): never => throw new \LogicException('later asked');
+
+        $answer = $this->interceptor->intercept($this->server(new Options(enableTracing: false)), $seam);
+
+        $this->assertSame($seam->result, $answer);
+        $this->assertSame([], $this->events());
+        $this->assertSame([], $this->logger->messages());
+    }
+
     #[Group('ac-02-40')]
     #[Group('ac-04-46')]
     public function testGetMoreToolsIsAnsweredWithoutTheCustomer(): void

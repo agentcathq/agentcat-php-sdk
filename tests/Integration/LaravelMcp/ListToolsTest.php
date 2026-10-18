@@ -25,8 +25,8 @@ use AgentCat\Tests\Support\LaravelMcp\ListingServer;
 use AgentCat\Tests\Support\LaravelMcp\PagedServer;
 use AgentCat\Tests\Support\LaravelMcp\RecordingMethod;
 use AgentCat\Tests\Support\Thrown;
-use Laravel\Mcp\Server\Contracts\Method;
 use Laravel\Mcp\Server\Methods\Initialize;
+use Laravel\Mcp\Server\ServerContext;
 use Laravel\Mcp\Transport\JsonRpcRequest;
 use Laravel\Mcp\Transport\JsonRpcResponse;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -156,6 +156,7 @@ final class ListToolsTest extends LaravelTestCase
         $this->assertSame([], $fixture->lines());
     }
 
+    /** Task 4 review M1: PHP's own `Error`, not an AgentCat exception, reaches laravel/mcp's `report()`. */
     public function testAListHandlerTheContainerCannotResolveToAMethodFailsLikeWithoutAgentCat(): void
     {
         $this->app?->bind(RecordingMethod::class, static fn(): \stdClass => new \stdClass());
@@ -167,8 +168,26 @@ final class ListToolsTest extends LaravelTestCase
         $this->assertEquals((object) ['code' => -32603, 'message' => 'Something went wrong while processing the request.'], JsonAssert::at($answer, 'error'));
         $this->assertEquals($twin, $answer);
         $this->assertSame([], $fixture->lines());
-        $error = Thrown::by(\UnexpectedValueException::class, static fn(): Method => Delegate::of(RecordingMethod::class));
-        $this->assertSame('The container resolved ' . RecordingMethod::class . ' to stdClass, which is not a ' . Method::class, $error->getMessage());
+        $context = (new ListingServer(new LineTransport()))->createContext();
+        $error = Thrown::by(\Error::class, static fn(): mixed => Delegate::handle(RecordingMethod::class, new JsonRpcRequest(1, 'tools/list', []), $context));
+        $this->assertSame(\Error::class, $error::class);
+        $this->assertSame('Call to undefined method stdClass::handle()', $error->getMessage());
+    }
+
+    /** Task 4 review M1: laravel/mcp calls `handle()` on whatever the container returns, so AgentCat does too. */
+    public function testAListHandlerThatIsNoMethodButHasHandleIsCalledAndWrapped(): void
+    {
+        $this->app?->bind(RecordingMethod::class, static fn(): object => new class {
+            public function handle(JsonRpcRequest $request, ServerContext $context): JsonRpcResponse
+            {
+                return JsonRpcResponse::result($request->id, ['tools' => [['name' => 'duck', 'inputSchema' => ['type' => 'object']]]]);
+            }
+        });
+        $fixture = new LaravelTrackingFixture();
+
+        $result = (new LaravelHarness(ListingServer::class, $fixture->tracker()))->listTools();
+
+        $this->assertSame(['duck', GetMoreTools::NAME], $this->names($result));
     }
 
     public function testAJsonRpcErrorFromTheListHandlerPassesUnchanged(): void
