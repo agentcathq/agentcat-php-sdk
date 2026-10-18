@@ -75,6 +75,10 @@ final class TelemetryManagerTest extends TestCase
             self::SENTRY,
             'https://us.i.posthog.com/batch',
         ], $http->urls());
+        foreach ($http->requests as $request) {
+            // D49: exports keep the channel's 2 s connect and 10 s total timeouts, and flush() waits for them.
+            $this->assertSame([false, null, null], [$request->background, $request->connectTimeoutSeconds, $request->totalTimeoutSeconds], $request->url);
+        }
     }
 
     #[Group('ac-06-10')]

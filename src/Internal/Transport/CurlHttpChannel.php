@@ -9,7 +9,7 @@ use AgentCat\Internal\Support\ErrorText;
 
 /**
  * The second curl_multi handle of a queue: exporter and diagnostics requests, no retries (TypeScript sends each once),
- * connect and total timeouts, http/https only, no redirects. `pump()` never blocks. PHP warnings are suppressed and
+ * connect and total timeouts (the request's, else the channel's), http/https only, no redirects. `pump()` never blocks. PHP warnings are suppressed and
  * every throwable is swallowed (D32; tests see them through `$onSwallowed`): a failed request reaches only its
  * callback. `CurlMulti` runs the transfers.
  *
@@ -187,7 +187,7 @@ final class CurlHttpChannel implements HttpChannel
             $transfer = new HttpTransfer($next['onDone'], $next['request']->background);
 
             try {
-                $error = $this->multi->open($this->options($next['request'], $transfer), $transfer);
+                $error = $this->multi->open($this->curlOptions($next['request'], $transfer), $transfer);
             } catch (\Throwable $exception) {
                 $error = ErrorText::of($exception); // a URL with a NUL byte (ValueError): this request fails, the others go on
             }
@@ -224,11 +224,14 @@ final class CurlHttpChannel implements HttpChannel
 
     /**
      * The options of `$request`: the write and header functions first (`CurlSupport::postOptions()`). They hold only
-     * `$transfer`, so a finished handle frees it and no handle holds the channel.
+     * `$transfer`, so a finished handle frees it and no handle holds the channel. The request's timeouts win over the
+     * channel's (diagnostics: 250 ms and 1 s, D49).
      *
      * @return array<int, mixed>
+     *
+     * @throws \InvalidArgumentException for a request timeout curl cannot take: that request fails
      */
-    private function options(HttpRequest $request, HttpTransfer $transfer): array
+    public function curlOptions(HttpRequest $request, HttpTransfer $transfer): array
     {
         $headers = [];
         foreach ($request->headers as $name => $value) {
@@ -254,6 +257,9 @@ final class CurlHttpChannel implements HttpChannel
             },
         ];
 
-        return CurlSupport::postOptions($capture, $request->url, $request->body, $headers, $this->connectTimeoutMs, $this->totalTimeoutMs);
+        $connectTimeoutMs = $request->connectTimeoutSeconds === null ? $this->connectTimeoutMs : CurlSupport::timeoutMilliseconds($request->connectTimeoutSeconds);
+        $totalTimeoutMs = $request->totalTimeoutSeconds === null ? $this->totalTimeoutMs : CurlSupport::timeoutMilliseconds($request->totalTimeoutSeconds);
+
+        return CurlSupport::postOptions($capture, $request->url, $request->body, $headers, $connectTimeoutMs, $totalTimeoutMs);
     }
 }

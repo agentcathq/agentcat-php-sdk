@@ -8,6 +8,7 @@ use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Transport\CurlHttpChannel;
 use AgentCat\Internal\Transport\HttpRequest;
 use AgentCat\Internal\Transport\HttpResponse;
+use AgentCat\Internal\Transport\HttpTransfer;
 use AgentCat\Tests\Support\MemoryLogger;
 use AgentCat\Tests\Support\Thrown;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -276,6 +277,34 @@ final class CurlHttpChannelUnitTest extends TestCase
         $this->assertSame(['b' => '2', 'a' => '1'], $request->headers);
         $this->assertSame('{}', $request->body);
         $this->assertFalse($request->background, 'an exporter request by default');
+    }
+
+    /** A9 (D49): a request can carry its own timeouts (diagnostics: 250 ms and 1 s); others get the channel's 2 s and 10 s. */
+    public function testARequestCarriesItsOwnTimeoutsOrGetsTheChannels(): void
+    {
+        $channel = new CurlHttpChannel();
+        $transfer = new HttpTransfer(static function (): void {}, false);
+
+        $short = $channel->curlOptions(new HttpRequest('http://127.0.0.1:9/v1/logs', [], '', true, 0.25, 1.0), $transfer);
+        $long = $channel->curlOptions(new HttpRequest('http://127.0.0.1:9/v1/traces', [], ''), $transfer);
+
+        $this->assertSame([250, 1000], [$short[CURLOPT_CONNECTTIMEOUT_MS] ?? null, $short[CURLOPT_TIMEOUT_MS] ?? null]);
+        $this->assertSame([2000, 10000], [$long[CURLOPT_CONNECTTIMEOUT_MS] ?? null, $long[CURLOPT_TIMEOUT_MS] ?? null]);
+    }
+
+    /** A request timeout curl cannot take fails that request through its callback; nothing throws (D32). */
+    public function testARequestTimeoutCurlCannotTakeFailsThatRequest(): void
+    {
+        $channel = new CurlHttpChannel();
+        $errors = [];
+        $channel->post(new HttpRequest('http://127.0.0.1:9/v1/logs', [], '', connectTimeoutSeconds: 0.0), static function (HttpResponse $response) use (&$errors): void {
+            $errors[] = $response->error;
+        });
+
+        $channel->pump();
+
+        $this->assertSame(['InvalidArgumentException: A curl timeout must round to 1 through 2147483647 milliseconds, got 0.0 seconds'], $errors);
+        $this->assertSame(0, $channel->pending());
     }
 
     /** I1: `flush()` asks for the requests without the background ones (diagnostics). */

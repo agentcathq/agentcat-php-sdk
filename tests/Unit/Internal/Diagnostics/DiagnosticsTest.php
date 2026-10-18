@@ -461,6 +461,19 @@ final class DiagnosticsTest extends TestCase
         $this->assertSame('Bearer ' . Constants::DEFAULT_DIAGNOSTICS_TOKEN, $this->http->requests[0]->headers['Authorization'] ?? null);
     }
 
+    /** A9 (D49): a blocked collector holds the shutdown 0.25 s (connect) or 1 s (answer) at most; exports keep 2 s and 10 s. */
+    public function testTheBatchCarriesTheShortDiagnosticsTimeouts(): void
+    {
+        $this->init('proj_ABC');
+        Log::write('one');
+
+        $this->queue->shutdown();
+
+        $request = $this->http->requests[0] ?? null;
+        $this->assertInstanceOf(HttpRequest::class, $request);
+        $this->assertSame([true, 0.25, 1.0], [$request->background, $request->connectTimeoutSeconds, $request->totalTimeoutSeconds]);
+    }
+
     #[Group('ac-06-53')]
     #[Group('ac-01-11')]
     public function testTheFirstInitDecides(): void
