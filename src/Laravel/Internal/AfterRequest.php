@@ -25,7 +25,7 @@ final class AfterRequest
         // The container calls the callback with the application of the request (Octane's sandbox): nothing is captured.
         $app->terminating(static function (Application $current): void {
             self::guarded(static function () use ($current): void {
-                AgentCat::client()->flush(RequestEndWait::seconds($current->runningInConsole()));
+                AgentCat::client()->flush(RequestEndWait::seconds(self::truthy($current->runningInConsole())));
             });
         });
         $app->make('events')->listen(self::OCTANE_WORKER_STOPPING, static function (): void {
@@ -33,6 +33,15 @@ final class AfterRequest
                 AgentCat::client()->shutdown();
             });
         });
+    }
+
+    /**
+     * PHP's truthiness, which Laravel's own checks of `runningInConsole()` use. Its PHPDoc says bool, but it returns
+     * APP_RUNNING_IN_CONSOLE as `Env::get()` gives it: "0", "1" or "no" stay strings.
+     */
+    private static function truthy(mixed $value): bool
+    {
+        return (bool) $value;
     }
 
     /**

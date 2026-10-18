@@ -10,6 +10,7 @@ use AgentCat\Internal\Delivery\RequestEndWait;
 use AgentCat\Internal\Json\Json;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Pipeline\QueuedEvent;
+use AgentCat\Internal\Tools\GetMoreTools;
 use AgentCat\Internal\Transport\Delivery;
 use AgentCat\Laravel\Internal\AfterRequest;
 use AgentCat\Tests\Integration\Support\MockCollector;
@@ -26,6 +27,7 @@ use Illuminate\Container\Container;
 use Illuminate\Foundation\Application;
 use Illuminate\Routing\Router;
 use Laravel\Mcp\Facades\Mcp;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -54,13 +56,15 @@ final class DeliveryTest extends BridgeTestCase
         self::$collector = null;
     }
 
-    /** Octane's worker bootstrap sets APP_RUNNING_IN_CONSOLE=false before it creates the application. */
+    /**
+     * Laravel reads APP_RUNNING_IN_CONSOLE once, when it builds the application, so the value comes first: Octane's,
+     * whose worker bootstrap puts the bool false into `$_ENV`.
+     */
     #[\Override]
     protected function setUp(): void
     {
         $this->console = Environment::clear('APP_RUNNING_IN_CONSOLE');
-        putenv('APP_RUNNING_IN_CONSOLE=false');
-        $_ENV['APP_RUNNING_IN_CONSOLE'] = $_SERVER['APP_RUNNING_IN_CONSOLE'] = 'false';
+        $this->setRunningInConsole(false);
         parent::setUp();
     }
 
@@ -116,7 +120,10 @@ final class DeliveryTest extends BridgeTestCase
         $this->assertContains('Queue is shutting down, event dropped', $logger->messages());
     }
 
-    /** A failing hook never stops Laravel's terminate phase: the callbacks after it still run (D32). */
+    /**
+     * A failing hook never stops Laravel's terminate phase (D32): the hook asks the application it got whether it runs
+     * in the console, that call throws, the exception stays in the hook, and the callbacks after it still run.
+     */
     public function testAFailingHookLetsTheLaterTerminatingCallbacksRun(): void
     {
         $application = Container::getInstance();
@@ -124,10 +131,17 @@ final class DeliveryTest extends BridgeTestCase
             $broken = new class extends Application {
                 public bool $failing = false;
 
+                public int $thrown = 0;
+
                 #[\Override]
                 public function runningInConsole(): bool
                 {
-                    return $this->failing ? throw new \RuntimeException('no environment') : parent::runningInConsole();
+                    if (!$this->failing) {
+                        return parent::runningInConsole(); // the constructor asks too
+                    }
+                    ++$this->thrown;
+
+                    throw new \RuntimeException('no environment');
                 }
             };
         } finally {
@@ -139,10 +153,74 @@ final class DeliveryTest extends BridgeTestCase
         $broken->terminating(static function () use ($later): void {
             $later->append('ran');
         });
+        $reached = null;
 
-        $broken->terminate();
+        try {
+            $broken->terminate();
+        } catch (\Throwable $e) {
+            $reached = $e;
+        }
 
+        $this->assertSame(1, $broken->thrown); // the hook's call threw ...
+        $this->assertNull($reached); // ... and the exception did not reach Laravel's terminate()
         $this->assertSame(['ran'], $later->getArrayCopy());
+    }
+
+    /**
+     * APP_RUNNING_IN_CONSOLE and the hook's wait. Laravel's `runningInConsole()` returns the value as `Env::get()` gives
+     * it, a string for "0", "1" or "no", and Laravel branches on its truthiness: so does the hook.
+     *
+     * @return iterable<string, array{string|false|null, float}>
+     */
+    public static function consoleValues(): iterable
+    {
+        yield 'Octane: the bool false' => [false, RequestEndWait::WORKER_SECONDS];
+        yield '"0": not the console for Laravel' => ['0', RequestEndWait::WORKER_SECONDS];
+        yield '"1": a console command' => ['1', 0.0];
+        yield '"no": the console for Laravel, a non-empty string' => ['no', 0.0];
+        yield 'unset: the CLI SAPI makes it a console command' => [null, 0.0];
+    }
+
+    /**
+     * Outside the console the hook waits for the cap; in a console command it makes one pass that starts the delivery
+     * and does not wait, because the process ends soon and its shutdown function delivers (D47). Each case builds a
+     * new Laravel application, which reads the variable as it starts.
+     */
+    #[DataProvider('consoleValues')]
+    public function testOnlyAnApplicationOutsideTheConsoleWaits(string|false|null $value, float $wait): void
+    {
+        $this->setRunningInConsole($value);
+        $application = Container::getInstance();
+        try {
+            $started = new Application();
+        } finally {
+            Container::setInstance($application); // a new application makes itself the global container
+        }
+        AfterRequest::register($started);
+        $this->transport->complete = false; // an API that does not answer; the clock is simulated
+        EventQueue::global()->add(new QueuedEvent(new Event(projectId: LaravelTrackingFixture::PROJECT)));
+        $before = $this->transport->now();
+
+        $started->terminate();
+
+        $this->assertCount(1, $this->transport->deliveries, 'the hook starts the delivery with APP_RUNNING_IN_CONSOLE ' . var_export($value, true));
+        $this->assertSame($wait, $this->transport->now() - $before);
+    }
+
+    /** A request that queued no event leaves the hook nothing to wait for, also in a worker and with a silent API. */
+    public function testARequestThatQueuedNoEventDoesNotWait(): void
+    {
+        $this->transport->complete = false;
+        $before = $this->transport->now();
+        $body = ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/list', 'params' => ['_meta' => LaravelHarness::meta([], ['name' => 'modern-client', 'version' => '2.0.0'])]];
+
+        $tools = $this->postJson('/mcp/test', $body, ['MCP-Protocol-Version' => LaravelHarness::MODERN_PROTOCOL_VERSION, 'Mcp-Method' => 'tools/list'])->assertOk()->json('result.tools');
+
+        $this->assertIsArray($tools);
+        $this->assertSame(GetMoreTools::NAME, JsonAssert::at(end($tools), 'name')); // a tracked server; a listing queues no event
+        $this->assertSame([], $this->transport->deliveries);
+        $this->assertSame(0, $this->transport->waits);
+        $this->assertSame($before, $this->transport->now());
     }
 
     /** Review Focus 4: three requests in one application container, each with its own server, headers and identity. */
@@ -223,6 +301,22 @@ final class DeliveryTest extends BridgeTestCase
     private function modernHeaders(string $tool): array
     {
         return ['MCP-Protocol-Version' => LaravelHarness::MODERN_PROTOCOL_VERSION, 'Mcp-Method' => 'tools/call', 'Mcp-Name' => $tool];
+    }
+
+    /**
+     * Sets APP_RUNNING_IN_CONSOLE: the bool false in `$_ENV` as Octane does, a string in the process environment, or
+     * null for unset. `setUp()` saved the variable, and `tearDown()` puts it back.
+     */
+    private function setRunningInConsole(string|false|null $value): void
+    {
+        putenv('APP_RUNNING_IN_CONSOLE');
+        unset($_ENV['APP_RUNNING_IN_CONSOLE'], $_SERVER['APP_RUNNING_IN_CONSOLE']);
+        if ($value === false) {
+            $_ENV['APP_RUNNING_IN_CONSOLE'] = false;
+        } elseif (is_string($value)) {
+            putenv('APP_RUNNING_IN_CONSOLE=' . $value);
+            $_ENV['APP_RUNNING_IN_CONSOLE'] = $_SERVER['APP_RUNNING_IN_CONSOLE'] = $value;
+        }
     }
 
     private function application(): Application
