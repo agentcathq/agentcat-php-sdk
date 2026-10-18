@@ -29,6 +29,12 @@ final class HttpEndToEndTest extends TestCase
     /** How long the diagnostics test waits for the two requests' diagnostics after the second answer. */
     private const float DIAGNOSTICS_DEADLINE_SECONDS = 8.0;
 
+    /**
+     * The diagnostics test's collector answers each event after this long, so the per-event line, and the POST that
+     * carries it, come at least that long after the response: its order check keeps 1 s of slack on a loaded runner.
+     */
+    private const int SLOW_EVENT_MS = 1000;
+
     /** The fixture's `identify` sleeps 3 s with `X-E2E-Identify-Sleep: 1`, before the delivery. */
     private const float SLEEPING_HOOK_DEADLINE_SECONDS = 8.0;
 
@@ -285,31 +291,38 @@ final class HttpEndToEndTest extends TestCase
 
     /**
      * D47 (open question Q3): under `php -S`, like PHP-FPM, each request posts its own diagnostics once, at its end,
-     * after the response. A slow runner can add a request without the per-event line, from a 2 s window inside a
-     * request.
+     * after its response. Each POST is tied to its request by the session in its `Successfully sent event` line: each
+     * call mints its own session. A slow runner can add a POST without that line, from the 2 s window.
      */
     #[Group('ac-06-62')]
     #[MaximumDuration(15000)]
     public function testEachRequestSendsItsOwnDiagnosticsAfterTheResponse(): void
     {
+        $this->scenario = $this->collector()->scenario([], ['status' => 202, 'delayMs' => self::SLOW_EVENT_MS, 'body' => '{"status":"accepted"}']);
         $diagnostics = $this->collector()->scenario();
         $client = $this->client();
         $client->initialize();
 
-        $first = $client->callTool('echo', ['msg' => 'one', 'session_id' => 'start'], $this->headers(['X-E2E-Diagnostics' => $diagnostics]));
-        $second = $client->callTool('echo', ['msg' => 'two', 'session_id' => 'start'], $this->headers(['X-E2E-Diagnostics' => $diagnostics]));
-
-        $this->assertSame('echo: one', JsonAssert::at(HttpHarness::result($first['message']), 'content', 1, 'text'));
-        $this->assertSame('echo: two', JsonAssert::at(HttpHarness::result($second['message']), 'content', 1, 'text'));
-        $sent = $this->diagnosticsWithASentEvent($diagnostics, 2);
-        $this->assertCount(2, $sent, 'one diagnostics request with the per-event line per tracked request');
-        foreach ($sent as $request) {
-            $this->assertSame('/v1/logs', $request->path);
-            $this->assertSame(1, substr_count($this->body($request), 'Successfully sent event '), 'one line each');
+        $answeredAt = []; // when the client had each answer, by the session that the call minted
+        foreach (['one', 'two'] as $msg) {
+            $answer = $client->callTool('echo', ['msg' => $msg, 'session_id' => 'start'], $this->headers(['X-E2E-Diagnostics' => $diagnostics]));
+            $result = HttpHarness::result($answer['message']);
+            $this->assertSame('echo: ' . $msg, JsonAssert::at($result, 'content', 1, 'text'));
+            $answeredAt[$this->issuedSessionId($result)] = $answer['receivedAt'];
         }
-        $starts = array_map(static fn(\stdClass $request): mixed => $request->start, $sent);
-        $this->assertIsFloat(min($starts));
-        $this->assertGreaterThan($first['receivedAt'], min($starts), 'the diagnostics POST ran after the response');
+
+        $this->assertCount(2, $answeredAt, 'each call minted its own session');
+        $sent = $this->diagnosticsWithASentEvent($diagnostics, 2);
+        $this->assertCount(2, $sent, 'one diagnostics POST with the per-event line per tracked request');
+        foreach ($answeredAt as $sessionId => $receivedAt) {
+            $own = array_values(array_filter($sent, fn(\stdClass $request): bool => str_contains($this->body($request), ' | session ' . $sessionId . ' | ')));
+            $this->assertCount(1, $own, 'one diagnostics POST carries the event line of ' . $sessionId);
+            $this->assertSame('/v1/logs', $own[0]->path);
+            $this->assertSame(1, substr_count($this->body($own[0]), 'Successfully sent event '), 'one line each');
+            $start = $own[0]->start;
+            $this->assertIsFloat($start);
+            $this->assertGreaterThan($receivedAt, $start, 'the diagnostics POST of ' . $sessionId . ' ran after its response');
+        }
     }
 
     /** A call without `X-E2E-Collector` falls back to `AGENTCAT_API_URL`, a closed local port: never the default API. */
@@ -426,6 +439,16 @@ final class HttpEndToEndTest extends TestCase
         $this->assertIsString($log);
 
         return $log;
+    }
+
+    /** The `ses_` ID of the issued block at the start of an answer. */
+    private function issuedSessionId(\stdClass $result): string
+    {
+        $text = JsonAssert::at($result, 'content', 0, 'text');
+        $this->assertIsString($text);
+        $this->assertSame(1, preg_match('/^session_id: (ses_[0-9A-Za-z]{27})$/m', $text, $match), $text);
+
+        return $match[1];
     }
 
     private function issued(string $sessionId): string

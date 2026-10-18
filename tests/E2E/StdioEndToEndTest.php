@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AgentCat\Tests\E2E;
 
 use AgentCat\Internal\Constants;
+use AgentCat\Internal\Diagnostics\Diagnostics;
 use AgentCat\Internal\Json\Json;
 use AgentCat\Tests\E2E\Support\StdioMcpClient;
 use AgentCat\Tests\Integration\Support\MockCollector;
@@ -241,30 +242,33 @@ final class StdioEndToEndTest extends TestCase
         $this->assertStdoutIsOnlyJsonRpc($client);
     }
 
-    /** 06 AC-62 in a real process: stdin EOF flushes the diagnostics buffer once, with the setup beacons. */
+    /**
+     * 06 AC-62 in a real process: stdin EOF posts the diagnostics buffer exactly once, with the setup beacons and the
+     * per-event line logged during the EOF drain.
+     */
     #[Group('ac-06-62')]
     #[MaximumDuration(15000)]
     public function testStdinEofSendsTheDiagnosticsOnce(): void
     {
         $diagnostics = $this->collector()->scenario();
+        $startedAt = microtime(true);
         $client = $this->start(env: ['DISABLE_DIAGNOSTICS' => 'false', 'DIAGNOSTICS_ENDPOINT' => $diagnostics]);
         $this->handshake($client);
         $this->resultOf($client, 'tools/call', ['name' => 'echo', 'arguments' => ['msg' => 'one', 'session_id' => 'start']]);
 
         $this->assertExitsAtEof($client);
 
-        // A slow runner can pass the 2 s window during the session and post once more at a handler-entry pump:
-        // the last request is the shutdown flush, and it carries the per-event line logged during the EOF drain.
+        // The server lived less than the 2 s window, so no handler-entry pump and no shutdown pass could post the
+        // buffer early: the EOF flush is the only POST. Counted after the exit, so a late duplicate is seen too.
+        $lifetime = microtime(true) - $startedAt;
+        $this->assertLessThan(Diagnostics::BATCH_FLUSH_SECONDS, $lifetime, 'the server ended inside the 2 s window');
         $requests = $this->collector()->requests($diagnostics);
-        $this->assertNotSame([], $requests);
-        $bodies = array_map($this->body(...), $requests);
-        $all = implode("\n", $bodies);
-        foreach ($requests as $request) {
-            $this->assertSame('/v1/logs', $request->path);
-        }
-        $this->assertStringContainsString('"stringValue":"php"', $all);
-        $this->assertStringContainsString('AgentCat setup complete | project proj_', $all);
-        $this->assertStringContainsString('Successfully sent event ', $bodies[count($bodies) - 1]);
+        $this->assertCount(1, $requests, sprintf('one diagnostics POST; the server lived %.3f s', $lifetime));
+        $this->assertSame('/v1/logs', $requests[0]->path);
+        $body = $this->body($requests[0]);
+        $this->assertStringContainsString('"stringValue":"php"', $body);
+        $this->assertStringContainsString('AgentCat setup complete | project proj_', $body);
+        $this->assertSame(1, substr_count($body, 'Successfully sent event '), 'the per-event line of the EOF drain');
     }
 
     /** mcp/sdk main serves the 2026-07-28 era over stdio when the first request carries its envelope. */
