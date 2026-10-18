@@ -7,9 +7,9 @@ namespace AgentCat\Internal\Support;
 use AgentCat\Internal\Logging\Log;
 
 /**
- * When AgentCat instruments and delivers. `AGENTCAT_ENABLED` decides first (D44): a false value turns AgentCat off
- * everywhere, a true value turns it on everywhere. Otherwise AgentCat is off while a test framework runs (D31) and
- * on everywhere else.
+ * When AgentCat instruments and delivers. A framework bridge's configured switch decides first (plan E1 header conflict
+ * 12), then `AGENTCAT_ENABLED` (D44): a false value turns AgentCat off everywhere, a true value turns it on everywhere.
+ * Otherwise AgentCat is off while a test framework runs (D31) and on everywhere else.
  *
  * @internal
  */
@@ -25,6 +25,19 @@ final class TestMode
 
     /** True once an unknown `AGENTCAT_ENABLED` value was logged: the line appears once per process. */
     private static bool $reported = false;
+
+    /** The configured switch of a framework bridge; null: none, `AGENTCAT_ENABLED` decides. */
+    private static ?bool $configured = null;
+
+    /**
+     * Sets the switch of a framework bridge's configuration (`agentcat.enabled` in Laravel), which decides before
+     * `AGENTCAT_ENABLED`: a cached configuration hides the `.env` file from `Env::get()`. Null removes it. The last call
+     * wins; it is process-wide, like the environment.
+     */
+    public static function configure(?bool $enabled): void
+    {
+        self::$configured = $enabled;
+    }
 
     /**
      * True when a test runner class is loaded, or `APP_ENV` is `testing` or `test` (trimmed, any case).
@@ -47,15 +60,15 @@ final class TestMode
     }
 
     /**
-     * True when `AGENTCAT_ENABLED` is `true`, `1`, `yes` or `on`; false when it is `false`, `0`, `no` or `off`
-     * (trimmed, any case). Unset or empty: true outside test environments only. Any other value counts as unset and
-     * logs one line, once per process.
+     * The configured switch when a bridge set one (`configure()`). Else true when `AGENTCAT_ENABLED` is `true`, `1`,
+     * `yes` or `on`; false when it is `false`, `0`, `no` or `off` (trimmed, any case). Unset or empty: true outside test
+     * environments only. Any other value counts as unset and logs one line, once per process.
      *
      * @param (\Closure(string): bool)|null $classLoaded see `inTestEnvironment()`
      */
     public static function sdkEnabled(?\Closure $classLoaded = null): bool
     {
-        return self::word(Env::get('AGENTCAT_ENABLED') ?? '') ?? self::byDefault(self::normalized('AGENTCAT_ENABLED'), $classLoaded);
+        return self::$configured ?? self::word(Env::get('AGENTCAT_ENABLED') ?? '') ?? self::byDefault(self::normalized('AGENTCAT_ENABLED'), $classLoaded);
     }
 
     /**
@@ -84,10 +97,11 @@ final class TestMode
         return class_exists($class, false);
     }
 
-    /** Tests only. */
+    /** Tests only: forgets the logged line and the configured switch. */
     public static function reset(): void
     {
         self::$reported = false;
+        self::$configured = null;
     }
 
     /** @param (\Closure(string): bool)|null $classLoaded */

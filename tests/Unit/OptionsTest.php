@@ -260,6 +260,15 @@ final class OptionsTest extends TestCase
         ], $this->logger->messages());
     }
 
+    /** Plan E1 header conflict 17: a config file switches every exporter off with null entries. */
+    public function testFromArrayCountsAMapOfNullExportersAsNoExporters(): void
+    {
+        $this->assertNull(Options::fromArray(['exporters' => ['otlp' => null, 'dd' => null]])->exporters);
+        $this->assertSame([], Options::fromArray(['exporters' => []])->exporters);
+        $this->assertSame([], Options::fromArray(['exporters' => ['otlp' => null, 'dd' => ['type' => 'datadog']]])->exporters);
+        $this->assertSame(['Failed to initialize exporter dd: InvalidArgumentException: exporter option "apiKey" must be string, got null'], $this->logger->messages());
+    }
+
     public function testFromArrayRejectsWrongTelemetryOptionTypes(): void
     {
         $options = Options::fromArray(['exporters' => 'otlp', 'disableSignalHandlers' => 1]);

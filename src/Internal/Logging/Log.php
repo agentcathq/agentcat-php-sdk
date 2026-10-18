@@ -41,6 +41,12 @@ final class Log
         self::$chosen = true;
     }
 
+    /** True when `setLogger()`, `adopt()` or `divert()` chose the logger; the lazy file fallback does not count. */
+    public static function hasLogger(): bool
+    {
+        return self::$chosen;
+    }
+
     /**
      * Sends every later line to `$logger` only, until `endDiversion()`; `adopt()` changes nothing meanwhile. A second
      * `divert()` changes the target and keeps the routing from before the first one. `AgentCat::fake()` uses it.

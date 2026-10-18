@@ -6,7 +6,7 @@ declare(strict_types=1);
 // Publish this file with: php artisan vendor:publish --tag=agentcat-config
 
 return [
-    // On or off for every MCP server: true or false. Unset: on, except while your tests run.
+    // On or off for every MCP server and every AgentCat call: true or false. Unset: on, except while your tests run.
     'enabled' => env('AGENTCAT_ENABLED'),
 
     // Your AgentCat project ID (proj_…). Unset: no events go to AgentCat; exporters still run.

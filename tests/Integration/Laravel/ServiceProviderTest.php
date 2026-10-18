@@ -9,21 +9,19 @@ use AgentCat\Client;
 use AgentCat\Internal\Delivery\EventQueue;
 use AgentCat\Internal\Json\Json;
 use AgentCat\Internal\Logging\Log;
-use AgentCat\Internal\Support\TestMode;
 use AgentCat\Internal\Tools\GetMoreTools;
-use AgentCat\Internal\Transport\Delivery;
 use AgentCat\Laravel\AgentCatServiceProvider;
 use AgentCat\Laravel\Internal\ServerTracker;
 use AgentCat\LaravelMcp\Internal\Access\ServerAccess;
 use AgentCat\Tests\Support\Environment;
 use AgentCat\Tests\Support\JsonAssert;
+use AgentCat\Tests\Support\Laravel\BridgeTestCase;
 use AgentCat\Tests\Support\Laravel\InvokableIdentify;
 use AgentCat\Tests\Support\LaravelMcp\ConformanceServer;
 use AgentCat\Tests\Support\LaravelMcp\LaravelHarness;
-use AgentCat\Tests\Support\LaravelMcp\LaravelTestCase;
 use AgentCat\Tests\Support\LaravelMcp\LaravelTrackingFixture;
+use AgentCat\Tests\Support\LaravelMcp\PagedServer;
 use AgentCat\Tests\Support\MemoryLogger;
-use AgentCat\Tests\Support\RecordingTransport;
 use Illuminate\Container\Container;
 use Illuminate\Foundation\Application;
 use Illuminate\Http\Request;
@@ -33,34 +31,12 @@ use Laravel\Mcp\Server\Transport\HttpTransport;
 use Orchestra\Testbench\Attributes\DefineEnvironment;
 use PHPUnit\Framework\Attributes\DataProvider;
 
-final class ServiceProviderTest extends LaravelTestCase
+final class ServiceProviderTest extends BridgeTestCase
 {
     private const string OTHER_PROJECT = 'proj_ppppppppppppppppppppppppppp';
 
-    private RecordingTransport $transport;
-
-    private ?Environment $agentcatEnvironment = null;
-
     /** True when a `DefineEnvironment` method of the test sets the whole configuration (it can run first). */
     private bool $ownConfiguration = false;
-
-    #[\Override]
-    protected function setUp(): void
-    {
-        // The configuration decides, not the variables of the process that runs the tests.
-        $this->agentcatEnvironment = Environment::clear('AGENTCAT_ENABLED', 'AGENTCAT_PROJECT_ID', 'AGENTCAT_API_URL', 'AGENTCAT_LOG_CHANNEL');
-        TestMode::reset();
-        parent::setUp();
-        EventQueue::setGlobal(new EventQueue(transport: $this->transport = new RecordingTransport()));
-    }
-
-    #[\Override]
-    protected function tearDown(): void
-    {
-        parent::tearDown();
-        TestMode::reset();
-        $this->agentcatEnvironment?->restore();
-    }
 
     /** @param Application $app */
     #[\Override]
@@ -86,19 +62,24 @@ final class ServiceProviderTest extends LaravelTestCase
         ]);
     }
 
+    public function defineAgentCatOff(): void
+    {
+        $this->ownConfiguration = true;
+        config(['agentcat.enabled' => false, 'agentcat.project_id' => LaravelTrackingFixture::PROJECT]);
+    }
+
+    public function defineEnabledUnset(): void
+    {
+        $this->ownConfiguration = true;
+        config(['agentcat.enabled' => null, 'agentcat.project_id' => LaravelTrackingFixture::PROJECT]);
+    }
+
     /** Review Focus 3: `AGENTCAT_ENABLED=maybe`, which `env()` gives the configuration too, before the providers boot. */
     public function defineAnUnknownEnabledWord(): void
     {
         $this->ownConfiguration = true;
         putenv('AGENTCAT_ENABLED=maybe');
         config(['agentcat.enabled' => 'maybe', 'agentcat.project_id' => LaravelTrackingFixture::PROJECT]);
-    }
-
-    /** @return list<class-string> */
-    #[\Override]
-    protected function getPackageProviders(mixed $app): array
-    {
-        return [...parent::getPackageProviders($app), AgentCatServiceProvider::class];
     }
 
     public function testEveryResolvedServerIsTrackedWithNoCode(): void
@@ -157,6 +138,19 @@ final class ServiceProviderTest extends LaravelTestCase
         $this->assertSame(LaravelTrackingFixture::PROJECT, $this->deliveredField('project_id'));
     }
 
+    /** D53: two server classes of one application send to two projects. */
+    public function testTwoServerClassesSendToTwoProjects(): void
+    {
+        config(['agentcat.projects' => [PagedServer::class => self::OTHER_PROJECT]]);
+
+        (new LaravelHarness(ConformanceServer::class))->callTool('echo', ['msg' => 'hi', 'session_id' => 'start']);
+        (new LaravelHarness(PagedServer::class))->callTool('echo', ['msg' => 'hi', 'session_id' => 'start']);
+
+        $events = $this->deliveries();
+        $this->assertCount(2, $events);
+        $this->assertSame([[LaravelTrackingFixture::PROJECT, 'conformance-server'], [self::OTHER_PROJECT, 'paged-server']], array_map(static fn(mixed $event): array => [JsonAssert::at($event, 'project_id'), JsonAssert::at($event, 'server_name')], $events));
+    }
+
     public function testTheLogLinesGoToTheConfiguredChannel(): void
     {
         $path = $this->laravelDirectory . '/agentcat-channel.log';
@@ -184,6 +178,21 @@ final class ServiceProviderTest extends LaravelTestCase
         (new LaravelHarness(ConformanceServer::class))->listTools();
 
         $this->assertStringContainsString('AgentCat setup started | project ' . LaravelTrackingFixture::PROJECT . ' | sdk laravel-mcp/server', $this->defaultChannelLog());
+    }
+
+    /** Laravel does not keep the emergency logger of a channel it cannot create: AgentCat asks for it once. */
+    public function testAMistypedLogChannelGivesOneEmergencyEntry(): void
+    {
+        config(['agentcat.log_channel' => 'agentcat-mistyped']);
+        $harness = new LaravelHarness(ConformanceServer::class);
+
+        $harness->listTools();
+        $harness->listTools();
+        $harness->listTools();
+
+        $emergency = $this->laravelDirectory . '/storage/logs/laravel.log';
+        $this->assertFileExists($emergency);
+        $this->assertSame(1, substr_count((string) file_get_contents($emergency), 'Unable to create configured logger. Using emergency logger.'));
     }
 
     public function testAfterAFakeTheNextServerRoutesTheLinesToTheChannel(): void
@@ -237,30 +246,24 @@ final class ServiceProviderTest extends LaravelTestCase
         $this->assertSame([], $this->transport->deliveries);
     }
 
-    /** @return iterable<string, array{array<string, mixed>}> */
-    public static function untracked(): iterable
+    public function testAnExcludedServerKeepsItsMethodsAndItsAnswers(): void
     {
-        yield 'an excluded server' => [['agentcat.exclude' => [ConformanceServer::class]]];
-        yield 'AgentCat off' => [['agentcat.enabled' => false]];
-        yield 'agentcat.enabled unset in a test environment (D31)' => [['agentcat.enabled' => null]];
+        config(['agentcat.exclude' => [ConformanceServer::class]]);
+
+        $this->assertUntouched();
     }
 
-    /**
-     * An untracked server keeps laravel/mcp's own method classes and answers exactly like a server that the container
-     * never built (no `afterResolving` callback, so no AgentCat at all).
-     *
-     * @param array<string, mixed> $config
-     */
-    #[DataProvider('untracked')]
-    public function testAnUntrackedServerKeepsItsMethodsAndItsAnswers(array $config): void
+    #[DefineEnvironment('defineAgentCatOff')]
+    public function testWithAgentCatOffAServerKeepsItsMethodsAndItsAnswers(): void
     {
-        config($config);
-        $logger = new MemoryLogger();
-        Log::setLogger($logger);
+        $this->assertUntouched();
+    }
 
-        $this->assertSame($this->answers(static fn(HttpTransport $transport): Server => new ConformanceServer($transport)), $this->answers(static fn(HttpTransport $transport): mixed => Container::getInstance()->make(ConformanceServer::class, ['transport' => $transport])));
-        $this->assertSame([], $logger->messages());
-        $this->assertFalse(EventQueue::global()->hasWork());
+    /** D31: `agentcat.enabled` unset in a test environment. */
+    #[DefineEnvironment('defineEnabledUnset')]
+    public function testWithoutASwitchInATestAServerKeepsItsMethodsAndItsAnswers(): void
+    {
+        $this->assertUntouched();
     }
 
     /** Review Focus 3: boot, resolve, `tools/call` and flush with the bad values. */
@@ -277,16 +280,18 @@ final class ServiceProviderTest extends LaravelTestCase
 
         $this->assertSame('echo: hi', JsonAssert::at($answer, 'result', 'content', 1, 'text'));
         $started = 'AgentCat setup started | project (telemetry-only) | sdk laravel-mcp/server | signals laravelMcpServer';
+        $nowhere = 'Warning: No projectId provided and no exporters configured. Events will not be sent anywhere.'; // only null exporter entries
         $complete = 'AgentCat setup complete | project (telemetry-only) | tracing=true context=true reportMissing=true exporters=0';
         $own = 'ERROR: Tool "own" already declares a \'session_id\' parameter.'; // the fixture's own tool, for every server
         $this->assertSame([
             'WARN: Unknown AgentCat option "agentcat.unknown_key" ignored', // once: the options serve every server
             'WARN: AgentCat option "enableTracing" must be bool, got string; the default is used',
             $started,
-            'Initialized telemetry with 0 exporters', // the null exporter entry logs nothing
+            $nowhere,
             $complete,
             $own,
             $started, // the server of the second request
+            $nowhere,
             $complete,
             $own,
             'Rebuilt injection registries on demand (tools/call before tools/list on this instance)',
@@ -333,15 +338,25 @@ final class ServiceProviderTest extends LaravelTestCase
 
     public function testATrackingFailureLogsOneLineAndTheServerStillAnswers(): void
     {
-        $logger = new MemoryLogger();
-        Log::setLogger($logger);
-        $this->app?->bind('log', static fn(): never => throw new \RuntimeException('no log manager'));
+        // No logger is chosen, so the tracker asks Laravel for its channel, and the line goes to agentcat.log in HOME:
+        // a HOME of this test, which the test removes.
+        $home = Environment::clear('HOME');
+        putenv('HOME=' . $this->laravelDirectory);
+        try {
+            $this->app?->bind('log', static fn(): never => throw new \RuntimeException('no log manager'));
 
-        $tools = (new LaravelHarness(ConformanceServer::class))->listTools()->tools;
+            $tools = (new LaravelHarness(ConformanceServer::class))->listTools()->tools;
+            Log::reset(); // closes the file logger of this HOME
+        } finally {
+            $home->restore();
+        }
 
         $this->assertIsArray($tools);
         $this->assertSame('own', JsonAssert::at(end($tools), 'name'));
-        $this->assertSame(['Warning: Failed to track server - RuntimeException: no log manager'], $logger->messages());
+        $lines = file($this->laravelDirectory . '/agentcat.log', FILE_IGNORE_NEW_LINES);
+        $this->assertIsArray($lines);
+        $this->assertCount(1, $lines);
+        $this->assertStringEndsWith(' Warning: Failed to track server - RuntimeException: no log manager', $lines[0]);
     }
 
     public function testTheConfigurationIsPublishedUnderItsTag(): void
@@ -360,23 +375,18 @@ final class ServiceProviderTest extends LaravelTestCase
         $this->assertSame([AgentCatServiceProvider::class], JsonAssert::at($composer, 'extra', 'laravel', 'providers'));
     }
 
-    /** What the application's default log channel wrote (`LaravelTestCase`); '' before its first line. */
-    private function defaultChannelLog(): string
+    /**
+     * An untracked server keeps laravel/mcp's own method classes and answers exactly like a server that the container
+     * never built (no `afterResolving` callback, so no AgentCat at all). Nothing is logged or queued.
+     */
+    private function assertUntouched(): void
     {
-        $path = $this->laravelDirectory . '/laravel.log';
+        $logger = new MemoryLogger();
+        Log::setLogger($logger);
 
-        return is_file($path) ? (string) file_get_contents($path) : '';
-    }
-
-    /** A field of the one event the API got. */
-    private function deliveredField(string $field): mixed
-    {
-        $this->assertTrue(EventQueue::global()->flush(1.0));
-        $this->assertCount(1, $this->transport->deliveries);
-        $delivery = $this->transport->deliveries[0] ?? null;
-        $this->assertInstanceOf(Delivery::class, $delivery);
-
-        return JsonAssert::at(Json::decode($delivery->body), $field);
+        $this->assertSame($this->answers(static fn(HttpTransport $transport): Server => new ConformanceServer($transport)), $this->answers(static fn(HttpTransport $transport): mixed => Container::getInstance()->make(ConformanceServer::class, ['transport' => $transport])));
+        $this->assertSame([], $logger->messages());
+        $this->assertFalse(EventQueue::global()->hasWork());
     }
 
     /**

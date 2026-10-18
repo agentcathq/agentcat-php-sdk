@@ -30,7 +30,7 @@ final class AgentCat
      *
      * `AGENTCAT_ENABLED` turns AgentCat off everywhere with `false`, `0`, `no` or `off`, and on everywhere with
      * `true`, `1`, `yes` or `on`. Otherwise AgentCat does nothing in test environments (PHPUnit, Pest, `APP_ENV`
-     * `testing` or `test`).
+     * `testing` or `test`). In a Laravel application, `enabled` in config/agentcat.php decides before the variable.
      *
      * @template T of object
      *

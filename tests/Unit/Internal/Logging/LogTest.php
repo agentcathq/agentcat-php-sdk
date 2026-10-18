@@ -7,6 +7,8 @@ namespace AgentCat\Tests\Unit\Internal\Logging;
 use AgentCat\Internal\Logging\FileLogger;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Logging\LogLine;
+use AgentCat\Tests\Support\Environment;
+use AgentCat\Tests\Support\FileTree;
 use AgentCat\Tests\Support\MemoryLogger;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
@@ -164,6 +166,36 @@ final class LogTest extends TestCase
 
         $this->assertSame([], $first->messages());
         $this->assertSame(['hello'], $second->messages());
+    }
+
+    public function testHasLoggerTellsWhetherALoggerWasChosen(): void
+    {
+        $this->assertFalse(Log::hasLogger());
+        $directory = getenv('HOME') . '/logtest-' . bin2hex(random_bytes(6)); // under the test HOME
+        mkdir($directory);
+        $home = Environment::clear('HOME');
+        putenv('HOME=' . $directory);
+        try {
+            Log::write('to the file fallback');
+            $this->assertFalse(Log::hasLogger()); // the fallback does not count
+            $this->assertFileExists($directory . '/agentcat.log');
+            Log::reset();
+        } finally {
+            $home->restore();
+            FileTree::remove($directory);
+        }
+        Log::adopt(new MemoryLogger());
+        $this->assertTrue(Log::hasLogger());
+        Log::reset();
+        $this->assertFalse(Log::hasLogger());
+        Log::setLogger(new MemoryLogger());
+        $this->assertTrue(Log::hasLogger());
+        Log::setLogger(null);
+        $this->assertFalse(Log::hasLogger());
+        Log::divert(new MemoryLogger());
+        $this->assertTrue(Log::hasLogger());
+        Log::endDiversion();
+        $this->assertFalse(Log::hasLogger());
     }
 
     public function testADiversionTakesEveryLineAndBlocksAdoption(): void

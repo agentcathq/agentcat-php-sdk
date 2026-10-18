@@ -9,6 +9,7 @@ use AgentCat\Internal\Delivery\EventQueue;
 use AgentCat\Internal\Diagnostics\Diagnostics;
 use AgentCat\Internal\Engine\TrackedServers;
 use AgentCat\Internal\Logging\Log;
+use AgentCat\Internal\Support\TestMode;
 use AgentCat\Tests\Support\Environment;
 use AgentCat\Tests\Support\FileTree;
 use Illuminate\Foundation\Application;
@@ -89,6 +90,7 @@ abstract class LaravelTestCase extends TestCase
     protected function tearDown(): void
     {
         ToolCalls::reset();
+        TestMode::reset(); // also the configured switch that AgentCat's service provider sets
         Log::reset();
         Diagnostics::reset();
         EventQueue::setGlobal(null);

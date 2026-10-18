@@ -70,9 +70,12 @@ final class ServerTracker
     {
         $projects = is_array($config['projects'] ?? null) ? $config['projects'] : [];
         $class = $this->matches($server, array_keys($projects));
-        $project = $class !== null ? ($projects[$class] ?? null) : ($config['project_id'] ?? null);
+        // A null entry (env() of an unset variable) is the configured project: under config:cache the process does
+        // not hold .env, so AGENTCAT_PROJECT_ID is read only when the configuration has no project either (D36).
+        $project = $class !== null ? ($projects[$class] ?? null) : null;
+        $project ??= $config['project_id'] ?? null;
 
-        return is_string($project) ? $project : null; // null reads AGENTCAT_PROJECT_ID (D36)
+        return is_string($project) ? $project : null;
     }
 
     /** The first listed class the server is an instance of; a class also matches its subclasses. */
@@ -89,11 +92,14 @@ final class ServerTracker
 
     /**
      * D30: AgentCat's lines go to the configured log channel, else to the default one. The first adopted logger of the
-     * process wins, and a fake's diversion keeps priority, so a later server changes nothing; after a fake, the next
-     * server routes the lines again.
+     * process wins, and a fake's diversion keeps priority; after a fake, the next server routes the lines again. The
+     * channel is resolved only while no logger is chosen: Laravel does not keep the emergency logger of a channel it
+     * cannot create, and logs that failure each time it is asked.
      */
     private function adoptLogger(Container $app, mixed $channel): void
     {
-        Log::adopt($app->make('log')->channel(is_string($channel) && $channel !== '' ? $channel : null));
+        if (!Log::hasLogger()) {
+            Log::adopt($app->make('log')->channel(is_string($channel) && $channel !== '' ? $channel : null));
+        }
     }
 }

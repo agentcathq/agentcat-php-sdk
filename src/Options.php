@@ -80,7 +80,8 @@ final readonly class Options
      *
      * An unknown key, or a value of the wrong type, logs one warning and the default is used. The bool options
      * reject an explicit null too. A callable that is not a closure is converted to one. An `exporters` entry that is
-     * null is skipped without a warning: a config file switches an exporter off with null.
+     * null is skipped without a warning: a config file switches an exporter off with null. When every entry is null,
+     * `exporters` is null: no exporters.
      *
      * `disableDiagnostics` also takes what an `.env` file gives: int 1 or 0, and the words of
      * `AGENTCAT_DISABLE_DIAGNOSTICS` (`true`, `1`, `yes`, `on` turn diagnostics off; `false`, `0`, `no`, `off` and
@@ -159,7 +160,8 @@ final readonly class Options
             return null;
         }
         if (is_array($value)) {
-            return ExporterConfigs::fromArray($value);
+            // Only null entries: a config file switched every exporter off, which is no exporters at all.
+            return $value !== [] && array_filter($value, static fn(mixed $entry): bool => $entry !== null) === [] ? null : ExporterConfigs::fromArray($value);
         }
         self::reject('exporters', 'array or null', $value);
 

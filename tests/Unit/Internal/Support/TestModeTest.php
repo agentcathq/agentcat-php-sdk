@@ -199,6 +199,41 @@ final class TestModeTest extends TestCase
         $this->assertSame($expected, TestMode::word($value));
     }
 
+    /** Plan E1 header conflict 12: a framework bridge's configuration decides before the environment. */
+    public function testAConfiguredSwitchDecidesBeforeTheEnvironment(): void
+    {
+        putenv('AGENTCAT_ENABLED=true');
+        TestMode::configure(false);
+        $this->assertFalse(TestMode::sdkEnabled());
+
+        putenv('AGENTCAT_ENABLED=off');
+        TestMode::configure(true);
+        $this->assertTrue(TestMode::sdkEnabled());
+
+        putenv('AGENTCAT_ENABLED=maybe');
+        $this->assertTrue(TestMode::sdkEnabled());
+        $this->assertSame([], $this->logger->messages()); // the variable is not read
+    }
+
+    public function testNoConfiguredSwitchLeavesTheEnvironmentToDecide(): void
+    {
+        putenv('AGENTCAT_ENABLED=true');
+        TestMode::configure(false);
+
+        TestMode::configure(null);
+
+        $this->assertTrue(TestMode::sdkEnabled());
+    }
+
+    public function testResetForgetsTheConfiguredSwitch(): void
+    {
+        TestMode::configure(true);
+
+        TestMode::reset();
+
+        $this->assertFalse(TestMode::sdkEnabled()); // PHPUnit is loaded (D31)
+    }
+
     public function testResetReportsAnOtherValueAgain(): void
     {
         putenv('AGENTCAT_ENABLED=maybe');
