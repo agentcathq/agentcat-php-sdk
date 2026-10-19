@@ -237,6 +237,60 @@ final class DiagnosticsTest extends TestCase
         $this->assertSame(2, $this->posts());
     }
 
+    /** @return iterable<string, array{string}> */
+    public static function longRunningSapis(): iterable
+    {
+        yield 'command line' => ['cli'];
+        yield 'phpdbg' => ['phpdbg'];
+    }
+
+    /** D47: a process that outlives its requests (a stdio server, a worker) keeps the TypeScript 2 s window. */
+    #[DataProvider('longRunningSapis')]
+    public function testALongRunningProcessPostsOnceItsOldestLineIsTwoSecondsOld(string $sapi): void
+    {
+        $this->init('proj_ABC', sapi: $sapi);
+        Log::write('first');
+        $this->now += 2.0;
+
+        $this->queue->pump();
+
+        $this->assertSame(1, $this->posts());
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function perRequestSapis(): iterable
+    {
+        yield 'PHP-FPM' => ['fpm-fcgi'];
+        yield 'mod_php' => ['apache2handler'];
+        yield 'php -S' => ['cli-server'];
+        yield 'FrankenPHP classic mode' => ['frankenphp'];
+    }
+
+    /**
+     * D47: a per-request runtime posts its lines once, when the queue shuts down after the response, also when the
+     * request or its drain (a slow hook, a slow AgentCat API) lasts longer than the 2 s window of long-running processes.
+     */
+    #[Group('ac-06-62')]
+    #[DataProvider('perRequestSapis')]
+    public function testAPerRequestRuntimePostsItsLinesOnceAtShutdown(string $sapi): void
+    {
+        $this->init('proj_ABC', sapi: $sapi);
+        Log::write('setup');
+        $this->now += 3.0;
+        $this->queue->pump();
+        $this->assertTrue($this->queue->flush(1.0));
+        $this->assertSame(0, $this->posts(), 'no queue pass posts before the shutdown');
+        Log::write('sent');
+
+        $this->queue->shutdown();
+
+        $this->assertSame(1, $this->posts());
+        $records = $this->records(0);
+        $this->assertCount(2, $records, 'every line of the request in one post');
+        $this->assertStringEndsWith('] setup', $this->text($records[0]));
+        $this->assertStringEndsWith('] sent', $this->text($records[1]));
+    }
+
     /**
      * I1: a collector that never answers (black-holed otel.agentcat.com). The flush pass posts the batch, as its window
      * is over, and returns true at once: AgentCat's own request is neither counted nor waited for.
@@ -725,9 +779,9 @@ final class DiagnosticsTest extends TestCase
         $this->assertFalse($this->queue->hasWork());
     }
 
-    private function init(string $projectId, bool $disabled = false, bool $testEnvironment = false): void
+    private function init(string $projectId, bool $disabled = false, bool $testEnvironment = false, ?string $sapi = null): void
     {
-        Diagnostics::init($projectId, $disabled, $this->queue, static fn(): bool => $testEnvironment, fn(): float => $this->now, static fn(): int => self::WALL_MILLIS);
+        Diagnostics::init($projectId, $disabled, $this->queue, static fn(): bool => $testEnvironment, fn(): float => $this->now, static fn(): int => self::WALL_MILLIS, $sapi);
     }
 
     private function queueOn(HttpChannel $channel): EventQueue

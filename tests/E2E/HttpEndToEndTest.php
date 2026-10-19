@@ -293,7 +293,7 @@ final class HttpEndToEndTest extends TestCase
     /**
      * D47 (open question Q3): under `php -S`, like PHP-FPM, each request posts its own diagnostics once, at its end,
      * after its response. Each POST is tied to its request by the session in its `Successfully sent event` line: each
-     * call mints its own session. A slow runner can add a POST without that line, from the 2 s window.
+     * call mints its own session.
      */
     #[Group('ac-06-62')]
     #[MaximumDuration(15000)]
@@ -315,6 +315,7 @@ final class HttpEndToEndTest extends TestCase
         $this->assertCount(2, $answeredAt, 'each call minted its own session');
         $sent = $this->diagnosticsWithASentEvent($diagnostics, 2);
         $this->assertCount(2, $sent, 'one diagnostics POST with the per-event line per tracked request');
+        $this->assertCount(2, $this->collector()->requests($diagnostics), 'and no other: the 2 s window is for long-running processes only');
         foreach ($answeredAt as $sessionId => $receivedAt) {
             $own = array_values(array_filter($sent, fn(\stdClass $request): bool => str_contains($this->body($request), ' | session ' . $sessionId . ' | ')));
             $this->assertCount(1, $own, 'one diagnostics POST carries the event line of ' . $sessionId);
