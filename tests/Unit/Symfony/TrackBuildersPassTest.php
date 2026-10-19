@@ -88,6 +88,7 @@ final class TrackBuildersPassTest extends TestCase
 
         (new TrackBuildersPass())->process($container);
 
+        $this->assertSame(['main', 'internal'], $container->getParameter('agentcat.servers')); // for the names from environment variables
         foreach (['main', 'internal'] as $server) {
             $this->assertSame([], $container->getDefinition('mcp.server.' . $server . '.builder')->getMethodCalls());
             $this->assertEquals([$server, new Reference('agentcat.server_tracker'), [[new Reference('app.' . $server)]], null], $container->getDefinition('agentcat.builder_configurator.' . $server)->getArguments());

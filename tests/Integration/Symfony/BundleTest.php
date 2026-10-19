@@ -7,6 +7,7 @@ namespace AgentCat\Tests\Integration\Symfony;
 use AgentCat\AgentCat;
 use AgentCat\Internal\Constants;
 use AgentCat\Internal\Delivery\EventQueue;
+use AgentCat\Internal\Diagnostics\Diagnostics;
 use AgentCat\Internal\Json\Json;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Tools\GetMoreTools;
@@ -16,6 +17,7 @@ use AgentCat\Tests\Support\JsonAssert;
 use AgentCat\Tests\Support\Laravel\InvokableIdentify;
 use AgentCat\Tests\Support\MemoryLogger;
 use AgentCat\Tests\Support\Symfony\CustomerCallHandler;
+use AgentCat\Tests\Support\Symfony\DefinitionsProbe;
 use AgentCat\Tests\Support\Symfony\FailingHook;
 use AgentCat\Tests\Support\Symfony\SymfonyTestCase;
 use AgentCat\Tests\Support\Symfony\TestKernel;
@@ -23,6 +25,10 @@ use AgentCat\Tests\Support\ToolCalls;
 use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
+use Symfony\Bundle\FrameworkBundle\Console\Application;
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Output\BufferedOutput;
+use Symfony\Component\DependencyInjection\Reference;
 
 /**
  * Every symfony/mcp-bundle server of an application is tracked once `AgentCatBundle` is registered (D27, D53, D55,
@@ -43,11 +49,32 @@ final class BundleTest extends SymfonyTestCase
 
     private const string MISSING_IDENTIFY = 'Error: identify callback threw - Symfony\Component\DependencyInjection\Exception\ServiceNotFoundException: Service "app.missing_identify" not found';
 
+    /** The variables that these tests name in `%env()%` values; cleared before each test and put back after it. */
+    private const array VARIABLES = ['AGENTCAT_TEST_EXCLUDE', 'AGENTCAT_TEST_LOGGER', 'AGENTCAT_TEST_IDENTIFY'];
+
+    private const string LITERAL_ID = 'WARN: AgentCat option "agentcat.%s" must be a literal service ID, not an environment variable; the default is used';
+
     /** Two servers: `conformance` and `second` (`second-server`, on `/mcp/second`), with the same tools. */
     private const array TWO_SERVERS = ['servers' => [
         'conformance' => TestKernel::CONFORMANCE,
         'second' => ['name' => 'second-server', 'http' => ['path' => '/mcp/second']] + TestKernel::CONFORMANCE,
     ]];
+
+    private ?Environment $variables = null;
+
+    #[\Override]
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->variables = Environment::clear(...self::VARIABLES);
+    }
+
+    #[\Override]
+    protected function tearDown(): void
+    {
+        parent::tearDown();
+        $this->variables?->restore();
+    }
 
     #[MaximumDuration(1000)]
     public function testEveryServerIsTrackedWithNoCode(): void
@@ -60,17 +87,29 @@ final class BundleTest extends SymfonyTestCase
         $this->assertSame(GetMoreTools::NAME, JsonAssert::at(end($tools), 'name'));
     }
 
+    /**
+     * Header conflict 2 (Plan D carry): booting, and a console command that builds no MCP server, track nothing, so
+     * they get no diagnostics and no signal handlers, as Laravel's `artisan list`.
+     */
     #[MaximumDuration(1000)]
-    public function testBootingTracksNothing(): void
+    public function testBootingAndACommandTrackNothing(): void
     {
         $logger = new MemoryLogger();
         Log::setLogger($logger);
-
+        $handlers = $this->signalHandlers();
         $kernel = $this->kernel(agentcat: self::ON);
+        $console = new Application($kernel);
+        $console->setAutoExit(false);
+        $output = new BufferedOutput();
 
-        $this->assertTrue($kernel->getContainer()->has('mcp.server.conformance'));
+        $exit = $console->run(new ArrayInput(['command' => 'list']), $output);
+
+        $this->assertSame(0, $exit);
+        $this->assertStringContainsString('debug:mcp', $output->fetch()); // the bundle's command, listed without building a server
         $this->assertSame([], $logger->messages());
         $this->assertFalse(EventQueue::global()->hasWork());
+        $this->assertFalse(Diagnostics::enabled());
+        $this->assertSame($handlers, $this->signalHandlers());
     }
 
     /** The container builds the server once, so its Builder is tracked once, for every request of the container. */
@@ -119,26 +158,99 @@ final class BundleTest extends SymfonyTestCase
         $this->assertSame('customer', $this->text($answer, 1));
     }
 
-    /** @return iterable<string, array{array<string, mixed>, array<string, mixed>|null}> */
+    /** @return iterable<string, array{array<string, mixed>, array<string, mixed>|null, string|null}> */
     public static function exclusions(): iterable
     {
-        yield 'a list' => [['exclude_servers' => ['conformance']], null];
-        yield 'a string' => [['exclude_servers' => 'conformance'], null];
-        // symfony/config writes the key my-conformance of mcp.servers as my_conformance
-        yield 'a name with a hyphen' => [['exclude_servers' => ['my-conformance']], ['servers' => ['my-conformance' => TestKernel::CONFORMANCE]]];
+        $hyphen = ['servers' => ['my-conformance' => TestKernel::CONFORMANCE]]; // symfony/config writes the key as my_conformance
+        yield 'a list' => [['exclude_servers' => ['conformance']], null, null];
+        yield 'a string' => [['exclude_servers' => 'conformance'], null, null];
+        yield 'a name with a hyphen' => [['exclude_servers' => ['my-conformance']], $hyphen, null];
+        yield 'a variable' => [['exclude_servers' => '%env(AGENTCAT_TEST_EXCLUDE)%'], null, 'conformance'];
+        yield 'a variable in a list' => [['exclude_servers' => ['internal', '%env(AGENTCAT_TEST_EXCLUDE)%']], null, 'conformance'];
+        yield 'a csv variable' => [['exclude_servers' => '%env(csv:AGENTCAT_TEST_EXCLUDE)%'], null, 'internal,conformance'];
+        yield 'a variable with a hyphen' => [['exclude_servers' => '%env(AGENTCAT_TEST_EXCLUDE)%'], $hyphen, 'my-conformance'];
     }
 
     /**
-     * D53 by `mcp.servers` name, at compile time.
+     * D53 by `mcp.servers` name: a name written in the configuration when the container compiles, a name from an
+     * environment variable when the server is built (it then gets no AgentCat handler, as without AgentCat).
      *
      * @param array<string, mixed>      $exclusion
      * @param array<string, mixed>|null $mcp
      */
     #[DataProvider('exclusions')]
     #[MaximumDuration(2000)]
-    public function testAnExcludedServerIsLeftAlone(array $exclusion, ?array $mcp): void
+    public function testAnExcludedServerIsLeftAlone(array $exclusion, ?array $mcp, ?string $variable): void
     {
+        if ($variable !== null) {
+            putenv('AGENTCAT_TEST_EXCLUDE=' . $variable);
+        }
+
         $this->assertUntouched([...self::ON, ...$exclusion], $mcp);
+    }
+
+    /** @return iterable<string, array{mixed, array<string, mixed>}> */
+    public static function writtenNames(): iterable
+    {
+        $second = [new Reference('agentcat.builder_configurator.second'), 'configure'];
+        yield 'a list' => [[5, 'conformance', 'my-third', '%env(AGENTCAT_TEST_EXCLUDE)%'], ['conformance' => null, 'second' => $second, 'my_third' => null]];
+        yield 'a string' => ['conformance', ['conformance' => null, 'second' => $second, 'my_third' => [new Reference('agentcat.builder_configurator.my_third'), 'configure']]];
+    }
+
+    /**
+     * The ruling of fix round 1: a name written in the configuration leaves the builder's definition as it is (no
+     * configurator), one from an environment variable reaches the configurator, which leaves the server untracked. An
+     * entry that is no name never fails the compile.
+     *
+     * @param array<string, mixed> $configurators
+     */
+    #[DataProvider('writtenNames')]
+    #[MaximumDuration(1000)]
+    public function testAWrittenNameIsRemovedWhenTheContainerCompiles(mixed $exclusion, array $configurators): void
+    {
+        putenv('AGENTCAT_TEST_EXCLUDE=second');
+        $probe = new DefinitionsProbe();
+
+        $this->kernel(agentcat: [...self::ON, 'exclude_servers' => $exclusion], probe: $probe, mcp: ['servers' => [...self::TWO_SERVERS['servers'], 'my-third' => ['name' => 'third-server', 'http' => ['path' => '/mcp/third']] + TestKernel::CONFORMANCE]]);
+
+        $this->assertEquals($configurators, array_map(static fn(array $builder): mixed => $builder['configurator'], $probe->builders));
+    }
+
+    /** A variable that names another server excludes nothing here. */
+    #[MaximumDuration(1000)]
+    public function testAVariableThatNamesAnotherServerLeavesThisOneTracked(): void
+    {
+        putenv('AGENTCAT_TEST_EXCLUDE=internal');
+        $kernel = $this->kernel(agentcat: [...self::ON, 'exclude_servers' => '%env(AGENTCAT_TEST_EXCLUDE)%']);
+
+        $tools = $this->http($kernel)->listTools()->tools;
+
+        $this->assertIsArray($tools);
+        $this->assertSame(GetMoreTools::NAME, JsonAssert::at(end($tools), 'name'));
+    }
+
+    /** @return iterable<string, array{string, string, string}> */
+    public static function wrongExclusions(): iterable
+    {
+        yield 'a value' => ['%env(int:AGENTCAT_TEST_EXCLUDE)%', '5', 'WARN: AgentCat option "agentcat.exclude_servers" must be array or string, got int; the default is used'];
+        yield 'an entry' => ['%env(json:AGENTCAT_TEST_EXCLUDE)%', '["internal", 7]', 'WARN: AgentCat option "agentcat.exclude_servers.1" must be string, got int; the entry is ignored'];
+    }
+
+    /** As Laravel's `exclude`: a value or an entry of a wrong type logs one line, and excludes nothing. */
+    #[DataProvider('wrongExclusions')]
+    #[MaximumDuration(1000)]
+    public function testAVariableOfAWrongTypeLogsOneLine(string $exclusion, string $variable, string $line): void
+    {
+        putenv('AGENTCAT_TEST_EXCLUDE=' . $variable);
+        $logger = new MemoryLogger();
+        Log::setLogger($logger);
+        $kernel = $this->kernel(agentcat: [...self::ON, 'exclude_servers' => $exclusion]);
+
+        $tools = $this->http($kernel)->listTools()->tools;
+
+        $this->assertIsArray($tools);
+        $this->assertSame(GetMoreTools::NAME, JsonAssert::at(end($tools), 'name'));
+        $this->assertSame([$line], array_values(array_filter($logger->messages(), static fn(string $line): bool => str_starts_with($line, 'WARN:'))));
     }
 
     #[MaximumDuration(1000)]
@@ -166,6 +278,17 @@ final class BundleTest extends SymfonyTestCase
         putenv('AGENTCAT_ENABLED=true');
 
         $this->assertUntouched(['enabled' => false, 'project_id' => self::PROJECT]);
+    }
+
+    /** D61: the log directory is made for the first line only, so AgentCat off makes none. */
+    #[MaximumDuration(1000)]
+    public function testWithAgentCatOffNoLogDirectoryIsMade(): void
+    {
+        $kernel = $this->kernel(agentcat: ['enabled' => false, 'project_id' => self::PROJECT]);
+
+        $this->http($kernel)->callTool('echo', ['msg' => 'hi']);
+
+        $this->assertDirectoryDoesNotExist($kernel->getLogDir());
     }
 
     /** Review Focus 3, ruling P9: `AGENTCAT_ENABLED=maybe` gives one line, and the D31 default (off under PHPUnit). */
@@ -300,6 +423,53 @@ final class BundleTest extends SymfonyTestCase
     }
 
     /**
+     * The container knows a service by the ID written in the configuration: one from an environment variable is not
+     * read, and one line says so. The default is used: AgentCat's own file.
+     */
+    #[MaximumDuration(1000)]
+    public function testALoggerIdFromAVariableIsNotReadAndOneLineSaysSo(): void
+    {
+        putenv('AGENTCAT_TEST_LOGGER=app.agentcat_logger');
+        $logger = new MemoryLogger();
+        $kernel = $this->kernel(agentcat: [...self::ON, 'logger' => '%env(AGENTCAT_TEST_LOGGER)%'], services: ['app.agentcat_logger' => $logger]);
+
+        $this->http($kernel)->listTools();
+
+        $this->assertSame([], $logger->messages());
+        $lines = $this->agentCatLines($kernel);
+        $this->assertSame(sprintf(self::LITERAL_ID, 'logger'), $lines[0] ?? null);
+        $this->assertCount(1, array_filter($lines, static fn(string $line): bool => str_contains($line, 'agentcat.logger')));
+    }
+
+    /** `%env(default::…)%` of an unset variable is an unset key: the default, no line. */
+    #[MaximumDuration(1000)]
+    public function testALoggerFromAnUnsetVariableIsTheDefault(): void
+    {
+        $kernel = $this->kernel(agentcat: [...self::ON, 'logger' => '%env(default::AGENTCAT_TEST_LOGGER)%']);
+
+        $this->http($kernel)->listTools();
+
+        $this->assertSame('AgentCat setup started | project ' . self::PROJECT . ' | sdk mcp-sdk/builder | signals mcpSdkBuilder', $this->agentCatLines($kernel)[0] ?? null);
+    }
+
+    /** A hook ID from an environment variable: one line when the server is tracked, and the hook never runs. */
+    #[MaximumDuration(1000)]
+    public function testAHookIdFromAVariableIsNotReadAndOneLineSaysSo(): void
+    {
+        putenv('AGENTCAT_TEST_IDENTIFY=app.identify');
+        $logger = new MemoryLogger();
+        Log::setLogger($logger);
+        $kernel = $this->kernel(agentcat: [...self::ON, 'identify' => '%env(AGENTCAT_TEST_IDENTIFY)%'], services: ['app.identify' => new InvokableIdentify('from-the-container')]);
+        $http = $this->http($kernel);
+
+        $http->callTool('echo', ['msg' => 'hi', 'session_id' => self::SESSION]);
+        $http->callTool('echo', ['msg' => 'hi', 'session_id' => self::SESSION]);
+
+        $this->assertSame([[], []], array_map(static fn(Delivery $delivery): array => (array) JsonAssert::at(Json::decode($delivery->body), 'identify_data'), $this->deliveries()));
+        $this->assertSame([sprintf(self::LITERAL_ID, 'identify')], array_values(array_filter($logger->messages(), static fn(string $line): bool => str_contains($line, 'identify'))));
+    }
+
+    /**
      * Header conflict 5: the HTTP context of a call is the RequestStack's main request, not the SAPI globals, with the
      * headers the client sent: not the `X-Php-Ob-Level` that Symfony's HttpKernel adds (Plan E1 Task 6 parity).
      */
@@ -389,7 +559,22 @@ final class BundleTest extends SymfonyTestCase
         $this->http($kernel)->listTools();
 
         $this->assertContains('AgentCat setup started | project ' . self::PROJECT . ' | sdk mcp-sdk/builder | signals mcpSdkBuilder', $logger->messages());
+        $this->assertSame([], array_values(array_filter($logger->messages(), static fn(string $line): bool => str_contains($line, 'agentcat.logger'))));
         $this->assertDirectoryDoesNotExist($kernel->getLogDir());
+    }
+
+    /** A logger that the application chose (`Log::setLogger()`, a fake's) keeps the lines: the key is not read then. */
+    #[MaximumDuration(1000)]
+    public function testAChosenLoggerLeavesTheLoggerKeyUnread(): void
+    {
+        $logger = new MemoryLogger();
+        Log::setLogger($logger);
+        $kernel = $this->kernel(agentcat: [...self::ON, 'logger' => 'app.missing_logger']);
+
+        $this->http($kernel)->listTools();
+
+        $this->assertContains('AgentCat setup started | project ' . self::PROJECT . ' | sdk mcp-sdk/builder | signals mcpSdkBuilder', $logger->messages());
+        $this->assertSame([], array_values(array_filter($logger->messages(), static fn(string $line): bool => str_contains($line, 'agentcat.logger'))));
     }
 
     /** @return iterable<string, array{string}> */
@@ -492,6 +677,12 @@ final class BundleTest extends SymfonyTestCase
         $http = $this->http($kernel);
 
         return [$http->listTools(), $http->callTool('echo', ['msg' => 'hi', 'session_id' => 'start'])];
+    }
+
+    /** @return array<int, mixed> the handlers of SIGTERM and SIGINT; none without ext-pcntl */
+    private function signalHandlers(): array
+    {
+        return function_exists('pcntl_signal_get_handler') ? [\SIGTERM => pcntl_signal_get_handler(\SIGTERM), \SIGINT => pcntl_signal_get_handler(\SIGINT)] : [];
     }
 
     /** The prefix that the line starts with, else the line. */

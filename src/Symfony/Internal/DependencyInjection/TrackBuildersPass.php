@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AgentCat\Symfony\Internal\DependencyInjection;
 
 use AgentCat\Symfony\Internal\BuilderConfigurator;
+use AgentCat\Symfony\Internal\ServerNames;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Reference;
@@ -15,7 +16,9 @@ use Symfony\Component\DependencyInjection\Reference;
  * attribute, and the `addRequestHandlers` method call with the tagged request handlers. That call moves into the
  * configurator, which tracks first and adds the handlers after AgentCat's: mcp/sdk answers with the first handler
  * that supports a request, so a customer's `tools/call` handler becomes the handler AgentCat delegates to. A builder
- * without the call is tracked after its handlers. A server named in `agentcat.exclude_servers` keeps its definition.
+ * without the call is tracked after its handlers. A server that `agentcat.exclude_servers` names (the names written in
+ * the configuration; the bundle reads those from environment variables when it builds a server) keeps its definition.
+ * The pass writes every server name to `agentcat.servers`, for those runtime names.
  *
  * It runs before the optimization passes at priority -100, after symfony/mcp-bundle's `McpAppPass` (10) and `McpPass`
  * (0), so the configurator sees every method call they add.
@@ -38,8 +41,9 @@ final class TrackBuildersPass implements CompilerPassInterface
             }
         }
         $servers = array_column($builders, 1);
+        $container->setParameter('agentcat.servers', $servers);
         foreach ($builders as [$id, $server]) {
-            if (!$this->excluded($server, $excluded, $servers)) {
+            if (!ServerNames::excluded($server, $excluded, $servers)) {
                 $this->track($container, $id, $server);
             }
         }
@@ -64,24 +68,5 @@ final class TrackBuildersPass implements CompilerPassInterface
         $container->register($configurator, BuilderConfigurator::class)
             ->setArguments([$server, new Reference('agentcat.server_tracker'), $handlers, $builder->getConfigurator()]);
         $builder->setConfigurator([new Reference($configurator), 'configure']);
-    }
-
-    /**
-     * Whether `exclude_servers` names the server. symfony/config writes a key `my-server` of `mcp.servers` as
-     * `my_server` (a key that holds an underscore, or whose other spelling is a key too, stays as written), so an entry
-     * names a server by either spelling.
-     *
-     * @param array<mixed> $excluded
-     * @param list<string> $servers  every server name
-     */
-    private function excluded(string $server, array $excluded, array $servers): bool
-    {
-        foreach ($excluded as $entry) {
-            if (is_string($entry) && $server === (in_array($entry, $servers, true) || str_contains($entry, '_') ? $entry : str_replace('-', '_', $entry))) {
-                return true;
-            }
-        }
-
-        return false;
     }
 }

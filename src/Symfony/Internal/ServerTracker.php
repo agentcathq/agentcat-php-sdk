@@ -8,7 +8,6 @@ use AgentCat\AgentCat;
 use AgentCat\Client;
 use AgentCat\Internal\ClientSeams;
 use AgentCat\Internal\Delivery\EventQueue;
-use AgentCat\Internal\Logging\FileLogger;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Support\BridgeKeys;
 use AgentCat\Internal\Support\ConfigOptions;
@@ -25,10 +24,11 @@ use Symfony\Component\HttpFoundation\RequestStack;
  * Tracks each symfony/mcp-bundle server when the container builds its Builder (plan E2 header conflicts 2, 5, 6, 14).
  * Never throws: the customer's server must come out of the container whatever AgentCat does.
  *
- * One tracker serves the container (a worker's too). At the first server it tracks, it reads the configuration, whose
- * environment variables resolve then, and builds its client and the options, so each bad value logs once. A
- * configuration that cannot be read (a variable without a default that is not set) logs one line for each server, which
- * then answers untracked.
+ * One tracker serves the container (a worker's too). At the first server, it reads the configuration, whose environment
+ * variables resolve then, so each bad value logs once, at the first server it tracks. A server that `exclude_servers`
+ * names through an environment variable is left as it is: the pass removes only the servers named in the configuration
+ * itself. A configuration that cannot be read (a variable without a default that is not set) logs one line for each
+ * server, which then answers untracked.
  *
  * @internal
  */
@@ -39,24 +39,39 @@ final class ServerTracker
 
     private const string NO_LOGGER = 'WARN: AgentCat option "agentcat.logger" must be the ID of a PSR-3 logger service, got "%s"; the default is used';
 
+    private const string LITERAL_ID = 'WARN: AgentCat option "agentcat.%s" must be a literal service ID, not an environment variable; the default is used';
+
     private ?Client $client = null;
 
     private ?Options $options = null;
 
-    /** @var array{project: ?string, projects: array<array-key, ?string>, logger: ?string}|null the bundle's keys, read once */
+    /**
+     * The bundle's keys, read once, and the configuration of the options.
+     *
+     * @var array{excluded: list<string>, project: ?string, projects: array<array-key, ?string>, logger: ?string, options: array<array-key, mixed>}|null
+     */
     private ?array $keys = null;
 
+    /** @var array<int, string> the lines of bad values, written at the first server that AgentCat tracks */
+    private array $lines = [];
+
     /**
-     * @param \Closure(): mixed  $config   the processed agentcat configuration, an `\ArrayObject`, read when called
-     * @param ContainerInterface $services the services the configuration names, by ID: the hooks and the logger (a
-     *                                     missing one is left out)
-     * @param string             $logFile  the file of AgentCat's lines without a `logger` (D61)
+     * @param \Closure(): mixed  $config    the processed agentcat configuration, an `\ArrayObject`, read when called
+     * @param ContainerInterface $services  the services the configuration names, by ID: the hooks and the logger (a
+     *                                      missing one is left out)
+     * @param string             $logFile   the file of AgentCat's lines without a `logger` (D61)
+     * @param list<string>       $servers   the name of every server (`agentcat.servers`), for the names of
+     *                                      `exclude_servers`
+     * @param list<string>       $variables the keys that name a service through an environment variable: the
+     *                                      container knows a service by the ID written in the configuration only
      */
     public function __construct(
         private readonly \Closure $config,
         private readonly ContainerInterface $services,
         private readonly ?RequestStack $requests,
         private readonly string $logFile,
+        private readonly array $servers = [],
+        private readonly array $variables = [],
     ) {}
 
     public function track(Builder $builder, string $server): void
@@ -65,15 +80,18 @@ final class ServerTracker
             $config = ($this->config)();
             $config = $config instanceof \ArrayObject ? $config->getArrayCopy() : [];
             $keys = $this->keys;
-            $lines = [];
             if ($keys === null) {
-                [$keys, $lines] = $this->keys($config);
+                [$keys, $this->lines] = $this->keys($config);
                 $this->keys = $keys;
             }
+            if (ServerNames::excluded($server, $keys['excluded'], $this->servers)) {
+                return; // named through an environment variable: it touches neither the log nor diagnostics
+            }
             $this->adoptLogger($keys['logger']);
-            foreach ($lines as $line) {
+            foreach ($this->lines as $line) {
                 Log::write($line);
             }
+            $this->lines = [];
             $client = AgentCat::client();
             // A fake records every server (header conflict 6); the shared client is never replaced.
             if (!FakeLog::of($client) instanceof FakeLog) {
@@ -83,7 +101,7 @@ final class ServerTracker
                     httpContext: $this->requests instanceof RequestStack ? RequestStackContext::of($this->requests) : null,
                 ));
             }
-            $this->options ??= ConfigOptions::options($config, self::BRIDGE_KEYS, $this->services->get(...));
+            $this->options ??= ConfigOptions::options($keys['options'], self::BRIDGE_KEYS, $this->services->get(...));
             // A null entry (`%env(default::…)%` of an unset variable) is the configured project; without one, the
             // client reads AGENTCAT_PROJECT_ID (D36).
             $client->track($builder, $keys['projects'][$server] ?? $keys['project'], $this->options);
@@ -94,20 +112,34 @@ final class ServerTracker
     }
 
     /**
-     * The bundle's own keys, with their types, and the line of each bad value.
+     * The bundle's own keys, with their types, the configuration of the options, and the line of each bad value. A
+     * service ID from an environment variable is unset, with a line: the locator holds the IDs written in the
+     * configuration only.
      *
      * @param array<array-key, mixed> $config
      *
-     * @return array{array{project: ?string, projects: array<array-key, ?string>, logger: ?string}, array<int, string>}
+     * @return array{array{excluded: list<string>, project: ?string, projects: array<array-key, ?string>, logger: ?string, options: array<array-key, mixed>}, array<int, string>}
      */
     private function keys(array $config): array
     {
         /** @var \ArrayObject<int, string> $lines */
         $lines = new \ArrayObject();
+        foreach ($this->variables as $key) {
+            if (($config[$key] ?? '') !== '') {
+                $lines->append(sprintf(self::LITERAL_ID, $key));
+            }
+            $config[$key] = null;
+        }
         $read = new BridgeKeys($config, static function (string $line) use ($lines): void {
             $lines->append($line);
         });
-        $keys = ['project' => $read->string('project_id'), 'projects' => $read->projects(), 'logger' => $read->string('logger')];
+        $keys = [
+            'excluded' => $read->strings('exclude_servers', []),
+            'project' => $read->string('project_id'),
+            'projects' => $read->projects(),
+            'logger' => $read->string('logger'),
+            'options' => $config,
+        ];
         $read->string('diagnostics_endpoint'); // read at boot (BridgeConfig); here for the line of a bad value
         $read->string('diagnostics_token');
 
@@ -140,11 +172,7 @@ final class ServerTracker
 
             return;
         }
-        $directory = dirname($this->logFile);
-        if (!is_dir($directory)) {
-            @mkdir($directory, recursive: true); // 0777 less the umask; Symfony makes its log directory only for a write
-        }
-        Log::adopt(new FileLogger($this->logFile));
+        Log::adopt(new LogFile($this->logFile)); // its directory is made at its first line
         if ($named) {
             Log::write(sprintf(self::NO_LOGGER, $id));
         }

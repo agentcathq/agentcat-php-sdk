@@ -40,20 +40,20 @@ final class AgentCatBundle extends AbstractBundle
         $children = $definition->rootNode()->children();
         $children->scalarNode('enabled')->defaultValue('%env(default::AGENTCAT_ENABLED)%')->info('On or off for every MCP server and every AgentCat call: true or false. Unset: on, except while your tests run.')->end();
         $children->scalarNode('project_id')->defaultValue('%env(default::AGENTCAT_PROJECT_ID)%')->info('Your AgentCat project ID (proj_…). Unset: no events go to AgentCat; exporters still run.')->end();
-        $children->arrayNode('exclude_servers')->info('Servers AgentCat never tracks: names of mcp.servers entries. A string is one name.')->beforeNormalization()->castToArray()->end()->scalarPrototype()->end()->defaultValue([])->end();
+        $children->variableNode('exclude_servers')->defaultValue([])->info('Servers AgentCat never tracks: names of mcp.servers entries; a string is one name. Names written here are read when the container compiles, names from environment variables when each server is built.')->end();
         $children->arrayNode('projects')->info('Another project for some servers: mcp.servers name => project ID. A null project is project_id.')->useAttributeAsKey('server')->scalarPrototype()->end()->defaultValue([])->end();
-        $children->scalarNode('logger')->defaultNull()->info('The service ID of a PSR-3 logger for AgentCat\'s own lines, for example monolog.logger.mcp. Unset: their own file, agentcat.log in the log directory.')->end();
-        $children->scalarNode('api_url')->defaultValue('%env(default::AGENTCAT_API_URL)%')->info('The AgentCat API. Unset: AgentCat\'s. MCPCAT_API_URL is the TypeScript SDK\'s name.')->end();
+        $children->scalarNode('logger')->defaultNull()->info('The service ID of a PSR-3 logger for AgentCat\'s own lines, for example monolog.logger.mcp, written here, not in an environment variable. Unset: their own file, agentcat.log in the log directory.')->end();
+        $children->scalarNode('api_url')->defaultValue('%env(default::AGENTCAT_API_URL)%')->info('The AgentCat API. Unset: AgentCat\'s. MCPCAT_API_URL, the TypeScript SDK\'s name, is read too.')->end();
         foreach (self::BOOLS as $key => $default) {
             $children->scalarNode($key)->defaultValue($default)->end();
         }
         $children->scalarNode('custom_context_description')->defaultNull()->end();
         $children->scalarNode('enable_agent_tracking')->defaultFalse()->end();
         foreach (self::HOOKS as $hook) {
-            $children->scalarNode($hook)->defaultNull()->info('The service ID of an invokable service, resolved when the hook runs.')->end();
+            $children->scalarNode($hook)->defaultNull()->info('The service ID of an invokable service, written here, not in an environment variable. The service is resolved when the hook runs.')->end();
         }
         $children->variableNode('exporters')->defaultNull()->info('Your own telemetry tools: name => {type: otlp|datadog|sentry|posthog, …}. A ~ entry is skipped.')->end();
-        $children->variableNode('disable_diagnostics')->defaultValue(['%env(default::AGENTCAT_DISABLE_DIAGNOSTICS)%', '%env(default::DISABLE_DIAGNOSTICS)%'])->info('Diagnostics: AgentCat\'s own log lines, sent to AgentCat so that it can find broken installs. true turns them off; in a list, one true value is enough. DISABLE_DIAGNOSTICS is the TypeScript SDK\'s name.')->end();
+        $children->variableNode('disable_diagnostics')->defaultValue(['%env(default::AGENTCAT_DISABLE_DIAGNOSTICS)%', '%env(default::DISABLE_DIAGNOSTICS)%'])->info('Diagnostics: AgentCat\'s own log lines, sent to AgentCat so that it can find broken installs. true turns them off; in a list, one true value is enough. DISABLE_DIAGNOSTICS, the TypeScript SDK\'s name, is read too.')->end();
         $children->scalarNode('diagnostics_endpoint')->defaultValue('%env(default::AGENTCAT_DIAGNOSTICS_ENDPOINT)%')->info('Where diagnostics go: an OpenTelemetry collector (OTLP/HTTP logs). Unset: AgentCat\'s.')->end();
         $children->scalarNode('diagnostics_token')->defaultValue('%env(default::AGENTCAT_DIAGNOSTICS_TOKEN)%')->info('The bearer token of diagnostics_endpoint. Unset: AgentCat\'s.')->end();
         $children->scalarNode('disable_signal_handlers')->defaultFalse()->end();
@@ -63,12 +63,25 @@ final class AgentCatBundle extends AbstractBundle
     #[\Override]
     public function loadExtension(array $config, ContainerConfigurator $container, ContainerBuilder $builder): void
     {
+        // The names written in the configuration: the pass removes those servers when the container compiles. The
+        // tracker reads the configuration's names again when it builds a server, from environment variables too.
         $excluded = $config['exclude_servers'] ?? [];
-        $builder->setParameter('agentcat.exclude_servers', is_array($excluded) ? $excluded : []);
+        $names = [];
+        foreach (is_array($excluded) ? $excluded : [$excluded] as $name) {
+            if (is_string($name) && !$this->variable($builder, $name)) {
+                $names[] = $name;
+            }
+        }
+        $builder->setParameter('agentcat.exclude_servers', $names);
+        // The services the configuration names by ID: the hooks and the logger. The container knows a service by the ID
+        // written here; an ID from an environment variable is known only at runtime, when the tracker says so.
         $services = [];
+        $variables = [];
         foreach ([...self::HOOKS, 'logger'] as $key) {
             $id = $config[$key] ?? null;
-            if (is_string($id) && $id !== '') {
+            if (is_string($id) && $this->variable($builder, $id)) {
+                $variables[] = $key;
+            } elseif (is_string($id) && $id !== '') {
                 // A missing service is left out of the locator, and the container compiles: the hook guard logs it when
                 // the hook runs, the tracker when it chooses the logger (D32).
                 $services[$id] = new Reference($id, ContainerInterface::IGNORE_ON_INVALID_REFERENCE);
@@ -82,7 +95,18 @@ final class AgentCatBundle extends AbstractBundle
             new Reference('agentcat.hooks'),
             new Reference('request_stack', ContainerInterface::NULL_ON_INVALID_REFERENCE),
             '%kernel.logs_dir%/agentcat.log',
+            '%agentcat.servers%', // every server name, which TrackBuildersPass writes
+            $variables,
         ]);
+    }
+
+    /** Whether a value of the configuration holds an environment variable, which resolves at runtime only. */
+    private function variable(ContainerBuilder $builder, string $value): bool
+    {
+        $variables = [];
+        $builder->resolveEnvPlaceholders($value, null, $variables);
+
+        return $variables !== [];
     }
 
     #[\Override]

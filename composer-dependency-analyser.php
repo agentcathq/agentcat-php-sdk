@@ -38,5 +38,7 @@ return (new Configuration())
     ->ignoreErrorsOnPackageAndPath('orchestra/testbench-core', __DIR__ . '/tests', [ErrorType::SHADOW_DEPENDENCY])
     // Symfony\Component\Console arrives with laravel/framework; the artisan fixture hands its input and output to Laravel's console kernel.
     ->ignoreErrorsOnPackageAndPath('symfony/console', __DIR__ . '/tests/E2E/Laravel', [ErrorType::SHADOW_DEPENDENCY])
+    // Symfony\Component\Console arrives with symfony/framework-bundle; a bundle test runs a console command as an application does.
+    ->ignoreErrorsOnPackageAndPath('symfony/console', __DIR__ . '/tests/Integration/Symfony/BundleTest.php', [ErrorType::SHADOW_DEPENDENCY])
     // Symfony\Component\Routing arrives with symfony/framework-bundle and symfony/mcp-bundle; the test kernel imports the bundle's MCP routes with it.
     ->ignoreErrorsOnPackageAndPath('symfony/routing', __DIR__ . '/tests/Support/Symfony/TestKernel.php', [ErrorType::SHADOW_DEPENDENCY]);

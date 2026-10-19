@@ -60,10 +60,13 @@ final class AgentCatBundleTest extends TestCase
         $this->assertEqualsCanonicalizing([...ServerTracker::BRIDGE_KEYS, ...array_keys(ConfigOptions::KEYS)], array_keys($this->process([])));
     }
 
-    /** Plan E1 final ruling M2: a string is a list of one server. */
-    public function testAStringExclusionIsAListOfOneServer(): void
+    /**
+     * `exclude_servers` takes any value: a name or a list of names written here, which the pass reads when the
+     * container compiles, or an environment variable of any type, which the tracker reads when it builds a server.
+     */
+    public function testExclusionsTakeNamesListsAndVariables(): void
     {
-        $this->assertSame(['internal'], $this->process(['exclude_servers' => 'internal'])['exclude_servers'] ?? null);
+        $this->assertSame(['internal', 'admin', '%env(csv:AGENTCAT_EXCLUDE)%'], array_map(fn(mixed $exclusion): mixed => $this->process(['exclude_servers' => $exclusion])['exclude_servers'] ?? null, ['internal', 'admin', '%env(csv:AGENTCAT_EXCLUDE)%']));
         $this->assertSame(['internal', 'admin'], $this->process(['exclude_servers' => ['internal', 'admin']])['exclude_servers'] ?? null);
     }
 
