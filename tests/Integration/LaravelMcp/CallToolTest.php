@@ -31,6 +31,7 @@ use AgentCat\ToolCall;
 use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
 use Illuminate\Http\Request;
 use Laravel\Mcp\Server;
+use Laravel\Mcp\Server\Contracts\Method;
 use Laravel\Mcp\Server\Contracts\Transport;
 use Laravel\Mcp\Server\Methods\CallTool;
 use Laravel\Mcp\Server\ServerContext;
@@ -370,6 +371,66 @@ final class CallToolTest extends LaravelTestCase
         $error = $event->error;
         $this->assertInstanceOf(\stdClass::class, $error);
         $this->assertObjectNotHasProperty('type', $error);
+    }
+
+    /**
+     * M4: a customer's decorator of `CallTool` from `extend()`, here an authorization check, runs on a tracked server
+     * as without AgentCat: the container builds the handler at each call, and AgentCat answers with what it built.
+     */
+    public function testAnExtendDecoratorOfCallToolStillRuns(): void
+    {
+        $checks = new \ArrayObject();
+        $this->app?->extend(CallTool::class, static fn(CallTool $tool): Method => new readonly class ($tool, $checks) implements Method {
+            /** @param \ArrayObject<int, string> $checks */
+            public function __construct(private CallTool $inner, private \ArrayObject $checks) {}
+
+            #[\Override]
+            public function handle(JsonRpcRequest $request, ServerContext $context): iterable|JsonRpcResponse
+            {
+                $this->checks->append((string) $request->get('name'));
+
+                return $request->get('name') === 'boom' ? JsonRpcResponse::error($request->id, -32001, 'Forbidden.') : $this->inner->handle($request, $context);
+            }
+        });
+        $fixture = new LaravelTrackingFixture();
+        $harness = new LaravelHarness(ConformanceServer::class, $fixture->tracker());
+
+        $allowed = $harness->callTool('echo', ['msg' => 'hi', 'session_id' => self::SESSION]);
+        $refused = $harness->callTool('boom', ['session_id' => self::SESSION]);
+
+        $this->assertSame(['echo', 'boom'], $checks->getArrayCopy());
+        $this->assertSame('echo: hi', JsonAssert::at($allowed, 'result', 'content', 0, 'text'));
+        $this->assertSame('Forbidden.', JsonAssert::at($refused, 'error', 'message'));
+        $events = $fixture->events();
+        $this->assertCount(2, $events);
+        $this->assertNotTrue($events[0]->isError);
+        $this->assertTrue($events[1]->isError);
+        $this->assertSame('Forbidden.', JsonAssert::at($events[1]->error, 'message'));
+        $this->assertSame([['msg' => 'hi']], ToolCalls::of('echo'), 'the decorator passed the stripped arguments on');
+    }
+
+    /**
+     * M4: a `resolving()` callback of `CallTool` runs at each call, as without AgentCat; the container still builds
+     * laravel/mcp's own `CallTool`, so AgentCat keeps the tool's exception.
+     */
+    public function testAResolvingCallbackOfCallToolRunsAndTheToolExceptionIsKept(): void
+    {
+        $resolved = new \ArrayObject();
+        $this->app?->resolving(CallTool::class, static function (CallTool $tool) use ($resolved): void {
+            $resolved->append($tool::class);
+        });
+        $fixture = new LaravelTrackingFixture();
+        $harness = new LaravelHarness(ConformanceServer::class, $fixture->tracker());
+
+        $harness->callTool('echo', ['msg' => 'hi', 'session_id' => self::SESSION]);
+        $answer = $harness->callTool('boom', ['session_id' => self::SESSION]);
+
+        $this->assertSame([CallTool::class, CallTool::class], $resolved->getArrayCopy());
+        $this->assertTrue(JsonAssert::at($answer, 'result', 'isError'));
+        $events = $fixture->events();
+        $this->assertCount(2, $events);
+        $this->assertSame('RuntimeException', JsonAssert::at($events[1]->error, 'type'));
+        $this->assertSame('tool boom', JsonAssert::at($events[1]->error, 'message'));
     }
 
     public function testAJsonRpcErrorFromACustomHandlerIsOneErrorEventAndPassesUnchanged(): void

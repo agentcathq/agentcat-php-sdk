@@ -17,10 +17,12 @@ use Laravel\Mcp\Transport\JsonRpcResponse;
 
 /**
  * Answers `tools/call` (TS callWrap): `CallInterceptor` resolves the handles, strips them, lets the handler the
- * server's entry named before AgentCat's run the tool, decorates the answer and queues one event. For laravel/mcp's
- * own `CallTool`, AgentCat answers with `CapturingCallTool`, which keeps the tool's exception (plan E1 header
- * conflict 5); a customer's handler, or a container binding of `CallTool`, answers itself (header conflict 4). A call
- * without a string tool name goes to the handler untraced.
+ * server's entry named before AgentCat's run the tool, decorates the answer and queues one event. A customer's handler
+ * answers itself (header conflict 4). laravel/mcp's own `CallTool` is built by the container at each call, as
+ * laravel/mcp does, so a binding, an `extend()` decorator (an authorization check, say) and the `resolving()`
+ * callbacks of `CallTool` run: when the container builds exactly `CallTool`, AgentCat answers with
+ * `CapturingCallTool`, which keeps the tool's exception (plan E1 header conflict 5); anything else answers itself. A
+ * call without a string tool name goes to the handler untraced.
  *
  * @internal
  */
@@ -47,8 +49,8 @@ final readonly class TrackedCallTool implements Method
         $this->publisher->pump(); // stdio servers deliver between requests
         $original = $this->original;
         $stash = $this->stash;
-        $delegate = $original === CallTool::class && !Container::getInstance()->bound(CallTool::class)
-            ? static fn(JsonRpcRequest $sent): iterable|JsonRpcResponse => (new CapturingCallTool($stash))->handle($sent, $context)
+        $delegate = $original === CallTool::class
+            ? static fn(JsonRpcRequest $sent): iterable|JsonRpcResponse => self::callTool($stash, $sent, $context)
             : static fn(JsonRpcRequest $sent): iterable|JsonRpcResponse => Delegate::handle($original, $sent, $context);
         if (!is_string($request->get('name'))) {
             return $delegate($request); // TypeScript and mcp/sdk reject it before any handler: no event (D15)
@@ -64,5 +66,20 @@ final readonly class TrackedCallTool implements Method
         );
 
         return $this->interceptor->intercept($this->server, $seam);
+    }
+
+    /**
+     * laravel/mcp's `CallTool` as the container builds it. The container's extenders and resolving callbacks are not
+     * public, so it is always built; with none, it is exactly `CallTool`.
+     *
+     * @return iterable<JsonRpcResponse>|JsonRpcResponse
+     */
+    private static function callTool(ThrowableStash $stash, JsonRpcRequest $request, ServerContext $context): iterable|JsonRpcResponse
+    {
+        $handler = Container::getInstance()->make(CallTool::class);
+
+        return $handler::class === CallTool::class
+            ? (new CapturingCallTool($stash))->handle($request, $context)
+            : $handler->handle($request, $context);
     }
 }
