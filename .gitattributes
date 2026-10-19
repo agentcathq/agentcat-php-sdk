@@ -10,4 +10,5 @@
 /phpunit.xml.dist export-ignore
 /infection.json5 export-ignore
 /docs export-ignore
+/recipe export-ignore
 /composer-dependency-analyser.php export-ignore
