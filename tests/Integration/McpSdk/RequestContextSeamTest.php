@@ -71,7 +71,12 @@ final class RequestContextSeamTest extends TestCase
         $this->assertSame(['ann', 'bob', 'cid'], array_map(static fn(Event $e): mixed => JsonAssert::at($e->parameters, 'extra', 'requestInfo', 'headers', 'x-user'), $events));
     }
 
-    public function testWithoutAContextTheSapiGlobalsStillCount(): void
+    /**
+     * Without a context, a client keeps the reader's default, the SAPI globals: on the command line they hold no HTTP
+     * request. `HttpEndToEndTest::testAHandshakeCallIsTrackedEndToEnd()` proves that the same default records
+     * the request from `$_SERVER` under a web SAPI.
+     */
+    public function testWithoutAContextACommandLineCallRecordsNoRequestInfo(): void
     {
         $fixture = new TrackingFixture();
         $builder = TrackingFixture::builder();
@@ -83,6 +88,6 @@ final class RequestContextSeamTest extends TestCase
 
         $extra = JsonAssert::at($fixture->event()->parameters, 'extra');
         $this->assertInstanceOf(\stdClass::class, $extra);
-        $this->assertObjectNotHasProperty('requestInfo', $extra); // PHPUnit runs on the CLI
+        $this->assertObjectNotHasProperty('requestInfo', $extra);
     }
 }
