@@ -11,12 +11,15 @@ use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
 use Mcp\Server;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\DependencyInjection\Argument\TaggedIteratorArgument;
+use Symfony\Component\Routing\Route;
+use Symfony\Component\Routing\RouterInterface;
 
 /**
  * AgentCat's bundle finds each symfony/mcp-bundle server by these service definitions, read at compile time (Plan E2
  * header conflict 3): the builder's service ID, its tag and `server` attribute, the `addRequestHandlers` method call
  * with the tagged request handlers, and no configurator of the bundle's own. A bundle release that changes one of them
- * breaks the tracking of every bundle server.
+ * breaks the tracking of every bundle server. The route of each HTTP server names the server's controller, by which
+ * the bundle finds a server's answers at runtime (D62).
  */
 #[Group('contract')]
 final class BundleServicesTest extends SymfonyTestCase
@@ -47,6 +50,23 @@ final class BundleServicesTest extends SymfonyTestCase
         $this->assertInstanceOf(Server::class, $kernel->getContainer()->get('mcp.server.conformance'));
     }
 
+    /**
+     * D62: the bundle's `kernel.response` listener finds a server's answers by the controller of its route, which
+     * symfony/mcp-bundle's route loader names after the server.
+     */
+    #[MaximumDuration(1000)]
+    public function testEachHttpServersRouteNamesTheServersController(): void
+    {
+        $kernel = $this->kernel(withAgentCat: false);
+        $router = $kernel->getContainer()->get('router');
+        $this->assertInstanceOf(RouterInterface::class, $router);
+
+        $routes = array_filter($router->getRouteCollection()->all(), static fn(Route $route): bool => $route->getPath() === '/mcp/conformance');
+
+        $this->assertSame(['mcp.server.conformance.controller::handle'], array_values(array_map(static fn(Route $route): mixed => $route->getDefault('_controller'), $routes)));
+        $this->assertTrue($kernel->getContainer()->has('mcp.server.conformance.controller'));
+    }
+
     public function testTheManifestNamesTheBundleInternals(): void
     {
         $bundle = array_values(array_filter(PrivateMemberManifest::members(), static fn(string $member): bool => str_starts_with($member, 'symfony/mcp-bundle: ')));
@@ -54,6 +74,7 @@ final class BundleServicesTest extends SymfonyTestCase
         $this->assertSame([
             'symfony/mcp-bundle: builder method call addRequestHandlers(!tagged_iterator mcp.request_handler)',
             'symfony/mcp-bundle: builder without a configurator',
+            'symfony/mcp-bundle: route of each HTTP server with _controller mcp.server.<name>.controller::handle',
             'symfony/mcp-bundle: service mcp.server.<name>.builder tagged mcp.server.builder {server: <name>}',
         ], $bundle);
     }

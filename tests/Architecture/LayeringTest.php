@@ -70,6 +70,7 @@ final class LayeringTest
                 Selector::inNamespace('Symfony\Component\DependencyInjection'),
                 Selector::inNamespace('Symfony\Component\Config'),
                 Selector::inNamespace('Symfony\Component\HttpFoundation'),
+                Selector::inNamespace('Symfony\Component\EventDispatcher'),
                 Selector::inNamespace('Symfony\Bundle'),
             )
             ->because('Symfony is optional (01 AC-90)');

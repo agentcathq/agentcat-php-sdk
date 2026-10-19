@@ -8,6 +8,8 @@ use AgentCat\AgentCat;
 use AgentCat\Client;
 use AgentCat\Internal\ClientSeams;
 use AgentCat\Internal\Delivery\EventQueue;
+use AgentCat\Internal\Engine\TrackedServer;
+use AgentCat\Internal\Engine\TrackedServers;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Support\BridgeKeys;
 use AgentCat\Internal\Support\ConfigOptions;
@@ -54,6 +56,9 @@ final class ServerTracker
 
     /** @var array<int, string> the lines of bad values, written at the first server that AgentCat tracks */
     private array $lines = [];
+
+    /** @var array<string, bool> the names of the servers that AgentCat tracks (D62) */
+    private array $tracked = [];
 
     /**
      * @param \Closure(): mixed  $config    the processed agentcat configuration, an `\ArrayObject`, read when called
@@ -105,10 +110,19 @@ final class ServerTracker
             // A null entry (`%env(default::…)%` of an unset variable) is the configured project; without one, the
             // client reads AGENTCAT_PROJECT_ID (D36).
             $client->track($builder, $keys['projects'][$server] ?? $keys['project'], $this->options);
+            if (TrackedServers::get($builder) instanceof TrackedServer) {
+                $this->tracked[$server] = true; // a server that AgentCat did not track (off, or failed) keeps its answers
+            }
         } catch (\Throwable $e) {
             $this->adoptLogger(null);
             Log::write('Warning: Failed to track server - ' . ErrorText::of($e));
         }
+    }
+
+    /** Whether AgentCat tracks the server of this name, in this container (D62: its answers get their length). */
+    public function tracked(string $server): bool
+    {
+        return $this->tracked[$server] ?? false;
     }
 
     /**

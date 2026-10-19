@@ -34,13 +34,13 @@ return (new Configuration())
     ->ignoreErrorsOnPackageAndPath('mcp/sdk', __DIR__ . '/src/Symfony', [ErrorType::DEV_DEPENDENCY_IN_PROD])
     // Psr\Container\ContainerInterface arrives with symfony/dependency-injection; the tracker reads the hook locator through it.
     ->ignoreErrorsOnPackageAndPath('psr/container', __DIR__ . '/src/Symfony', [ErrorType::SHADOW_DEPENDENCY])
-    // Symfony\Component\EventDispatcher arrives with symfony/http-kernel; the bundle tests read the kernel's listeners from it.
-    ->ignoreErrorsOnPackageAndPath('symfony/event-dispatcher', __DIR__ . '/tests/Integration/Symfony', [ErrorType::SHADOW_DEPENDENCY])
+    // Symfony\Component\EventDispatcher arrives with symfony/http-kernel; the bundle adds its kernel.response listener to the kernel's dispatcher, and the bundle tests read the listeners from it.
+    ->ignoreErrorsOnPackageAndPaths('symfony/event-dispatcher', [__DIR__ . '/src/Symfony', __DIR__ . '/tests/Unit/Symfony', __DIR__ . '/tests/Integration/Symfony'], [ErrorType::SHADOW_DEPENDENCY])
     // Orchestra\Testbench\TestCase lives in orchestra/testbench-core, which orchestra/testbench requires; the Laravel tests extend it.
     ->ignoreErrorsOnPackageAndPath('orchestra/testbench-core', __DIR__ . '/tests', [ErrorType::SHADOW_DEPENDENCY])
     // Symfony\Component\Console arrives with laravel/framework; the artisan fixture hands its input and output to Laravel's console kernel.
     ->ignoreErrorsOnPackageAndPath('symfony/console', __DIR__ . '/tests/E2E/Laravel', [ErrorType::SHADOW_DEPENDENCY])
     // Symfony\Component\Console arrives with symfony/framework-bundle; a bundle test runs a console command as an application does.
     ->ignoreErrorsOnPackageAndPath('symfony/console', __DIR__ . '/tests/Integration/Symfony/BundleTest.php', [ErrorType::SHADOW_DEPENDENCY])
-    // Symfony\Component\Routing arrives with symfony/framework-bundle and symfony/mcp-bundle; the test kernel imports the bundle's MCP routes with it.
-    ->ignoreErrorsOnPackageAndPath('symfony/routing', __DIR__ . '/tests/Support/Symfony/TestKernel.php', [ErrorType::SHADOW_DEPENDENCY]);
+    // Symfony\Component\Routing arrives with symfony/framework-bundle and symfony/mcp-bundle; the test kernel imports the bundle's MCP routes with it, and a contract test reads them.
+    ->ignoreErrorsOnPackageAndPaths('symfony/routing', [__DIR__ . '/tests/Support/Symfony/TestKernel.php', __DIR__ . '/tests/Contract/Symfony/BundleServicesTest.php'], [ErrorType::SHADOW_DEPENDENCY]);

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AgentCat\Symfony;
 
 use AgentCat\Internal\Support\BridgeConfig;
+use AgentCat\Symfony\Internal\AnswerLength;
 use AgentCat\Symfony\Internal\DependencyInjection\TrackBuildersPass;
 use AgentCat\Symfony\Internal\ServerTracker;
 use AgentCat\Symfony\Internal\TerminateListener;
@@ -103,6 +104,8 @@ final class AgentCatBundle extends AbstractBundle
         // D58: the wait for delivery after each response, last of kernel.terminate (header conflict 7).
         $builder->register('agentcat.terminate_listener', TerminateListener::class)
             ->addTag('kernel.event_listener', ['event' => KernelEvents::TERMINATE, 'priority' => TerminateListener::PRIORITY]);
+        // D62: boot() makes it a kernel.response listener where responses end with the script.
+        $builder->register(AnswerLength::SERVICE, AnswerLength::class)->setArguments([new Reference('agentcat.server_tracker')])->setPublic(true);
     }
 
     /** Whether a value of the configuration holds an environment variable, which resolves at runtime only. */
@@ -124,7 +127,8 @@ final class AgentCatBundle extends AbstractBundle
      * `agentcat.enabled` and every other name AgentCat reads decide for every client, the shared one too, before the
      * environment (plan E1 header conflict 12): a literal, a parameter or a secret of the configuration is not in the
      * environment. Diagnostics get the kernel's environment. A fake still records. The tracker logs the bad values;
-     * nothing is logged here, and boot tracks nothing.
+     * nothing is logged here, and boot tracks nothing. Where this process's SAPI sends a response only when the script
+     * ends, the answers of tracked servers get their length (D62).
      */
     #[\Override]
     public function boot(): void
@@ -140,5 +144,6 @@ final class AgentCatBundle extends AbstractBundle
             // A variable without a default is not set: the tracker logs it when it tracks a server (D32).
         }
         BridgeConfig::fromBridge($config, $this->container->getParameter('kernel.environment'));
+        AnswerLength::register($this->container);
     }
 }

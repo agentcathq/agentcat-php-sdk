@@ -29,12 +29,14 @@ final class PrivateMemberManifest
     ];
 
     /**
-     * The symfony/mcp-bundle service IDs, tags and method calls that AgentCat's bundle finds each server builder by, as
-     * strings: the bundle never names a class of symfony/mcp-bundle. `tests/Contract/Symfony` checks each one.
+     * The symfony/mcp-bundle service IDs, tags and method calls that AgentCat's bundle finds each server builder by, and
+     * the route controller it finds each server's answers by, as strings: the bundle never names a class of
+     * symfony/mcp-bundle. `tests/Contract/Symfony` checks each one.
      */
     public const array BUNDLE_SERVICES = [
         'symfony/mcp-bundle: builder method call addRequestHandlers(!tagged_iterator mcp.request_handler)',
         'symfony/mcp-bundle: builder without a configurator',
+        'symfony/mcp-bundle: route of each HTTP server with _controller mcp.server.<name>.controller::handle',
         'symfony/mcp-bundle: service mcp.server.<name>.builder tagged mcp.server.builder {server: <name>}',
     ];
 

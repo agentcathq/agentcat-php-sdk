@@ -33,6 +33,7 @@ final class ManifestTest extends TestCase
                 'Mcp\Server\Protocol::$requestHandlers',
                 'symfony/mcp-bundle: builder method call addRequestHandlers(!tagged_iterator mcp.request_handler)',
                 'symfony/mcp-bundle: builder without a configurator',
+                'symfony/mcp-bundle: route of each HTTP server with _controller mcp.server.<name>.controller::handle',
                 'symfony/mcp-bundle: service mcp.server.<name>.builder tagged mcp.server.builder {server: <name>}',
             ],
             PrivateMemberManifest::members(),
