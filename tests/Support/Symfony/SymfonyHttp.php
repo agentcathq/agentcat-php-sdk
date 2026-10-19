@@ -9,11 +9,13 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\HttpKernel\KernelInterface;
+use Symfony\Component\HttpKernel\TerminableInterface;
 
 /**
  * `HttpHarness`'s API over a Symfony kernel: each message is one request to the bundle's route of an MCP server (the
- * `conformance` server's by default), handled by `$kernel->handle()` in process, with no sockets and no `terminate()`:
- * a test that needs the terminate phase builds the request with `callRequest()` and runs both itself. Handshake-era
+ * `conformance` server's by default), handled by `$kernel->handle()` in process, with no sockets. By default there is no
+ * `terminate()`: a test that needs the terminate phase builds the request with `callRequest()` and runs both itself.
+ * With `$terminate`, each request ends with `terminate()`, as a customer's `KernelBrowser` does. Handshake-era
  * calls carry the `Mcp-Session-Id` that `initialize()` received; `listTools()`, `callTool()` and `callRequest()` send
  * `initialize()` first when there is no session yet. `modern()` sends one self-contained 2026-07-28 request instead.
  */
@@ -29,10 +31,15 @@ final class SymfonyHttp
 
     private string $protocolVersion = '2025-06-18';
 
-    /** @param string $path the HTTP path of the server: the `conformance` server's by default */
+    /**
+     * @param string $path      the HTTP path of the server: the `conformance` server's by default
+     * @param bool   $terminate whether each request ends with the kernel's `terminate()`, as in Symfony's
+     *                          `HttpKernelBrowser::doRequest()`
+     */
     public function __construct(
         private readonly KernelInterface $kernel,
         private readonly string $path = self::PATH,
+        private readonly bool $terminate = false,
     ) {}
 
     /** The `Mcp-Session-Id` the server issued at `initialize()`; null before. */
@@ -159,6 +166,9 @@ final class SymfonyHttp
     private function handle(Request $request): Response
     {
         $response = $this->kernel->handle($request);
+        if ($this->terminate && $this->kernel instanceof TerminableInterface) {
+            $this->kernel->terminate($request, $response);
+        }
         $session = $response->headers->get('Mcp-Session-Id');
         if (is_string($session) && $session !== '') {
             $this->sessionId = $session;

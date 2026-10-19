@@ -15,8 +15,9 @@ use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
 /**
  * A customer's Symfony functional tests with AgentCat's bundle registered (plan E2 Review Focus 2, D31, ruling P9): a
  * kernel booted by the test, requests sent to the MCP route, and the `agentcat` configuration empty, as the Flex recipe
- * leaves it in the test environment. Each test boots its kernels, which compile a container: about 0.3 s each,
- * measured on PHP 8.3 and 8.5.
+ * leaves it in the test environment. As a customer's `KernelBrowser` does, each request ends with the kernel's terminate
+ * phase, where AgentCat's `kernel.terminate` listener runs. Each test boots its kernels, which compile a container:
+ * about 0.3 s each, measured on PHP 8.3 and 8.5.
  */
 final class CustomerTestSuiteTest extends SymfonyTestCase
 {
@@ -24,12 +25,12 @@ final class CustomerTestSuiteTest extends SymfonyTestCase
     #[MaximumDuration(2000)]
     public function testWithoutAFakeTheAnswersAreTheBundlesOwn(): void
     {
-        $untracked = $this->http($this->kernel(withAgentCat: false));
+        $untracked = $this->http($this->kernel(withAgentCat: false), terminate: true);
         $plain = [$untracked->listTools(), $untracked->callTool('echo', ['msg' => 'hi', 'session_id' => 'start'])];
         $logger = new MemoryLogger();
         Log::setLogger($logger);
 
-        $http = $this->http($this->kernel());
+        $http = $this->http($this->kernel(), terminate: true);
         $tracked = [$http->listTools(), $http->callTool('echo', ['msg' => 'hi', 'session_id' => 'start'])];
 
         $this->assertEquals($plain, $tracked);
@@ -42,7 +43,7 @@ final class CustomerTestSuiteTest extends SymfonyTestCase
     public function testAFakeBeforeTheKernelBootsRecordsTheCalls(): void
     {
         $fake = AgentCat::fake();
-        $http = $this->http($this->kernel());
+        $http = $this->http($this->kernel(), terminate: true);
         $http->listTools();
 
         $http->callTool('echo', ['msg' => 'hi', 'session_id' => 'start']);

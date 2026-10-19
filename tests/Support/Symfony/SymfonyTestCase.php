@@ -125,10 +125,13 @@ abstract class SymfonyTestCase extends TestCase
         return ['enabled' => 'true', 'project_id' => $project, 'api_url' => MockCollector::closedPortUrl()];
     }
 
-    /** `HttpHarness`'s API over the kernel's MCP route at `$path`: the `conformance` server's by default. */
-    protected function http(TestKernel $kernel, string $path = SymfonyHttp::PATH): SymfonyHttp
+    /**
+     * `HttpHarness`'s API over the kernel's MCP route at `$path`: the `conformance` server's by default. With `$terminate`,
+     * each request ends with the kernel's terminate phase, as with a customer's `KernelBrowser`.
+     */
+    protected function http(TestKernel $kernel, string $path = SymfonyHttp::PATH, bool $terminate = false): SymfonyHttp
     {
-        return new SymfonyHttp($kernel, $path);
+        return new SymfonyHttp($kernel, $path, $terminate);
     }
 
     /**
