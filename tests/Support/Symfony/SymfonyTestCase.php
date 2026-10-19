@@ -15,10 +15,10 @@ use AgentCat\Internal\Transport\Delivery;
 use AgentCat\Tests\Integration\Support\MockCollector;
 use AgentCat\Tests\Support\Environment;
 use AgentCat\Tests\Support\FileTree;
-use AgentCat\Tests\Support\GlobalHandlers;
 use AgentCat\Tests\Support\RecordingTransport;
 use AgentCat\Tests\Support\Symfony\Streaming\ProgressTool;
 use AgentCat\Tests\Support\ToolCalls;
+use AgentCat\Tests\Support\WarmUp;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\McpBundle\McpBundle;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
@@ -52,7 +52,8 @@ abstract class SymfonyTestCase extends TestCase
      * The first container that a PHP process compiles is slow: PHP compiles the files of Symfony, symfony/mcp-bundle and
      * mcp/sdk then (about 0.2 s more on PHP 8.5, up to 1.5 s on a loaded host). So, once per process and before the
      * first test class runs, a test case of its own boots one kernel with AgentCat on, sends it a tool call and tears it
-     * down, outside the time the slow-test detector measures for a test.
+     * down, outside the time the slow-test detector measures for a test. `WarmUp::run()` makes a
+     * notice, warning or deprecation from a file of `src/` fail the class, as it would fail the test that included it.
      */
     #[\Override]
     public static function setUpBeforeClass(): void
@@ -75,8 +76,7 @@ abstract class SymfonyTestCase extends TestCase
                 $http->callTool('echo', ['msg' => 'warm-up', 'session_id' => 'start']);
             }
         };
-        $handlers = GlobalHandlers::save(); // the framework changes them, and no test puts them back
-        try {
+        WarmUp::run(static function () use ($warmUp): void {
             $warmUp::setUpBeforeClass();
             $warmUp->setUp();
             try {
@@ -85,9 +85,7 @@ abstract class SymfonyTestCase extends TestCase
                 $warmUp->tearDown();
                 $warmUp::tearDownAfterClass();
             }
-        } finally {
-            $handlers->restore();
-        }
+        });
     }
 
     #[\Override]

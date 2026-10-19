@@ -13,8 +13,8 @@ use AgentCat\Internal\Support\BridgeConfig;
 use AgentCat\Internal\Support\TestMode;
 use AgentCat\Tests\Support\Environment;
 use AgentCat\Tests\Support\FileTree;
-use AgentCat\Tests\Support\GlobalHandlers;
 use AgentCat\Tests\Support\ToolCalls;
+use AgentCat\Tests\Support\WarmUp;
 use Illuminate\Foundation\Application;
 use Laravel\Mcp\Server\McpServiceProvider;
 use Orchestra\Testbench\TestCase;
@@ -49,7 +49,8 @@ abstract class LaravelTestCase extends TestCase
      * The first Laravel application of a PHP process is slow: PHP compiles the framework's files then (about 0.07 s on
      * PHP 8.5, up to 0.3 s on a loaded host, against 0.01 s for each later one). So, once per process and before the
      * first test class runs, a test case of its own builds one application, sends it one request and tears it down,
-     * outside the time the slow-test detector measures for a test.
+     * outside the time the slow-test detector measures for a test. `WarmUp::run()` makes a
+     * notice, warning or deprecation from a file of `src/` fail the class, as it would fail the test that included it.
      */
     #[\Override]
     public static function setUpBeforeClass(): void
@@ -70,8 +71,7 @@ abstract class LaravelTestCase extends TestCase
                 $this->get('/agentcat-warm-up'); // a 404; no assertion, which PHPUnit would count for the next test
             }
         };
-        $handlers = GlobalHandlers::save(); // the framework changes them, and no test puts them back
-        try {
+        WarmUp::run(static function () use ($warmUp): void {
             $warmUp::setUpBeforeClass();
             $warmUp->setUp();
             try {
@@ -80,9 +80,7 @@ abstract class LaravelTestCase extends TestCase
                 $warmUp->tearDown();
                 $warmUp::tearDownAfterClass();
             }
-        } finally {
-            $handlers->restore();
-        }
+        });
     }
 
     #[\Override]
