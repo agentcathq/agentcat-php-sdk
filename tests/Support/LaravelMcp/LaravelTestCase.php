@@ -13,6 +13,7 @@ use AgentCat\Internal\Support\BridgeConfig;
 use AgentCat\Internal\Support\TestMode;
 use AgentCat\Tests\Support\Environment;
 use AgentCat\Tests\Support\FileTree;
+use AgentCat\Tests\Support\ToolCalls;
 use Illuminate\Foundation\Application;
 use Laravel\Mcp\Server\McpServiceProvider;
 use Orchestra\Testbench\TestCase;
@@ -91,6 +92,7 @@ abstract class LaravelTestCase extends TestCase
     protected function tearDown(): void
     {
         ToolCalls::reset();
+        CustomCallTool::reset();
         TestMode::reset(); // also the configured switch that AgentCat's service provider sets
         BridgeConfig::reset(); // and the configured values
         Log::reset();
