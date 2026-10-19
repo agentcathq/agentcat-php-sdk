@@ -168,10 +168,11 @@ jobs:
       - uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
         with:
           dependency-versions: highest
-      - name: Build the CLI image and pull the others
+      - name: Build the CLI and Swoole images and pull the others
         run: |
           docker build --tag agentcat-runtime-cli:8.3.35 tests/Runtime/docker
-          for image in php:8.3.35-fpm-bookworm php:8.3.35-apache-bookworm dunglas/frankenphp:1.13.1-php8.3.35-bookworm phpswoole/swoole:6.2.3-php8.3 unit:1.34.2-php8.3; do docker pull "$image"; done
+          docker build --tag agentcat-runtime-swoole:6.2.3-php8.3 tests/Runtime/docker/swoole
+          for image in php:8.3.35-fpm-bookworm php:8.3.35-apache-bookworm dunglas/frankenphp:1.13.1-php8.3.35-bookworm unit:1.34.2-php8.3; do docker pull "$image"; done
       - run: vendor/bin/phpunit --testsuite Runtime --group runtime
         env:
           AGENTCAT_RUNTIME_TESTS: '1'

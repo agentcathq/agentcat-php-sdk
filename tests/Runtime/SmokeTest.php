@@ -35,4 +35,17 @@ final class SmokeTest extends RuntimeTestCase
         $this->assertSame(0, $run['exitCode'], $run['stderr']);
         $this->assertMatchesRegularExpression('/\A8\.3\.\d+ curl mbstring\z/', $run['stdout']);
     }
+
+    /** The Swoole guard test needs ext-pcntl next to ext-swoole: `docker/swoole/Dockerfile` adds it to the image. */
+    #[MaximumDuration(60000)]
+    public function testTheSwooleImageLoadsSwooleAndPcntl(): void
+    {
+        $run = DockerRuntime::run(Images::SWOOLE, ['php', '-m'], $this->env(), []);
+
+        $this->assertSame(0, $run['exitCode'], $run['stderr']);
+        $modules = preg_split('/\R/', $run['stdout']);
+        $this->assertIsArray($modules);
+        $this->assertContains('swoole', $modules);
+        $this->assertContains('pcntl', $modules);
+    }
 }
