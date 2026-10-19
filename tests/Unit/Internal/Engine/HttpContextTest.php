@@ -147,4 +147,12 @@ final class HttpContextTest extends TestCase
 
         $this->assertSame(['authorization' => 'Basic dTpzZWNyZXQ=', 'php-auth-other' => 'o'], HttpContext::fromRequest('POST', $headers, null, null, null)->headers);
     }
+
+    /** Symfony's `HttpKernel::handle()` adds `X-Php-Ob-Level` to the request it handles; the client did not send it. */
+    public function testTheOutputBufferLevelThatSymfonyAddsIsLeftOut(): void
+    {
+        $headers = ['x-php-ob-level' => ['1'], 'x-php-ob-levels' => ['2'], 'accept' => ['application/json']];
+
+        $this->assertSame(['x-php-ob-levels' => '2', 'accept' => 'application/json'], HttpContext::fromRequest('POST', $headers, null, null, null)->headers);
+    }
 }

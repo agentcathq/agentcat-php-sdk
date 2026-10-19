@@ -13,11 +13,11 @@ namespace AgentCat\Internal\Engine;
 final readonly class HttpContext
 {
     /**
-     * The headers that Symfony's `ServerBag` makes up from the `Authorization` header or the SAPI's `PHP_AUTH_*`
-     * variables. No client sends them, and two hold the credentials in clear text: the `Authorization` header stays
-     * (D06).
+     * The headers that Symfony puts in a request's header bag and no client sent. `ServerBag` makes up the `php-auth-*`
+     * headers from the `Authorization` header or the SAPI's `PHP_AUTH_*` variables; two hold the credentials in clear
+     * text, and the `Authorization` header stays (D06). `HttpKernel::handle()` adds `x-php-ob-level`.
      */
-    private const array MADE_UP_HEADERS = ['php-auth-user', 'php-auth-pw', 'php-auth-digest'];
+    private const array MADE_UP_HEADERS = ['php-auth-user', 'php-auth-pw', 'php-auth-digest', 'x-php-ob-level'];
 
     /**
      * @param array<string, string> $headers lower-case dashed names, values verbatim (D06)
@@ -68,7 +68,8 @@ final readonly class HttpContext
      *   an invalid host. The `Host` header, not the server variable: a request that a worker builds from PSR-7 has
      *   only the header;
      * - the header names as the header bag keeps them (lower case); the values of a repeated header joined with `, `,
-     *   like a SAPI joins them, a null value as `''`; the `php-auth-*` headers that Symfony makes up left out.
+     *   like a SAPI joins them, a null value as `''`; the headers that Symfony makes up left out: `php-auth-*` from the
+     *   credentials (`ServerBag`), and `x-php-ob-level`, which `HttpKernel::handle()` adds to each request it handles.
      *
      * @param array<string, list<string|null>> $headers    the request's header bag (`HeaderBag::all()`)
      * @param mixed                            $https      the `HTTPS` server variable

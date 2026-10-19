@@ -299,15 +299,23 @@ final class BundleTest extends SymfonyTestCase
         $this->assertCount(1, array_filter($logger->messages(), static fn(string $line): bool => str_contains($line, 'RuntimeException: ' . $hook . ' ran')));
     }
 
-    /** Header conflict 5: the HTTP context of a call is the RequestStack's main request, not the SAPI globals. */
+    /**
+     * Header conflict 5: the HTTP context of a call is the RequestStack's main request, not the SAPI globals, with the
+     * headers the client sent: not the `X-Php-Ob-Level` that Symfony's HttpKernel adds (Plan E1 Task 6 parity).
+     */
     #[MaximumDuration(1000)]
     public function testTheEventCarriesTheRequestOfTheKernel(): void
     {
         $http = $this->http($this->kernel(agentcat: self::ON));
+        $http->listTools();
 
-        $http->callTool('echo', ['msg' => 'hi', 'session_id' => self::SESSION]);
+        $http->request('tools/call', ['name' => 'echo', 'arguments' => ['msg' => 'hi', 'session_id' => self::SESSION]], ['X-Client' => 'kept']);
 
-        $this->assertSame([['http://127.0.0.1/mcp/conformance', $http->sessionId()]], array_map(static fn(mixed $info): array => [JsonAssert::at($info, 'url'), JsonAssert::at($info, 'headers', 'mcp-session-id')], $this->fields('parameters', 'extra', 'requestInfo')));
+        $info = $this->fields('parameters', 'extra', 'requestInfo');
+        $this->assertSame([['http://127.0.0.1/mcp/conformance', $http->sessionId(), 'kept']], array_map(static fn(mixed $info): array => [JsonAssert::at($info, 'url'), JsonAssert::at($info, 'headers', 'mcp-session-id'), JsonAssert::at($info, 'headers', 'x-client')], $info));
+        $headers = JsonAssert::at($info, 0, 'headers');
+        $this->assertInstanceOf(\stdClass::class, $headers);
+        $this->assertObjectNotHasProperty('x-php-ob-level', $headers);
     }
 
     /** One tracker serves the container: its client and options are built once, so each bad value logs once. */
