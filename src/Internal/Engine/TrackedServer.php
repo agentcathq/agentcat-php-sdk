@@ -26,12 +26,16 @@ final class TrackedServer
      * @param string $projectId '' in telemetry-only mode
      * @param \Closure(): array{0: ?string, 1: ?string} $serverInfo server name and version, read when an event is published
      * @param Publisher $publisher the publisher of the client that tracked the server
+     * @param (\Closure(): ?HttpContext)|null $httpContext the HTTP request of a call, from the framework; null reads the
+     *                                                    SAPI globals. The laravel/mcp adapter reads the server's own
+     *                                                    transport instead (plan E1 header conflict 9)
      */
     public function __construct(
         public readonly string $projectId,
         public readonly Options $options,
         private readonly \Closure $serverInfo,
         private readonly Publisher $publisher,
+        public readonly ?\Closure $httpContext = null,
     ) {
         $this->injection = new InjectionState();
     }

@@ -28,6 +28,8 @@ return (new Configuration())
     // False positives: the analyser reads AgentCat's own `Env::get()` and `new Event(` as Laravel's global env() and
     // event() helpers. PHPat keeps Laravel out of these files (LayeringTest).
     ->ignoreErrorsOnPackageAndPaths('laravel/framework', [__DIR__ . '/src/Internal/Support/TestMode.php', __DIR__ . '/src/Internal/Support/BridgeConfig.php', __DIR__ . '/src/Client.php'], [ErrorType::DEV_DEPENDENCY_IN_PROD])
+    // Symfony is optional (01 AC-90): dev dependencies used only by the Symfony bundle.
+    ->ignoreErrorsOnPackageAndPath('symfony/http-foundation', __DIR__ . '/src/Symfony', [ErrorType::DEV_DEPENDENCY_IN_PROD])
     // Orchestra\Testbench\TestCase lives in orchestra/testbench-core, which orchestra/testbench requires; the Laravel tests extend it.
     ->ignoreErrorsOnPackageAndPath('orchestra/testbench-core', __DIR__ . '/tests', [ErrorType::SHADOW_DEPENDENCY])
     // Symfony\Component\Console arrives with laravel/framework; the artisan fixture hands its input and output to Laravel's console kernel.

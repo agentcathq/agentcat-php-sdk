@@ -111,4 +111,40 @@ final class HttpContextTest extends TestCase
     {
         $this->assertNotInstanceOf(HttpContext::class, HttpContext::capture());
     }
+
+    /** A framework's request object, read as `fromServer()` reads the SAPI: the URL as sent, through `url()`. */
+    #[Group('ac-02-43')]
+    public function testARequestObjectGivesItsMethodTheUrlAsSentAndItsHeaders(): void
+    {
+        $context = HttpContext::fromRequest('POST', ['host' => ['Example.test:8443'], 'x-agentcat-health-run' => ['S']], 'on', 'Example.test:8443', '/mcp/?b=2&a=1');
+
+        $this->assertSame('POST', $context->method);
+        $this->assertSame('https://Example.test:8443/mcp/?b=2&a=1', $context->url);
+        $this->assertSame(['host' => 'Example.test:8443', 'x-agentcat-health-run' => 'S'], $context->headers);
+    }
+
+    public function testARequestObjectWithoutAHostHasNoUrl(): void
+    {
+        $this->assertNull(HttpContext::fromRequest('GET', [], null, null, '/mcp')->url);
+        $this->assertSame('http://h.test', HttpContext::fromRequest('GET', [], 'off', 'h.test', null)->url);
+    }
+
+    /** The values of a repeated header joined with `, `, like a SAPI joins them; a null value is ''. */
+    public function testRepeatedHeaderValuesAreJoined(): void
+    {
+        $context = HttpContext::fromRequest('GET', ['x-multi' => ['a', 'b'], 'x-empty' => [null], 'x-none' => []], null, null, null);
+
+        $this->assertSame(['x-multi' => 'a, b', 'x-empty' => '', 'x-none' => ''], $context->headers);
+    }
+
+    /**
+     * Symfony's `ServerBag` makes up `php-auth-user`, `php-auth-pw` and `php-auth-digest` from the credentials; no
+     * client sends them, and two hold the credentials in clear text. The `Authorization` header stays (D06).
+     */
+    public function testTheMadeUpCredentialHeadersAreLeftOut(): void
+    {
+        $headers = ['authorization' => ['Basic dTpzZWNyZXQ='], 'php-auth-user' => ['u'], 'php-auth-pw' => ['secret'], 'php-auth-digest' => ['d'], 'php-auth-other' => ['o']];
+
+        $this->assertSame(['authorization' => 'Basic dTpzZWNyZXQ=', 'php-auth-other' => 'o'], HttpContext::fromRequest('POST', $headers, null, null, null)->headers);
+    }
 }

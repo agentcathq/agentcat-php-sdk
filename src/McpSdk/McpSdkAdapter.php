@@ -184,7 +184,7 @@ final class McpSdkAdapter
         $builder->setReferenceHandler(new CapturingReferenceHandler($inner, $stash));
         $list = new ListToolsInterceptor($server, $delegates, $publisher);
         $builder->addRequestHandler($list);
-        $builder->addRequestHandler(new CallToolInterceptor($server, $delegates, $list, $interceptor, $publisher, $stash, new RequestReader()));
+        $builder->addRequestHandler(new CallToolInterceptor($server, $delegates, $list, $interceptor, $publisher, $stash, new RequestReader($server->httpContext)));
     }
 
     /**

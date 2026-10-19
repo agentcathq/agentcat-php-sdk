@@ -5,12 +5,20 @@ declare(strict_types=1);
 namespace AgentCat\Internal\Engine;
 
 /**
- * The HTTP request of the current PHP request, read from `$_SERVER`. Null on the command line (stdio servers).
+ * The HTTP request of an MCP call: read from `$_SERVER` (null on the command line, stdio servers), or from the request
+ * object a framework bridge hands over, so a worker that serves many requests in one process records each one's own.
  *
  * @internal
  */
 final readonly class HttpContext
 {
+    /**
+     * The headers that Symfony's `ServerBag` makes up from the `Authorization` header or the SAPI's `PHP_AUTH_*`
+     * variables. No client sends them, and two hold the credentials in clear text: the `Authorization` header stays
+     * (D06).
+     */
+    private const array MADE_UP_HEADERS = ['php-auth-user', 'php-auth-pw', 'php-auth-digest'];
+
     /**
      * @param array<string, string> $headers lower-case dashed names, values verbatim (D06)
      */
@@ -53,6 +61,32 @@ final readonly class HttpContext
     }
 
     /**
+     * The request object of a framework (Symfony's `Request`, which Laravel's extends), from its plain values, with the
+     * URL and the headers as the client sent them, like the SAPI reading of `fromServer()`:
+     * - the URL from the scheme `HTTPS` gives, the `Host` header and the raw request URI, through `url()`: Laravel's
+     *   `fullUrl()` sorts the query and drops a trailing slash, and Symfony's `getUri()` sorts the query and refuses
+     *   an invalid host. The `Host` header, not the server variable: a request that a worker builds from PSR-7 has
+     *   only the header;
+     * - the header names as the header bag keeps them (lower case); the values of a repeated header joined with `, `,
+     *   like a SAPI joins them, a null value as `''`; the `php-auth-*` headers that Symfony makes up left out.
+     *
+     * @param array<string, list<string|null>> $headers    the request's header bag (`HeaderBag::all()`)
+     * @param mixed                            $https      the `HTTPS` server variable
+     * @param mixed                            $requestUri the `REQUEST_URI` server variable
+     */
+    public static function fromRequest(string $method, array $headers, mixed $https, ?string $host, mixed $requestUri): self
+    {
+        $values = [];
+        foreach ($headers as $name => $list) {
+            if (!in_array($name, self::MADE_UP_HEADERS, true)) {
+                $values[$name] = implode(', ', $list);
+            }
+        }
+
+        return new self($method, self::url(['HTTPS' => $https, 'HTTP_HOST' => $host, 'REQUEST_URI' => $requestUri]), $values);
+    }
+
+    /**
      * The projection TypeScript v1 calls `requestInfo` (D34): `{headers, url?}`. `method` stays internal.
      */
     public function toRequestInfo(): \stdClass
@@ -72,7 +106,7 @@ final readonly class HttpContext
      *
      * @param array<array-key, mixed> $server
      */
-    public static function url(array $server): ?string
+    private static function url(array $server): ?string
     {
         $host = $server['HTTP_HOST'] ?? null;
         if (!is_string($host) || $host === '') {

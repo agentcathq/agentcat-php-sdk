@@ -9,6 +9,7 @@ use AgentCat\Internal\Constants;
 use AgentCat\Internal\Delivery\EventQueue;
 use AgentCat\Internal\Diagnostics\Diagnostics;
 use AgentCat\Internal\Engine\CallInterceptor;
+use AgentCat\Internal\Engine\HttpContext;
 use AgentCat\Internal\Engine\Libraries;
 use AgentCat\Internal\Engine\Library;
 use AgentCat\Internal\Engine\Publisher;
@@ -45,11 +46,15 @@ final readonly class Client
 
     private bool $telemetry;
 
+    /** @var (\Closure(): ?HttpContext)|null the HTTP request of a call, for every server this client tracks */
+    private ?\Closure $httpContext;
+
     /**
      * Creates a client that sends through the process-wide event queue. Call it without arguments. A
      * dependency-injection container that autowires it gets the same client.
      *
-     * @param ClientSeams|null $seams Internal: tests and `AgentCat::fake()` replace the queue and the enabled gate.
+     * @param ClientSeams|null $seams Internal: tests and `AgentCat::fake()` replace the queue and the enabled gate, and
+     *                                a framework bridge gives the HTTP request of a call.
      */
     public function __construct(?ClientSeams $seams = null)
     {
@@ -57,6 +62,7 @@ final readonly class Client
         $this->interceptor = new CallInterceptor($this->publisher);
         $this->enabled = $seams->enabled ?? TestMode::sdkEnabled(...);
         $this->telemetry = $seams->telemetry ?? true;
+        $this->httpContext = $seams?->httpContext;
     }
 
     /**
@@ -129,7 +135,7 @@ final readonly class Client
             } elseif ($projectId !== '' && preg_match(self::PROJECT_ID_PATTERN, $projectId) !== 1) {
                 Log::write(sprintf('WARN: Project ID "%s" does not match proj_ followed by 27 letters or digits; the AgentCat API drops its events', $projectId));
             }
-            $state = new TrackedServer($projectId, $options, $library->serverInfo($server), $this->publisher);
+            $state = new TrackedServer($projectId, $options, $library->serverInfo($server), $this->publisher, $this->httpContext);
             $library->install($server, $state, $this->publisher, $this->interceptor);
             TrackedServers::add($server, $state);
             Log::write(sprintf(
