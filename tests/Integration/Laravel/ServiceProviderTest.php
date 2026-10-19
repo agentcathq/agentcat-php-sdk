@@ -55,7 +55,8 @@ final class ServiceProviderTest extends BridgeTestCase
         config([
             'agentcat.enabled' => true,
             'agentcat.project_id' => null,
-            'agentcat.enable_tracing' => 'yes',
+            'agentcat.enable_tracing' => 'yes', // a D44 word since M3: tracing stays on, no line
+            'agentcat.enable_report_missing' => 'maybe',
             'agentcat.identify' => 'App\Missing\Identify',
             'agentcat.exporters' => ['otlp' => null],
             'agentcat.unknown_key' => 1,
@@ -410,8 +411,8 @@ final class ServiceProviderTest extends BridgeTestCase
         $complete = 'AgentCat setup complete | project (telemetry-only) | tracing=true context=true reportMissing=true exporters=0';
         $own = 'ERROR: Tool "own" already declares a \'session_id\' parameter.'; // the fixture's own tool, for every server
         $this->assertSame([
+            'WARN: AgentCat config "agentcat.enable_report_missing" is "maybe", not one of true, 1, yes, on, false, 0, no, off; the default is used',
             'WARN: Unknown AgentCat option "agentcat.unknown_key" ignored', // once: the options serve every server
-            'WARN: AgentCat option "enableTracing" must be bool, got string; the default is used',
             $started,
             $nowhere,
             $complete,
@@ -423,6 +424,17 @@ final class ServiceProviderTest extends BridgeTestCase
             'Rebuilt injection registries on demand (tools/call before tools/list on this instance)',
             'Error: identify callback threw - Illuminate\Contracts\Container\BindingResolutionException: Target class [App\Missing\Identify] does not exist.',
         ], array_map(static fn(string $line): string => str_starts_with($line, $own) ? $own : $line, $logger->messages()));
+    }
+
+    /** M3: `'enable_tracing' => env('AGENTCAT_ENABLE_TRACING')` with `AGENTCAT_ENABLE_TRACING=0` turns tracing off. */
+    public function testAZeroFromEnvTurnsTracingOff(): void
+    {
+        config(['agentcat.enable_tracing' => '0']);
+
+        $answer = (new LaravelHarness(ConformanceServer::class))->callTool('echo', ['msg' => 'hi', 'session_id' => 'start']);
+
+        $this->assertSame('echo: hi', JsonAssert::at($answer, 'result', 'content', 0, 'text'));
+        $this->assertSame([], $this->deliveries());
     }
 
     /** Review Focus 3: boot, resolve, `tools/call` and flush with `AGENTCAT_ENABLED=maybe`. */

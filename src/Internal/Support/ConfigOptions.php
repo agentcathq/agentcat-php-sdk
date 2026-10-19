@@ -13,6 +13,10 @@ use AgentCat\Options;
  * their own config style onto `Options::fromArray()`). A hook is the name of something the bridge resolves when the
  * hook runs — never on the request path (D04) — so the configuration holds no closure and can be cached.
  *
+ * The values come from `env()` as often as not, so the bool keys take the D44 words, as `enabled` does (`env()` gives
+ * `AGENTCAT_ENABLE_TRACING=0` as the string "0"). A bad value logs one line that names the key as the customer wrote
+ * it, `agentcat.<key>`, and the default is used.
+ *
  * @internal
  */
 final class ConfigOptions
@@ -38,10 +42,18 @@ final class ConfigOptions
 
     private const array HOOKS = ['resolveSessionId', 'identify', 'redactSensitiveInformation', 'redactEvent', 'eventTags', 'eventProperties'];
 
+    private const array BOOLS = ['enableReportMissing', 'enableTracing', 'enableToolCallContext', 'enableAgentTracking', 'disableSignalHandlers'];
+
+    private const array STRINGS = ['customContextDescription', 'apiBaseUrl'];
+
+    private const string BAD_WORD = 'WARN: AgentCat config "agentcat.%s" is "%s", not one of true, 1, yes, on, false, 0, no, off; the default is used';
+
+    private const string WRONG_TYPE = 'WARN: AgentCat option "agentcat.%s" must be %s, got %s; the default is used';
+
     private const string BAD_DIAGNOSTICS_VALUE = 'WARN: AgentCat config "agentcat.disable_diagnostics" is "%s", not one of true, 1, yes, on, false, 0, no, off; the value is treated as true';
 
     /**
-     * Never throws: an unknown key or a bad value logs one line and the default is used (`Options::fromArray()`).
+     * Never throws: an unknown key or a bad value logs one line and the default is used.
      *
      * @param array<array-key, mixed> $config     the bridge's `agentcat` configuration
      * @param list<string>            $bridgeKeys keys the bridge reads itself (not options)
@@ -60,17 +72,10 @@ final class ConfigOptions
 
                 continue;
             }
-            if ($value === null) {
-                continue; // env() of an unset variable: the default
+            $value = $value === null ? null : self::value((string) $key, $option, $value, $resolve);
+            if ($value !== null) {
+                $mapped[$option] = $value; // null: env() of an unset variable, or a bad value; the default
             }
-            if ($option === 'disableDiagnostics') {
-                $mapped[$option] = self::diagnosticsOff($value, log: true);
-
-                continue;
-            }
-            $mapped[$option] = in_array($option, self::HOOKS, true) && is_string($value) && !is_callable($value)
-                ? self::named($value, $resolve)
-                : $value;
         }
 
         return Options::fromArray($mapped);
@@ -91,12 +96,58 @@ final class ConfigOptions
             }
             $disabled = DiagnosticsSwitch::option($entry);
             if ($disabled === null && $log) {
-                Log::write(sprintf(self::BAD_DIAGNOSTICS_VALUE, is_scalar($entry) ? (string) $entry : get_debug_type($entry)));
+                Log::write(sprintf(self::BAD_DIAGNOSTICS_VALUE, self::shown($entry)));
             }
             $off = $off || ($disabled ?? true);
         }
 
         return $off;
+    }
+
+    /**
+     * The value of a key for `Options::fromArray()`, of the type it takes; null for a bad value (one line) or a blank
+     * bool word (unset).
+     *
+     * @param \Closure(string): mixed $resolve
+     */
+    private static function value(string $key, string $option, mixed $value, \Closure $resolve): mixed
+    {
+        if ($option === 'disableDiagnostics') {
+            return self::diagnosticsOff($value, log: true);
+        }
+        if (in_array($option, self::BOOLS, true)) {
+            $word = TestMode::word($value);
+            if ($word === null && (!is_string($value) || trim($value) !== '')) {
+                Log::write(sprintf(self::BAD_WORD, $key, self::shown($value)));
+            }
+
+            return $word;
+        }
+        if (in_array($option, self::STRINGS, true)) {
+            return is_string($value) ? $value : self::reject($key, 'string or null', $value);
+        }
+        if (in_array($option, self::HOOKS, true)) {
+            if (is_string($value) && !is_callable($value)) {
+                return self::named($value, $resolve);
+            }
+
+            return is_callable($value) ? $value : self::reject($key, 'callable or null', $value);
+        }
+
+        return is_array($value) ? $value : self::reject($key, 'array or null', $value); // exporters
+    }
+
+    private static function reject(string $key, string $expected, mixed $value): null
+    {
+        Log::write(sprintf(self::WRONG_TYPE, $key, $expected, get_debug_type($value)));
+
+        return null;
+    }
+
+    /** A value as a bad-value line shows it: a scalar as itself, anything else by its type. */
+    private static function shown(mixed $value): string
+    {
+        return is_scalar($value) ? (string) $value : get_debug_type($value);
     }
 
     /**

@@ -9,6 +9,7 @@ use AgentCat\Identity;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Support\ConfigOptions;
 use AgentCat\Laravel\Internal\ServerTracker;
+use AgentCat\Options;
 use AgentCat\Tests\Support\Laravel\ArgumentsHook;
 use AgentCat\Tests\Support\Laravel\InvokableIdentify;
 use AgentCat\Tests\Support\MemoryLogger;
@@ -112,7 +113,7 @@ final class ConfigOptionsTest extends TestCase
         $options = ConfigOptions::options(['identify' => 7], ServerTracker::BRIDGE_KEYS, $this->resolve);
 
         $this->assertNull($options->identify);
-        $this->assertSame(['WARN: AgentCat option "identify" must be callable or null, got int; the default is used'], $this->logger->messages());
+        $this->assertSame(['WARN: AgentCat option "agentcat.identify" must be callable or null, got int; the default is used'], $this->logger->messages());
     }
 
     public function testAHookWhoseClassIsNotInvokableThrowsWhenItRuns(): void
@@ -152,17 +153,19 @@ final class ConfigOptionsTest extends TestCase
         Log::setLogger($logger);
 
         $options = ConfigOptions::options([
-            'enable_tracing' => 'yes',
+            'enable_tracing' => 'yes', // a D44 word (M3)
+            'enable_agent_tracking' => 'maybe',
             'identify' => 'App\Missing\Identify',
             'exporters' => ['otlp' => null, 'dd' => ['type' => 'datadog']],
             'unknown_key' => 1,
         ], ServerTracker::BRIDGE_KEYS, $this->resolve);
 
         $this->assertTrue($options->enableTracing);
+        $this->assertFalse($options->enableAgentTracking);
         $this->assertSame([], $options->exporters);
         $this->assertSame([
+            'WARN: AgentCat config "agentcat.enable_agent_tracking" is "maybe", not one of true, 1, yes, on, false, 0, no, off; the default is used',
             'WARN: Unknown AgentCat option "agentcat.unknown_key" ignored',
-            'WARN: AgentCat option "enableTracing" must be bool, got string; the default is used',
             'Failed to initialize exporter dd: InvalidArgumentException: exporter option "apiKey" must be string, got null',
         ], $logger->messages());
         $this->assertInstanceOf(\Closure::class, $options->identify); // fails when it runs, inside the hook guard (D32)
@@ -201,6 +204,85 @@ final class ConfigOptionsTest extends TestCase
         $this->assertSame([
             'WARN: AgentCat config "agentcat.disable_diagnostics" is "maybe", not one of true, 1, yes, on, false, 0, no, off; the value is treated as true',
             'WARN: AgentCat config "agentcat.disable_diagnostics" is "array", not one of true, 1, yes, on, false, 0, no, off; the value is treated as true',
+        ], $this->logger->messages());
+    }
+
+    /**
+     * M3: what `env()` gives a bool key. Laravel turns `true` and `false` into bools; `0`, `1`, `yes`, `on`, `no`
+     * and `off` stay strings.
+     *
+     * @return iterable<string, array{mixed, bool}>
+     */
+    public static function boolWords(): iterable
+    {
+        yield 'bool true' => [true, true];
+        yield 'bool false' => [false, false];
+        yield 'int 1' => [1, true];
+        yield 'int 0' => [0, false];
+        yield '"1"' => ['1', true];
+        yield '"0"' => ['0', false];
+        yield '"yes"' => ['yes', true];
+        yield '"no"' => ['no', false];
+        yield '" ON " (trimmed, any case)' => [' ON ', true];
+        yield '"Off"' => ['Off', false];
+    }
+
+    /** @return iterable<string, array{string, string}> */
+    public static function boolKeys(): iterable
+    {
+        yield 'enable_report_missing' => ['enable_report_missing', 'enableReportMissing'];
+        yield 'enable_tracing' => ['enable_tracing', 'enableTracing'];
+        yield 'enable_tool_call_context' => ['enable_tool_call_context', 'enableToolCallContext'];
+        yield 'enable_agent_tracking' => ['enable_agent_tracking', 'enableAgentTracking'];
+        yield 'disable_signal_handlers' => ['disable_signal_handlers', 'disableSignalHandlers'];
+    }
+
+    /** M3: every bool key takes the D44 words, as `enabled` and `disable_diagnostics` do. */
+    #[DataProvider('boolWords')]
+    public function testEveryBoolKeyTakesTheD44Words(mixed $value, bool $expected): void
+    {
+        foreach (self::boolKeys() as [$key, $option]) {
+            $options = get_object_vars(ConfigOptions::options([$key => $value], ServerTracker::BRIDGE_KEYS, $this->resolve));
+
+            $this->assertSame($expected, $options[$option] ?? null, $key);
+        }
+        $this->assertSame([], $this->logger->messages());
+    }
+
+    /** M3: any other value of a bool key logs one line that names the key as written, and its default is used. */
+    #[DataProvider('boolKeys')]
+    public function testABadBoolValueNamesTheKeyAsWrittenAndTheDefaultIsUsed(string $key, string $option): void
+    {
+        $default = get_object_vars(new Options())[$option] ?? null;
+
+        $options = get_object_vars(ConfigOptions::options([$key => 'maybe'], ServerTracker::BRIDGE_KEYS, $this->resolve));
+        $blank = get_object_vars(ConfigOptions::options([$key => ' '], ServerTracker::BRIDGE_KEYS, $this->resolve));
+        $other = get_object_vars(ConfigOptions::options([$key => 2.5], ServerTracker::BRIDGE_KEYS, $this->resolve));
+
+        $this->assertIsBool($default);
+        $this->assertSame([$default, $default, $default], [$options[$option] ?? null, $blank[$option] ?? null, $other[$option] ?? null]);
+        $this->assertSame([
+            sprintf('WARN: AgentCat config "agentcat.%s" is "maybe", not one of true, 1, yes, on, false, 0, no, off; the default is used', $key),
+            sprintf('WARN: AgentCat config "agentcat.%s" is "2.5", not one of true, 1, yes, on, false, 0, no, off; the default is used', $key),
+        ], $this->logger->messages(), 'blank is unset: no line');
+    }
+
+    /** M3: a value of another type of any key is named as written, `agentcat.<key>`, and its default is used. */
+    public function testAValueOfAnotherTypeNamesTheKeyAsWritten(): void
+    {
+        $options = ConfigOptions::options([
+            'custom_context_description' => 5,
+            'api_url' => ['http://127.0.0.1:1'],
+            'event_tags' => 1.5,
+            'exporters' => 'otlp',
+        ], ServerTracker::BRIDGE_KEYS, $this->resolve);
+
+        $this->assertSame([null, null, null, null], [$options->customContextDescription, $options->apiBaseUrl, $options->eventTags, $options->exporters]);
+        $this->assertSame([
+            'WARN: AgentCat option "agentcat.custom_context_description" must be string or null, got int; the default is used',
+            'WARN: AgentCat option "agentcat.api_url" must be string or null, got array; the default is used',
+            'WARN: AgentCat option "agentcat.event_tags" must be callable or null, got float; the default is used',
+            'WARN: AgentCat option "agentcat.exporters" must be array or null, got string; the default is used',
         ], $this->logger->messages());
     }
 
