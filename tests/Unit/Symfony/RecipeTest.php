@@ -23,7 +23,7 @@ final class RecipeTest extends TestCase
     {
         $manifest = Json::decode((string) file_get_contents(self::RECIPE . '/manifest.json'));
 
-        $this->assertEquals((object) [\AgentCat\Symfony\AgentCatBundle::class => ['all']], JsonAssert::at($manifest, 'bundles'));
+        $this->assertEquals((object) [AgentCatBundle::class => ['all']], JsonAssert::at($manifest, 'bundles'));
         $implements = class_implements(AgentCatBundle::class);
         $this->assertIsArray($implements);
         $this->assertContains(BundleInterface::class, $implements);
@@ -35,12 +35,16 @@ final class RecipeTest extends TestCase
     {
         $yaml = Yaml::parseFile(self::RECIPE . '/config/packages/agentcat.yaml');
         $this->assertIsArray($yaml);
+        $this->assertArrayHasKey('agentcat', $yaml);
+        $this->assertIsArray($yaml['agentcat']);
+        $this->assertArrayHasKey('project_id', $yaml['agentcat']);
+        $this->assertSame('%env(default::AGENTCAT_PROJECT_ID)%', $yaml['agentcat']['project_id']);
         $extension = (new AgentCatBundle())->getContainerExtension();
         $this->assertInstanceOf(ConfigurationExtensionInterface::class, $extension);
         $configuration = $extension->getConfiguration([], new ContainerBuilder());
         $this->assertInstanceOf(ConfigurationInterface::class, $configuration);
 
-        $config = (new Processor())->processConfiguration($configuration, [$yaml['agentcat'] ?? []]);
+        $config = (new Processor())->processConfiguration($configuration, [$yaml['agentcat']]);
 
         $this->assertArrayHasKey('project_id', $config);
         $this->assertArrayHasKey('exclude_servers', $config);
@@ -50,6 +54,8 @@ final class RecipeTest extends TestCase
 
     public function testTheRecipeIsNotShipped(): void
     {
-        $this->assertStringContainsString("/recipe export-ignore\n", (string) file_get_contents(__DIR__ . '/../../../.gitattributes'));
+        $lines = file(__DIR__ . '/../../../.gitattributes', FILE_IGNORE_NEW_LINES);
+        $this->assertIsArray($lines);
+        $this->assertContains('/recipe export-ignore', array_map(trim(...), $lines));
     }
 }
