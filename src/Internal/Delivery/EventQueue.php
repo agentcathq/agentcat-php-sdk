@@ -24,10 +24,10 @@ use AgentCat\Internal\Wire\WireMapper;
  * hygiene and HTTP run in `pump()`, `flush()` or `shutdown()`. At most 5 events are in delivery at once, and
  * at most 10 000 wait (the oldest is dropped). No method throws.
  *
- * An event's hooks run when it gets a free delivery slot, except in `flush()`, which runs them for every waiting event
- * first, whatever the free slots: a framework's request-end wait is a `flush()`, so each hook runs in its own request,
- * also in a worker that serves the next request in the same process (Octane). The payloads then wait, in order, only
- * for the transport.
+ * An event's hooks run when it gets a free delivery slot, except in a `flush()` with a window, which runs them for
+ * every waiting event first, whatever the free slots: a worker's request-end wait is such a `flush()`, so each hook runs
+ * in its own request, also in a worker that serves the next request in the same process (Octane). The payloads then
+ * wait, in order, only for the transport. A 0 s `flush()` stays one non-blocking pass.
  *
  * The queue also drives the side channel of the exporter and diagnostics requests (`channel()`) and its companions
  * (`attach()`): every pass ticks each companion (except the pass after `finish()`), then pumps the channel. `flush()`
@@ -241,13 +241,16 @@ final class EventQueue
      * requests (diagnostics) are neither counted nor waited for: they go on in later passes and at `shutdown()`. A
      * re-entrant call (from a hook or an exporter) returns false at once.
      *
-     * After its first pass, and after each later one, it runs the pipeline (the hooks first) of every waiting event,
-     * whatever the free slots, also when the timeout has passed: so the hooks run before the call returns. The timeout
-     * bounds the waits for the transport, not the hooks.
+     * With a window (a positive timeout, or none), each pass ends with the pipeline (the hooks first) of the events that
+     * waited when it began, whatever the free slots: so the hooks of those events run before the call returns, also
+     * when the deadline has passed. An event a hook queues meanwhile goes to the next pass, so a hook that keeps queueing
+     * cannot hold the call past its deadline. Without a window (0, negative or NaN) it is one non-blocking pass, which
+     * runs only the hooks of the events it starts; the others run later, in the shutdown function of the same request
+     * or process at the latest.
      */
     public function flush(?float $timeoutSeconds = null): bool
     {
-        return $this->deliverUntil(fn(): float => $timeoutSeconds === null ? INF : $this->transport->now() + $this->budget($timeoutSeconds), background: false, prepare: true);
+        return $this->deliverUntil(fn(): float => $timeoutSeconds === null ? INF : $this->transport->now() + $this->budget($timeoutSeconds), background: false, prepare: $timeoutSeconds === null || $timeoutSeconds > 0);
     }
 
     /**
@@ -353,7 +356,7 @@ final class EventQueue
      * @param \Closure(): float $deadline   read once, after the re-entrancy guard is taken
      * @param bool              $tick       false after `finish()`: the passes tick no companion
      * @param bool              $background whether it waits for the background requests (diagnostics): `shutdown()` does
-     * @param bool              $prepare    whether each pass ends with the pipeline of every waiting event: `flush()` does
+     * @param bool              $prepare    whether each pass ends with the pipeline of the waiting events: a `flush()` with a window
      */
     private function deliverUntil(\Closure $deadline, bool $tick = true, bool $background = true, bool $prepare = false): bool
     {
@@ -451,10 +454,14 @@ final class EventQueue
         }
     }
 
-    /** The pipeline of every waiting event, whatever the free slots (`flush()`): the payloads wait in order. */
+    /**
+     * The pipeline of the events that waited when the pass began, whatever the free slots (`flush()`): the payloads wait
+     * in order. An event a hook queues meanwhile waits for the next pass. A hook can only add waiting events (the cap
+     * drops a prepared one first, and a waiting one only for a new one), so `$left` never outruns the queue.
+     */
     private function prepareWaiting(): void
     {
-        while (!$this->waiting->isEmpty()) {
+        for ($left = $this->waiting->count(); $left > 0; --$left) {
             $ready = $this->prepare($this->waiting->dequeue());
             if ($ready instanceof ReadyEvent) {
                 $this->ready->enqueue($ready);
