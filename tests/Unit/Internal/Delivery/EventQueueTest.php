@@ -39,6 +39,9 @@ final class EventQueueTest extends TestCase
     /** How long a slow hook takes on the simulated clock of `RecordingTransport`. */
     private const float HOOK_SECONDS = 0.01;
 
+    /** The most events a self-feeding hook queues in a test: without a bound a broken queue would hang the test. */
+    private const int SELF_FEEDING_BOUND = 1_000;
+
     /** Read by `ApiBaseUrl::resolve()` through `getenv()`, `$_ENV` and `$_SERVER`. */
     private const array URL_VARIABLES = ['AGENTCAT_API_URL', 'MCPCAT_API_URL'];
 
@@ -623,6 +626,51 @@ final class EventQueueTest extends TestCase
 
         $this->assertSame([['parent', 0.0], ['child', 1.0]], $at->getArrayCopy());
         $this->assertSame(['queueLength' => 2, 'activeRequests' => 5], $queue->stats());
+    }
+
+    /**
+     * A telemetry-only event starts no transfer, so the slots stay free while a `redactEvent` hook queues one more on
+     * every run (a hook that publishes a custom event). A pump, the handler-entry pump of a request included, starts
+     * only the events queued when it began, each once; the next pump takes the new ones.
+     */
+    public function testAPumpStartsOnlyTheEventsQueuedWhenItBegan(): void
+    {
+        $exporter = new RecordingExporter();
+        $queue = new EventQueue(transport: new RecordingTransport(), exporters: $exporter);
+        $children = new \ArrayObject();
+        $redact = $this->selfFeeding($queue, $children);
+        for ($i = 0; $i < 3; ++$i) {
+            $queue->add(new QueuedEvent($this->event('event-' . $i, null), $redact));
+        }
+
+        $queue->pump();
+
+        $this->assertCount(3, $children, 'the hook of each event queued at the start, once');
+        $this->assertSame(['event-0', 'event-1', 'event-2'], array_map(static fn(Event $event): ?string => $event->resourceName, $exporter->events));
+        $this->assertSame(['queueLength' => 3, 'activeRequests' => 0], $queue->stats());
+
+        $queue->pump();
+
+        $this->assertCount(6, $children);
+        $this->assertSame(['event-0', 'event-1', 'event-2', 'child', 'child', 'child'], array_map(static fn(Event $event): ?string => $event->resourceName, $exporter->events));
+    }
+
+    /** The same hook, slow, in a flush: each pass starts only the events queued when it began, and the deadline ends it. */
+    public function testAFlushEndsAtItsDeadlineWhileATelemetryOnlyHookKeepsQueueing(): void
+    {
+        $transport = new RecordingTransport();
+        $queue = new EventQueue(transport: $transport);
+        $children = new \ArrayObject();
+        $redact = $this->selfFeeding($queue, $children, $transport);
+        for ($i = 0; $i < 7; ++$i) {
+            $queue->add(new QueuedEvent($this->event('event-' . $i, null), $redact));
+        }
+
+        $delivered = $queue->flush(1.0);
+
+        $this->assertLessThan(1.0 + 1.0, $transport->now(), 'the deadline, plus the hooks of the last pass');
+        $this->assertLessThan(self::SELF_FEEDING_BOUND, count($children), 'the deadline ended the flush, not the bound of the test');
+        $this->assertFalse($delivered);
     }
 
     /** The process ends with `shutdown()`: it spends its budget on the events it can start, not on hooks of the others. */
@@ -1570,6 +1618,31 @@ final class EventQueueTest extends TestCase
                 $ran->append($resourceName);
             },
         ]);
+    }
+
+    /**
+     * A `redactEvent` hook that queues a telemetry-only `child` event with the same hook on every run, up to
+     * `SELF_FEEDING_BOUND`, and appends the child to `$children`. With `$transport`, each run takes `HOOK_SECONDS` on its
+     * simulated clock.
+     *
+     * @param \ArrayObject<int, string> $children
+     *
+     * @return \Closure(Event): Event
+     */
+    private function selfFeeding(EventQueue $queue, \ArrayObject $children, ?RecordingTransport $transport = null): \Closure
+    {
+        $redact = null;
+        $redact = function (Event $event) use (&$redact, $queue, $children, $transport): Event {
+            $transport?->waitForActivity($transport->now() + self::HOOK_SECONDS);
+            if (count($children) < self::SELF_FEEDING_BOUND) {
+                $children->append('child');
+                $queue->add(new QueuedEvent($this->event('child', null), $redact));
+            }
+
+            return $event;
+        };
+
+        return $redact;
     }
 
     /**
