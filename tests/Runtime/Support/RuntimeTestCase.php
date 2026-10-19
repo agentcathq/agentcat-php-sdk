@@ -10,8 +10,10 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 /**
- * The base of the Docker runtime tests (header conflict 10): they run only with `AGENTCAT_RUNTIME_TESTS=1` and a working
- * `docker info` (`AGENTCAT_RUNTIME_TESTS=1 vendor/bin/phpunit --testsuite Runtime --group runtime`), and skip otherwise.
+ * The base of the Docker runtime tests (header conflict 10): they run only with `AGENTCAT_RUNTIME_TESTS=1`
+ * (`AGENTCAT_RUNTIME_TESTS=1 vendor/bin/phpunit --testsuite Runtime --group runtime`) and skip otherwise. With the
+ * variable, a `docker info` that fails or times out fails every test with its output, so the runtime CI job cannot
+ * pass without running them.
  *
  * Each class has one mock collector on 127.0.0.1 (`self::$collector`). After each test and each class, every container
  * of this process is removed, also when the test failed (ruling P14). A test's output directory (`out()`, mounted at
@@ -57,19 +59,29 @@ abstract class RuntimeTestCase extends TestCase
     #[\Override]
     public static function tearDownAfterClass(): void
     {
-        if (DockerRuntime::available()) {
-            DockerRuntime::removeAll(); // also a container whose docker client a test's timeout killed
-        }
-        if (isset(self::$collector)) {
-            self::$collector->stop();
-        }
+        self::runEach([
+            static function (): void {
+                if (DockerRuntime::available()) {
+                    DockerRuntime::removeAll(); // also a container whose docker client a test's timeout killed
+                }
+            },
+            static function (): void {
+                if (isset(self::$collector)) {
+                    self::$collector->stop();
+                }
+            },
+        ]);
     }
 
     #[\Override]
     protected function setUp(): void
     {
-        if (!DockerRuntime::available()) {
-            self::markTestSkipped('The runtime tests need AGENTCAT_RUNTIME_TESTS=1 and a working docker info');
+        if (!DockerRuntime::requested()) {
+            self::markTestSkipped('The runtime tests run with AGENTCAT_RUNTIME_TESTS=1');
+        }
+        $problem = DockerRuntime::problem();
+        if ($problem !== null) {
+            self::fail('AGENTCAT_RUNTIME_TESTS=1, but ' . $problem);
         }
     }
 
@@ -79,17 +91,23 @@ abstract class RuntimeTestCase extends TestCase
         if (!DockerRuntime::available()) {
             return;
         }
-
-        try {
-            DockerRuntime::removeAll();
-        } finally {
-            $out = $this->out;
-            $this->out = null;
-            if ($out !== null) {
-                DockerRuntime::makeRemovable($out); // files of root and www-data that this user cannot remove
-                FileTree::remove($out);
-            }
-        }
+        $out = $this->out;
+        $this->out = null;
+        self::runEach([
+            static function (): void {
+                DockerRuntime::removeAll();
+            },
+            static function () use ($out): void {
+                if ($out !== null) {
+                    DockerRuntime::makeRemovable($out); // files of root and www-data that this user cannot remove
+                }
+            },
+            static function () use ($out): void {
+                if ($out !== null) {
+                    FileTree::remove($out);
+                }
+            },
+        ]);
     }
 
     /** The repository's absolute path, which every container mounts read-only at the same path. */
@@ -169,6 +187,26 @@ abstract class RuntimeTestCase extends TestCase
         $this->assertGreaterThanOrEqual($count, count($requests), sprintf('%d of %d requests reached the collector within %.1f s', count($requests), $count, $timeout));
 
         return $requests;
+    }
+
+    /**
+     * Runs every cleanup step, also after one throws, and then throws the first error.
+     *
+     * @param list<\Closure(): void> $steps
+     */
+    private static function runEach(array $steps): void
+    {
+        $first = null;
+        foreach ($steps as $step) {
+            try {
+                $step();
+            } catch (\Throwable $e) {
+                $first ??= $e;
+            }
+        }
+        if ($first instanceof \Throwable) {
+            throw $first;
+        }
     }
 
     /** Without the group, `--group runtime` (the runtime CI job) never runs the class. */

@@ -38,22 +38,41 @@ final class DockerRuntime
 
     private const string FAIL_CLOSED_PREFIX = 'http://127.0.0.1:';
 
-    private static ?bool $available = null;
+    private static bool $checked = false;
+
+    private static ?string $problem = null;
 
     private function __construct(private readonly string $name) {}
 
-    /** `AGENTCAT_RUNTIME_TESTS=1` and `docker info` exits 0 (checked once per process). */
-    public static function available(): bool
+    /** `AGENTCAT_RUNTIME_TESTS=1`: the runtime tests run, and a Docker that does not answer fails them. */
+    public static function requested(): bool
     {
-        if (getenv('AGENTCAT_RUNTIME_TESTS') !== '1') {
-            return false;
+        return getenv('AGENTCAT_RUNTIME_TESTS') === '1';
+    }
+
+    /** Why `docker info` failed or timed out, with `DOCKER_HOST`; null when it exits 0 (checked once per process). */
+    public static function problem(): ?string
+    {
+        if (self::$checked) {
+            return self::$problem;
         }
+        self::$checked = true;
 
         try {
-            return self::$available ??= self::docker(['info'])->isSuccessful();
-        } catch (\RuntimeException) {
-            return self::$available = false; // the docker client is missing or timed out
+            $info = self::docker(['info']);
+            $error = $info->isSuccessful() ? null : sprintf('exit %s: %s', var_export($info->getExitCode(), true), trim($info->getErrorOutput()) !== '' ? $info->getErrorOutput() : $info->getOutput());
+        } catch (\RuntimeException $e) {
+            $error = $e->getMessage(); // the docker client is missing or timed out
         }
+        $host = getenv('DOCKER_HOST');
+
+        return self::$problem = $error === null ? null : sprintf('docker info failed (DOCKER_HOST=%s): %s', is_string($host) ? $host : 'unset', trim($error));
+    }
+
+    /** `requested()`, and `docker info` exits 0. */
+    public static function available(): bool
+    {
+        return self::requested() && self::problem() === null;
     }
 
     /** The repository's absolute path, which every container mounts read-only at the same path. */
