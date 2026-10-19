@@ -18,7 +18,6 @@ final class FileTree
 
             return;
         }
-        @chmod($path, 0o700); // a directory made without permissions (for example by a mutant of a mkdir() mode) can be read
         $names = scandir($path);
         foreach ($names === false ? [] : $names as $name) {
             if ($name !== '.' && $name !== '..') {

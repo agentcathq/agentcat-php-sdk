@@ -142,7 +142,7 @@ final class ServerTracker
         }
         $directory = dirname($this->logFile);
         if (!is_dir($directory)) {
-            @mkdir($directory, 0o777, true); // Symfony creates its log directory only when something writes there
+            @mkdir($directory, recursive: true); // 0777 less the umask; Symfony makes its log directory only for a write
         }
         Log::adopt(new FileLogger($this->logFile));
         if ($named) {
