@@ -62,6 +62,28 @@ final class ServiceProviderTest extends BridgeTestCase
         ]);
     }
 
+    /** Review Focus 3 for the bridge's own keys: each of a wrong type, before the providers boot. */
+    public function defineBadBridgeKeys(): void
+    {
+        $this->ownConfiguration = true;
+        config([
+            'agentcat.enabled' => true,
+            'agentcat.project_id' => LaravelTrackingFixture::PROJECT,
+            'agentcat.exclude' => 42,
+            'agentcat.projects' => [ConformanceServer::class => 7, PagedServer::class => self::OTHER_PROJECT],
+            'agentcat.log_channel' => ['single'],
+            'agentcat.diagnostics_endpoint' => 5,
+            'agentcat.diagnostics_token' => false,
+        ]);
+    }
+
+    public function defineANonStringProjectId(): void
+    {
+        $this->ownConfiguration = true;
+        config(['agentcat.enabled' => true, 'agentcat.project_id' => 12345]);
+        putenv('AGENTCAT_PROJECT_ID=' . self::OTHER_PROJECT); // BridgeTestCase puts the variable back after the test
+    }
+
     public function defineAgentCatOff(): void
     {
         $this->ownConfiguration = true;
@@ -99,6 +121,79 @@ final class ServiceProviderTest extends BridgeTestCase
 
         $this->assertIsArray($tools);
         $this->assertNotSame(GetMoreTools::NAME, JsonAssert::at(end($tools), 'name'));
+    }
+
+    /** M2: a string is a list of one class, so the server the customer meant to exclude is not tracked. */
+    public function testAStringExcludeIsAListOfOneClass(): void
+    {
+        config(['agentcat.exclude' => ConformanceServer::class]);
+
+        $this->assertUntouched();
+    }
+
+    /** M2: an entry that is no class name logs one line; the other entries still exclude, and a null one is unset. */
+    public function testAnExcludeEntryOfAnotherTypeIsIgnoredWithOneLine(): void
+    {
+        $logger = new MemoryLogger();
+        Log::setLogger($logger);
+        config(['agentcat.exclude' => [null, 7, ConformanceServer::class]]);
+
+        $tools = (new LaravelHarness(ConformanceServer::class))->listTools()->tools;
+        $harness = new LaravelHarness(PagedServer::class);
+        $harness->listTools();
+        $harness->listTools();
+
+        $this->assertIsArray($tools);
+        $this->assertNotSame(GetMoreTools::NAME, JsonAssert::at(end($tools), 'name'));
+        $this->assertSame(['WARN: AgentCat option "agentcat.exclude.1" must be string, got int; the entry is ignored'], array_values(array_filter($logger->messages(), static fn(string $line): bool => str_starts_with($line, 'WARN:'))));
+    }
+
+    /** M2: the bridge's keys of a wrong type log one line each, once, and their defaults are used. */
+    #[DefineEnvironment('defineBadBridgeKeys')]
+    public function testBridgeKeysOfAWrongTypeLogOneLineEachAndFallBack(): void
+    {
+        $logger = new MemoryLogger();
+        Log::setLogger($logger);
+
+        (new LaravelHarness(ConformanceServer::class))->callTool('echo', ['msg' => 'hi', 'session_id' => 'start']);
+        (new LaravelHarness(ConformanceServer::class))->callTool('echo', ['msg' => 'hi', 'session_id' => 'start']);
+        (new LaravelHarness(PagedServer::class))->callTool('echo', ['msg' => 'hi', 'session_id' => 'start']);
+
+        $this->assertSame([
+            'WARN: AgentCat option "agentcat.exclude" must be array or string, got int; the default is used',
+            'WARN: AgentCat option "agentcat.log_channel" must be string or null, got array; the default is used',
+            'WARN: AgentCat option "agentcat.projects.' . ConformanceServer::class . '" must be string or null, got int; the entry is ignored',
+            'WARN: AgentCat option "agentcat.diagnostics_endpoint" must be string or null, got int; the default is used',
+            'WARN: AgentCat option "agentcat.diagnostics_token" must be string or null, got bool; the default is used',
+        ], array_values(array_filter($logger->messages(), static fn(string $line): bool => str_starts_with($line, 'WARN:'))));
+        $events = $this->deliveries();
+        $this->assertSame([LaravelTrackingFixture::PROJECT, LaravelTrackingFixture::PROJECT, self::OTHER_PROJECT], array_map(static fn(mixed $event): mixed => JsonAssert::at($event, 'project_id'), $events));
+    }
+
+    /** M2: `projects` that is not a map logs one line, and every server goes to `project_id`. */
+    public function testProjectsOfAnotherTypeLogOneLineAndTheProjectIdIsUsed(): void
+    {
+        $logger = new MemoryLogger();
+        Log::setLogger($logger);
+        config(['agentcat.projects' => self::OTHER_PROJECT]);
+
+        (new LaravelHarness(ConformanceServer::class))->callTool('echo', ['msg' => 'hi', 'session_id' => 'start']);
+
+        $this->assertSame(LaravelTrackingFixture::PROJECT, $this->deliveredField('project_id'));
+        $this->assertContains('WARN: AgentCat option "agentcat.projects" must be array or null, got string; the default is used', $logger->messages());
+    }
+
+    /** M2: a `project_id` that is not a string logs one line, and AGENTCAT_PROJECT_ID of the process decides. */
+    #[DefineEnvironment('defineANonStringProjectId')]
+    public function testAProjectIdOfAnotherTypeLogsOneLineAndTheVariableDecides(): void
+    {
+        $logger = new MemoryLogger();
+        Log::setLogger($logger);
+
+        (new LaravelHarness(ConformanceServer::class))->callTool('echo', ['msg' => 'hi', 'session_id' => 'start']);
+
+        $this->assertSame(self::OTHER_PROJECT, $this->deliveredField('project_id'));
+        $this->assertContains('WARN: AgentCat option "agentcat.project_id" must be string or null, got int; the default is used', $logger->messages());
     }
 
     public function testAnExcludedClassAlsoExcludesItsSubclasses(): void

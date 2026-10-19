@@ -39,20 +39,31 @@ final class ServerTracker
 
     private ?Options $options = null;
 
+    /** @var array<string, true> the lines of bad bridge values logged so far: each once per process */
+    private array $warned = [];
+
     public function track(Server $server, Container $app): void
     {
         try {
             $config = $app->make('config')->get('agentcat');
             $config = is_array($config) ? $config : [];
-            if ($this->matches($server, $config['exclude'] ?? []) !== null) {
-                return;
+            $bad = new \ArrayObject();
+            $keys = new BridgeKeys($config, static function (string $line) use ($bad): void {
+                $bad->append($line);
+            });
+            if ($this->matches($server, $keys->exclude()) !== null) {
+                return; // an excluded server touches neither the log nor diagnostics
             }
-            $this->adoptLogger($app, $config['log_channel'] ?? null);
+            $this->adoptLogger($app, $keys->string('log_channel'));
+            $project = $this->project($server, $keys);
+            $keys->string('diagnostics_endpoint'); // read at boot (BridgeConfig); here for the line of a bad value
+            $keys->string('diagnostics_token');
+            $this->warnOnce($bad->getArrayCopy());
             $client = AgentCat::client();
             // A fake records every server (header conflict 18); the shared client is never replaced (header conflict 11).
             $client = FakeLog::of($client) instanceof FakeLog ? $client : ($this->client ??= new Client(ClientSeams::of(EventQueue::global(), EnabledGate::of($config['enabled'] ?? null))));
             $this->options ??= ConfigOptions::options($config, self::BRIDGE_KEYS, $this->resolve(...));
-            $client->track($server, $this->project($server, $config), $this->options);
+            $client->track($server, $project, $this->options);
             if (TrackedServers::get($server) instanceof TrackedServer) {
                 AnswerLength::mark($server); // D59; a server that AgentCat did not track (off, or failed) keeps its answer
             }
@@ -70,29 +81,46 @@ final class ServerTracker
         return GlobalContainer::getInstance()->make($class);
     }
 
-    /** @param array<array-key, mixed> $config */
-    private function project(Server $server, array $config): ?string
+    private function project(Server $server, BridgeKeys $keys): ?string
     {
-        $projects = is_array($config['projects'] ?? null) ? $config['projects'] : [];
+        $projects = $keys->projects();
         $class = $this->matches($server, array_keys($projects));
         // A null entry (env() of an unset variable) is the configured project: under config:cache the process does
         // not hold .env, so AGENTCAT_PROJECT_ID is read only when the configuration has no project either (D36).
         $project = $class !== null ? ($projects[$class] ?? null) : null;
-        $project ??= $config['project_id'] ?? null;
 
-        return is_string($project) ? $project : null;
+        return $project ?? $keys->string('project_id');
     }
 
-    /** The first listed class the server is an instance of; a class also matches its subclasses. */
-    private function matches(Server $server, mixed $classes): ?string
+    /**
+     * The first listed class the server is an instance of; a class also matches its subclasses.
+     *
+     * @param list<array-key> $classes
+     */
+    private function matches(Server $server, array $classes): ?string
     {
-        foreach (is_array($classes) ? $classes : [] as $class) {
+        foreach ($classes as $class) {
             if (is_string($class) && $server instanceof $class) {
                 return $class;
             }
         }
 
         return null;
+    }
+
+    /**
+     * Each line once per process: laravel/mcp builds a server per HTTP request, and the configuration does not change.
+     *
+     * @param array<string> $lines
+     */
+    private function warnOnce(array $lines): void
+    {
+        foreach ($lines as $line) {
+            if (!isset($this->warned[$line])) {
+                $this->warned[$line] = true;
+                Log::write($line);
+            }
+        }
     }
 
     /**
@@ -104,13 +132,13 @@ final class ServerTracker
      * Laravel does not keep the emergency logger of a channel it cannot create, and logs that failure each time it is
      * asked.
      */
-    private function adoptLogger(Container $app, mixed $channel): void
+    private function adoptLogger(Container $app, ?string $channel): void
     {
         if (Log::hasLogger()) {
             return;
         }
         $log = $app->make('log');
-        Log::adopt(is_string($channel) && $channel !== ''
+        Log::adopt($channel !== null && $channel !== ''
             ? $log->channel($channel)
             : $log->build(['driver' => 'single', 'name' => 'agentcat', 'path' => storage_path('logs/agentcat.log')]));
     }

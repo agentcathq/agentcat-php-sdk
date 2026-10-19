@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AgentCat\Tests\Unit\Laravel;
 
 use AgentCat\Internal\Support\ConfigOptions;
+use AgentCat\Laravel\Internal\BridgeKeys;
 use AgentCat\Laravel\Internal\ServerTracker;
 use PHPUnit\Framework\TestCase;
 
@@ -18,7 +19,7 @@ final class ConfigFileTest extends TestCase
         array_walk_recursive($config, function (mixed $value): void {
             $this->assertNotInstanceOf(\Closure::class, $value); // config:cache
         });
-        $this->assertSame(['Laravel\Boost\Mcp\Boost'], $config['exclude'] ?? null);
+        $this->assertSame(BridgeKeys::DEFAULT_EXCLUDE, $config['exclude'] ?? null); // also the default of a bad value
         $this->assertSame([], array_diff(array_keys($config), [...ServerTracker::BRIDGE_KEYS, ...array_keys(ConfigOptions::KEYS)]));
     }
 
