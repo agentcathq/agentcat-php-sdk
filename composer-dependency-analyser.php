@@ -31,4 +31,8 @@ return (new Configuration())
     // Orchestra\Testbench\TestCase lives in orchestra/testbench-core, which orchestra/testbench requires; the Laravel tests extend it.
     ->ignoreErrorsOnPackageAndPath('orchestra/testbench-core', __DIR__ . '/tests', [ErrorType::SHADOW_DEPENDENCY])
     // Symfony\Component\Console arrives with laravel/framework; the artisan fixture hands its input and output to Laravel's console kernel.
-    ->ignoreErrorsOnPackageAndPath('symfony/console', __DIR__ . '/tests/E2E/Laravel', [ErrorType::SHADOW_DEPENDENCY]);
+    ->ignoreErrorsOnPackageAndPath('symfony/console', __DIR__ . '/tests/E2E/Laravel', [ErrorType::SHADOW_DEPENDENCY])
+    // Symfony\Component\Routing arrives with symfony/framework-bundle and symfony/mcp-bundle; the test kernel imports the bundle's MCP routes with it.
+    ->ignoreErrorsOnPackageAndPath('symfony/routing', __DIR__ . '/tests/Support/Symfony/TestKernel.php', [ErrorType::SHADOW_DEPENDENCY])
+    // The test kernel registers AgentCat's Symfony bundle, whose class src/Symfony/AgentCatBundle.php is not written yet. Remove this line with it.
+    ->ignoreUnknownClasses(['AgentCat\Symfony\AgentCatBundle']);

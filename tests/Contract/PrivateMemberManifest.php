@@ -12,7 +12,8 @@ use Mcp\Schema\Result\ListToolsResult;
 
 /**
  * The manifest of library internals AgentCat depends on, for Plan F's snapshot diff over `members()`: every
- * #[TouchesPrivateMember] in src/<Adapter>/Internal/Access, and every library class AgentCat extends.
+ * #[TouchesPrivateMember] in src/<Adapter>/Internal/Access, every library class AgentCat extends, and the
+ * symfony/mcp-bundle service definitions AgentCat's bundle reads at compile time.
  */
 final class PrivateMemberManifest
 {
@@ -25,6 +26,16 @@ final class PrivateMemberManifest
         ToolInvoker::class => 'toErrorResponse(Throwable $e): Laravel\\Mcp\\Response',
         CallToolResult::class => '__construct(array $content, bool $isError = false, mixed $structuredContent = null, ?array $meta = null)',
         ListToolsResult::class => '__construct(array $tools, ?string $nextCursor = null)',
+    ];
+
+    /**
+     * The symfony/mcp-bundle service IDs, tags and method calls that AgentCat's bundle finds each server builder by, as
+     * strings: the bundle never names a class of symfony/mcp-bundle. `tests/Contract/Symfony` checks each one.
+     */
+    public const array BUNDLE_SERVICES = [
+        'symfony/mcp-bundle: builder method call addRequestHandlers(!tagged_iterator mcp.request_handler)',
+        'symfony/mcp-bundle: builder without a configurator',
+        'symfony/mcp-bundle: service mcp.server.<name>.builder tagged mcp.server.builder {server: <name>}',
     ];
 
     /** @return list<class-string> */
@@ -83,8 +94,8 @@ final class PrivateMemberManifest
     }
 
     /**
-     * The private members AgentCat reads (`Class::$member`) and the methods of the classes it extends that it depends
-     * on (`Class::__construct(...)`, `Class::handle(...): …`), sorted.
+     * The private members AgentCat reads (`Class::$member`), the methods of the classes it extends that it depends on
+     * (`Class::__construct(...)`, `Class::handle(...): …`) and the bundle service definitions it reads, sorted.
      *
      * @return list<string>
      */
@@ -97,6 +108,7 @@ final class PrivateMemberManifest
         foreach (self::EXTENDED as $class => $method) {
             $members[] = $class . '::' . $method;
         }
+        array_push($members, ...self::BUNDLE_SERVICES);
         $members = array_values(array_unique($members));
         sort($members);
 

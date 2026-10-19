@@ -31,6 +31,9 @@ final class ManifestTest extends TestCase
                 'Mcp\Server\Builder::$parts',
                 'Mcp\Server\Builder::$referenceHandler',
                 'Mcp\Server\Protocol::$requestHandlers',
+                'symfony/mcp-bundle: builder method call addRequestHandlers(!tagged_iterator mcp.request_handler)',
+                'symfony/mcp-bundle: builder without a configurator',
+                'symfony/mcp-bundle: service mcp.server.<name>.builder tagged mcp.server.builder {server: <name>}',
             ],
             PrivateMemberManifest::members(),
         );
@@ -74,5 +77,6 @@ final class ManifestTest extends TestCase
         $this->assertSame('<0.8.1', $composer->conflict->{'mcp/sdk'});
         $this->assertObjectHasProperty('laravel/mcp', $composer->suggest);
         $this->assertSame('<1.0', $composer->conflict->{'laravel/mcp'});
+        $this->assertObjectHasProperty('symfony/mcp-bundle', $composer->suggest);
     }
 }

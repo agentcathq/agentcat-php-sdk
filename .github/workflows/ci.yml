@@ -146,9 +146,11 @@ jobs:
       - uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
         with:
           dependency-versions: highest
+      - name: Remove symfony/mcp-bundle, which requires mcp/sdk ^0.8.1
+        run: composer remove --dev --no-update symfony/mcp-bundle
       - name: Install mcp/sdk main at the commit this release was verified against
         run: composer require --dev --no-interaction --update-with-all-dependencies "mcp/sdk:dev-main#82e19d114e95671e05e7df7909195f7ace03d90e as 0.9.0"
-      - run: vendor/bin/phpstan analyse --no-progress --error-format=github
+      - run: vendor/bin/phpstan analyse --no-progress --error-format=github --configuration=phpstan.no-bundle.neon
       - run: vendor/bin/phpunit --testsuite Contract,Integration,E2E
 
   all-green:
