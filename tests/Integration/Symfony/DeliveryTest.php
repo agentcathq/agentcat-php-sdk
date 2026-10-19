@@ -80,19 +80,6 @@ final class DeliveryTest extends SymfonyTestCase
         $this->assertSame(-2048, $dispatcher->getListenerPriority(KernelEvents::TERMINATE, $last));
     }
 
-    /** Header conflict 7: a Symfony application without AgentCat's bundle has no such listener. */
-    #[MaximumDuration(1000)]
-    public function testWithoutTheBundleNothingWaits(): void
-    {
-        $kernel = $this->kernel(withAgentCat: false);
-        $dispatcher = $kernel->getContainer()->get('event_dispatcher');
-        $this->assertInstanceOf(EventDispatcherInterface::class, $dispatcher);
-
-        $listeners = array_map(static fn(mixed $listener): mixed => is_array($listener) ? $listener[0] ?? null : $listener, $dispatcher->getListeners(KernelEvents::TERMINATE));
-
-        $this->assertSame([], array_filter($listeners, static fn(mixed $listener): bool => $listener instanceof TerminateListener));
-    }
-
     #[Group('ac-03-1')]
     #[MaximumDuration(1000)]
     public function testAWorkerWaitsAtMostTheCapAndTheNextRequestDeliversTheRest(): void

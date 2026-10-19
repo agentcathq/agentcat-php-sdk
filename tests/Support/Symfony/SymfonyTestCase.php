@@ -19,6 +19,7 @@ use AgentCat\Tests\Support\ToolCalls;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\McpBundle\McpBundle;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
 /**
  * Symfony applications with symfony/mcp-bundle, for the bundle tests. Skipped where the bundle is not installed (the
@@ -118,6 +119,24 @@ abstract class SymfonyTestCase extends TestCase
         restore_exception_handler();
 
         return $handler;
+    }
+
+    /**
+     * The listeners of a kernel event, sorted: the last has the lowest priority. A `[service, method]` listener is given
+     * as its service.
+     *
+     * @return list<mixed>
+     */
+    protected function listeners(TestKernel $kernel, string $event): array
+    {
+        $dispatcher = $kernel->getContainer()->get('event_dispatcher');
+        $this->assertInstanceOf(EventDispatcherInterface::class, $dispatcher);
+        $listeners = [];
+        foreach ($dispatcher->getListeners($event) as $listener) {
+            $listeners[] = is_array($listener) ? reset($listener) : $listener;
+        }
+
+        return $listeners;
     }
 
     /**

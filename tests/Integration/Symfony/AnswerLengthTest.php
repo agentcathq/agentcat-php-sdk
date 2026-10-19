@@ -13,7 +13,6 @@ use AgentCat\Tests\Support\Symfony\SymfonyTestCase;
 use AgentCat\Tests\Support\Symfony\TestKernel;
 use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
 use PHPUnit\Framework\Attributes\Group;
-use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -47,7 +46,7 @@ final class AnswerLengthTest extends SymfonyTestCase
 
         $this->assertSame(200, $response->getStatusCode());
         $this->assertFalse($response->headers->has('Content-Length'));
-        $this->assertSame([], array_filter($this->responseListeners($kernel), static fn(mixed $listener): bool => $listener instanceof AnswerLength));
+        $this->assertSame([], array_filter($this->listeners($kernel, KernelEvents::RESPONSE), static fn(mixed $listener): bool => $listener instanceof AnswerLength));
     }
 
     /** Last of `kernel.response`, after Symfony's own listeners: the answer is final when it gets its length. */
@@ -58,7 +57,7 @@ final class AnswerLengthTest extends SymfonyTestCase
 
         AnswerLength::register($kernel->getContainer(), true);
 
-        $listeners = $this->responseListeners($kernel);
+        $listeners = $this->listeners($kernel, KernelEvents::RESPONSE);
         $this->assertInstanceOf(AnswerLength::class, end($listeners));
     }
 
@@ -156,15 +155,6 @@ final class AnswerLengthTest extends SymfonyTestCase
         $http = $this->http($kernel, $path);
 
         return $kernel->handle($http->callRequest('echo', ['msg' => 'hi', 'session_id' => 'start']));
-    }
-
-    /** @return list<mixed> the `kernel.response` listeners, sorted: the last has the lowest priority */
-    private function responseListeners(TestKernel $kernel): array
-    {
-        $dispatcher = $kernel->getContainer()->get('event_dispatcher');
-        $this->assertInstanceOf(EventDispatcherInterface::class, $dispatcher);
-
-        return array_values(array_map(static fn(mixed $listener): mixed => is_array($listener) ? $listener[0] ?? null : $listener, $dispatcher->getListeners(KernelEvents::RESPONSE)));
     }
 
     /**
