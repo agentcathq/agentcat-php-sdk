@@ -10,11 +10,16 @@ namespace AgentCat\Tests\Runtime\Support;
  */
 final class Images
 {
+    /** Its stop signal is SIGQUIT: a graceful stop. */
     public const string FPM = 'php:8.3.35-fpm-bookworm';
 
+    /** Its stop signal is SIGWINCH: a graceful stop. */
     public const string APACHE = 'php:8.3.35-apache-bookworm';
 
-    /** Built locally: `docker build --tag agentcat-runtime-cli:8.3.35 tests/Runtime/docker` (the official image plus ext-pcntl). */
+    /**
+     * Built locally: `docker build --tag agentcat-runtime-cli:8.3.35 tests/Runtime/docker` (the official image plus
+     * ext-pcntl). Its stop signal is SIGTERM, as for `FRANKENPHP`, `SWOOLE` and `UNIT`.
+     */
     public const string CLI = 'agentcat-runtime-cli:8.3.35';
 
     public const string FRANKENPHP = 'dunglas/frankenphp:1.13.1-php8.3.35-bookworm';

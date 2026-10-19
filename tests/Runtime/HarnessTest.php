@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AgentCat\Tests\Runtime;
 
+use AgentCat\Internal\Constants;
 use AgentCat\Tests\Integration\Support\MockCollector;
 use AgentCat\Tests\Runtime\Support\DockerRuntime;
 use AgentCat\Tests\Runtime\Support\Images;
@@ -104,6 +105,66 @@ final class HarnessTest extends RuntimeTestCase
         $lived = microtime(true) - $started;
         $this->assertSame('', $this->containerIds($prefix), 'the container outlived its lifetime');
         $this->assertGreaterThan(1.5, $lived, sprintf('the container ended %.2f s after its start, before its lifetime', $lived));
+    }
+
+    /** Containers write only into the test's output directory, which the cleanup makes removable. */
+    #[MaximumDuration(60000)]
+    public function testOnlyTheOutputDirectoryCanBeMounted(): void
+    {
+        $out = $this->out();
+        file_put_contents($out . '/pool.conf', '');
+        $home = getenv('HOME');
+        $this->assertIsString($home);
+        $elsewhere = $home . '/kernel-' . bin2hex(random_bytes(4));
+        $this->assertTrue(mkdir($elsewhere));
+
+        try {
+            $refused = Thrown::by(\InvalidArgumentException::class, fn(): array => DockerRuntime::command(Images::CLI, ['true'], $this->env(), [$elsewhere => '/kernel']));
+        } finally {
+            rmdir($elsewhere);
+        }
+        $command = DockerRuntime::command(Images::CLI, ['true'], $this->env(), [$out => '/out', $out . '/pool.conf' => '/etc/pool.conf']);
+
+        $this->assertStringContainsString('output directory', $refused->getMessage());
+        $this->assertContains('type=bind,source=' . realpath($out) . ',target=/out', $command);
+        $this->assertContains('type=bind,source=' . realpath($out) . '/pool.conf,target=/etc/pool.conf', $command);
+    }
+
+    /** PHP must not be PID 1 in a PHP CLI image (header conflict 11): its signal drain's re-raise would not end it. */
+    #[MaximumDuration(60000)]
+    public function testPhpCliImagesGetAnInitWhateverTheCallerSays(): void
+    {
+        $out = $this->out();
+
+        DockerRuntime::start(Images::CLI, ['php', '-r', 'file_put_contents("/out/pid", (string) getmypid()); sleep(30);'], $this->env(), [$out => '/out'], init: false);
+
+        $this->assertContains('--init', DockerRuntime::command(Images::CLI, ['true'], $this->env(), [], init: false));
+        $this->assertContains('--init', DockerRuntime::command(Images::SWOOLE, ['true'], $this->env(), [], init: false));
+        $this->assertNotContains('--init', DockerRuntime::command(Images::FPM, ['true'], $this->env(), [], init: false));
+        $deadline = microtime(true) + 20.0;
+        while (!is_file($out . '/pid') && microtime(true) < $deadline) {
+            usleep(50_000);
+        }
+        $this->assertFileExists($out . '/pid');
+        $this->assertNotSame('1', file_get_contents($out . '/pid'), 'PHP runs as PID 1');
+    }
+
+    /**
+     * A runtime that drops the container's environment (FPM's default `clear_env`) makes the SDK use its default hosts:
+     * in every container they resolve to 127.0.0.1, where no AgentCat listens.
+     */
+    #[MaximumDuration(60000)]
+    public function testAgentCatsDefaultHostsResolveToTheLocalHostInEveryContainer(): void
+    {
+        $hosts = [parse_url(Constants::DEFAULT_API_BASE_URL, PHP_URL_HOST), parse_url(Constants::DEFAULT_DIAGNOSTICS_ENDPOINT, PHP_URL_HOST)];
+        $code = sprintf('echo gethostbyname(%s), " ", gethostbyname(%s);', var_export($hosts[0], true), var_export($hosts[1], true));
+
+        $run = DockerRuntime::run(Images::CLI, ['env', '-i', '/usr/local/bin/php', '-r', $code], $this->env(), []); // an empty environment
+
+        $this->assertSame(0, $run['exitCode'], $run['stderr']);
+        $this->assertSame('127.0.0.1 127.0.0.1', $run['stdout']);
+        $env = ['AGENTCAT_API_URL' => 'http://127.0.0.1:@example.com/'] + $this->env(); // user information, host example.com
+        $this->assertStringContainsString('AGENTCAT_API_URL', Thrown::by(\InvalidArgumentException::class, static fn(): array => DockerRuntime::command(Images::CLI, ['true'], $env, []))->getMessage());
     }
 
     /**

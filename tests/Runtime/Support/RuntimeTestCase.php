@@ -134,7 +134,7 @@ abstract class RuntimeTestCase extends TestCase
         }
         $home = getenv('HOME');
         $this->assertIsString($home);
-        $out = $home . '/runtime-' . bin2hex(random_bytes(6));
+        $out = $home . '/' . DockerRuntime::OUTPUT_DIRECTORY_PREFIX . bin2hex(random_bytes(6));
         foreach (['', ...self::OUT_DIRECTORIES] as $directory) {
             $path = $directory === '' ? $out : $out . '/' . $directory;
             $this->assertTrue(mkdir($path, 0o777) && chmod($path, 0o777), 'Cannot create ' . $path); // chmod: the umask

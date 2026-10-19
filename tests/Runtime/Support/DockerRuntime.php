@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AgentCat\Tests\Runtime\Support;
 
+use AgentCat\Internal\Constants;
 use Symfony\Component\Process\Process;
 
 /**
@@ -12,8 +13,9 @@ use Symfony\Component\Process\Process;
  *
  * Every container uses host networking and reaches only 127.0.0.1: its environment must point `AGENTCAT_API_URL` and
  * `AGENTCAT_DIAGNOSTICS_ENDPOINT` there (`RuntimeTestCase::env()`), so a fixture that forgets its collector fails
- * closed. The repository is mounted read-only at its own path and is the working directory; every other mount is an
- * existing path under the test HOME (`--mount` never creates a host path). Every container is named
+ * closed, and AgentCat's default hosts resolve to 127.0.0.1 for a runtime that drops that environment. The repository
+ * is mounted read-only at its own path and is the working directory; every other mount is the test's output directory
+ * or a path in it (`--mount` never creates a host path). PHP CLI images always get `--init`. Every container is named
  * `agentcat-rt-<pid>-<hex>` and runs with `--rm`; `removeAll()` removes the ones that outlive their docker client,
  * `removeStale()` those of a test process that died, and a started container ends on its own after its lifetime.
  * Every docker command runs with a timeout.
@@ -40,6 +42,12 @@ final class DockerRuntime
     private const string FAIL_CLOSED_PREFIX = 'http://127.0.0.1:';
 
     private const string NAME_PREFIX = 'agentcat-rt-';
+
+    /** The images whose main process is PHP CLI: PHP must not be PID 1 there (header conflict 11). */
+    private const array INIT_IMAGES = [Images::CLI, Images::SWOOLE];
+
+    /** The test's output directory is `<test HOME>/runtime-<hex>` (`RuntimeTestCase::out()`). */
+    public const string OUTPUT_DIRECTORY_PREFIX = 'runtime-';
 
     /**
      * Run by `sh -c` in front of a started container's entrypoint (`$1` is the lifetime): after the lifetime it sends
@@ -99,7 +107,7 @@ final class DockerRuntime
      *
      * @param non-empty-list<string> $command  the command, after the image's entrypoint
      * @param array<string, string>  $env      the container's environment: `RuntimeTestCase::env()` plus the test's own
-     * @param array<string, string>  $mounts   host path (under the test HOME) => container path
+     * @param array<string, string>  $mounts   host path (in the output directory) => container path
      * @param float                  $timeout  how long the port may take to accept a connection
      * @param bool                   $remove   false keeps a stopped container for `logs()` until `stop()` (ruling P16)
      * @param float                  $lifetime how long the container may run at most
@@ -118,7 +126,7 @@ final class DockerRuntime
         $timeout = self::seconds($timeout);
         $lifetime = (string) (int) ceil(self::seconds($lifetime));
         $runtime = new self(self::newName());
-        $options = self::options($runtime->name, $env, $mounts, $init, $remove);
+        $options = self::options($image, $runtime->name, $env, $mounts, $init, $remove);
         $run = self::docker(['run', '--detach', ...$options, '--entrypoint', 'sh', $image, '-c', self::LIFETIME_SCRIPT, 'sh', $lifetime, ...self::entrypoint($image), ...$command]);
         if (!$run->isSuccessful()) {
             throw new \RuntimeException(sprintf('docker run %s failed: %s', $image, $run->getErrorOutput()));
@@ -135,13 +143,13 @@ final class DockerRuntime
      *
      * @param list<string>          $command
      * @param array<string, string> $env
-     * @param array<string, string> $mounts host path (under the test HOME) => container path
+     * @param array<string, string> $mounts host path (in the output directory) => container path
      *
      * @return array{exitCode: int, stdout: string, stderr: string}
      */
     public static function run(string $image, array $command, array $env, array $mounts): array
     {
-        $run = self::docker(['run', ...self::options(self::newName(), $env, $mounts, true, true), $image, ...$command], self::RUN_SECONDS);
+        $run = self::docker(['run', ...self::options($image, self::newName(), $env, $mounts, true, true), $image, ...$command], self::RUN_SECONDS);
 
         return ['exitCode' => $run->getExitCode() ?? -1, 'stdout' => $run->getOutput(), 'stderr' => $run->getErrorOutput()];
     }
@@ -152,13 +160,13 @@ final class DockerRuntime
      *
      * @param list<string>          $command
      * @param array<string, string> $env
-     * @param array<string, string> $mounts host path (under the test HOME) => container path
+     * @param array<string, string> $mounts host path (in the output directory) => container path
      *
      * @return list<string>
      */
     public static function command(string $image, array $command, array $env, array $mounts, bool $init = true): array
     {
-        return ['docker', 'run', '--interactive', ...self::options(self::newName(), $env, $mounts, $init, true), $image, ...$command];
+        return ['docker', 'run', '--interactive', ...self::options($image, self::newName(), $env, $mounts, $init, true), $image, ...$command];
     }
 
     /**
@@ -196,7 +204,7 @@ final class DockerRuntime
     public static function makeRemovable(string $dir): void
     {
         $name = self::newName();
-        $run = self::docker(['run', '--rm', '--pull', 'never', '--name', $name, '--network', 'none', '--mount', self::bind(self::underTestHome($dir), '/out'), Images::CLI, 'chmod', '-R', 'a+rwX', '/out']);
+        $run = self::docker(['run', '--rm', '--pull', 'never', '--name', $name, '--network', 'none', '--mount', self::bind(self::inOutputDirectory($dir), '/out'), Images::CLI, 'chmod', '-R', 'a+rwX', '/out']);
         if (!$run->isSuccessful()) {
             throw new \RuntimeException(sprintf('chmod of %s in %s failed: %s', $dir, Images::CLI, $run->getErrorOutput()));
         }
@@ -214,8 +222,9 @@ final class DockerRuntime
     }
 
     /**
-     * `docker stop -t`: SIGTERM, the runtime's own graceful stop, and SIGKILL after `$timeout` seconds. With `--rm`
-     * the container is gone afterwards: read `logs()` first.
+     * `docker stop -t`: the image's stop signal (`Images`: SIGQUIT for FPM, SIGWINCH for Apache, SIGTERM for the
+     * others; with `--init`, tini passes it on), the runtime's own graceful stop, and SIGKILL after `$timeout` seconds.
+     * With `--rm` the container is gone afterwards: read `logs()` first.
      */
     public function stopGracefully(float $timeout): void
     {
@@ -349,24 +358,28 @@ final class DockerRuntime
      *
      * @return list<string>
      */
-    private static function options(string $name, array $env, array $mounts, bool $init, bool $remove): array
+    private static function options(string $image, string $name, array $env, array $mounts, bool $init, bool $remove): array
     {
         foreach (['AGENTCAT_API_URL', 'AGENTCAT_DIAGNOSTICS_ENDPOINT'] as $required) {
-            if (!str_starts_with($env[$required] ?? '', self::FAIL_CLOSED_PREFIX)) {
-                throw new \InvalidArgumentException(sprintf('A container needs %s on 127.0.0.1, the collector of the test or a closed port: pass RuntimeTestCase::env()', $required));
+            if (!self::local($env[$required] ?? '')) {
+                throw new \InvalidArgumentException(sprintf('A container needs %s on http://127.0.0.1:<port>, the collector of the test or a closed port: pass RuntimeTestCase::env()', $required));
             }
         }
         $repo = self::repo();
         $options = ['--pull', 'never', '--name', $name, '--network', 'host', '--mount', self::bind($repo, $repo, readonly: true), '--workdir', $repo];
+        foreach ([Constants::DEFAULT_API_BASE_URL, Constants::DEFAULT_DIAGNOSTICS_ENDPOINT] as $default) {
+            $options[] = '--add-host';
+            $options[] = parse_url($default, PHP_URL_HOST) . ':127.0.0.1';
+        }
         if ($remove) {
             $options[] = '--rm';
         }
-        if ($init) {
+        if ($init || in_array($image, self::INIT_IMAGES, true)) {
             $options[] = '--init';
         }
         foreach ($mounts as $host => $container) {
             $options[] = '--mount';
-            $options[] = self::bind(self::underTestHome($host), $container);
+            $options[] = self::bind(self::inOutputDirectory($host), $container);
         }
         foreach ($env as $variable => $value) {
             $options[] = '--env';
@@ -388,14 +401,26 @@ final class DockerRuntime
         return sprintf('type=bind,source=%s,target=%s%s', $host, $container, $readonly ? ',readonly' : '');
     }
 
-    /** The real path of `$host`, which must exist under the test HOME: the only host paths a container may write. */
-    private static function underTestHome(string $host): string
+    /** An `http://127.0.0.1:<port>` URL, with no user information that would name another host. */
+    private static function local(string $url): bool
+    {
+        $parts = parse_url($url);
+
+        return is_array($parts) && str_starts_with($url, self::FAIL_CLOSED_PREFIX) && ($parts['scheme'] ?? null) === 'http'
+            && ($parts['host'] ?? null) === '127.0.0.1' && isset($parts['port']) && !isset($parts['user']) && !isset($parts['pass']);
+    }
+
+    /**
+     * The real path of `$host`, which must be the test's output directory (`<test HOME>/runtime-<hex>`) or a path in
+     * it: the only host place a container may write, and the one the cleanup makes removable.
+     */
+    private static function inOutputDirectory(string $host): string
     {
         $home = getenv('HOME');
         $realHome = is_string($home) ? realpath($home) : false;
         $real = realpath($host);
-        if ($realHome === false || $real === false || !str_starts_with($real, $realHome . '/')) {
-            throw new \InvalidArgumentException(sprintf('A mount source must exist under the test HOME (%s): %s', var_export($home, true), $host));
+        if ($realHome === false || $real === false || !str_starts_with($real, $realHome . '/' . self::OUTPUT_DIRECTORY_PREFIX)) {
+            throw new \InvalidArgumentException(sprintf('A mount source must be the test\'s output directory (RuntimeTestCase::out()) or a path in it: %s', $host));
         }
 
         return $real;
