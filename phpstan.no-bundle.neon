@@ -3,9 +3,8 @@ includes:
     - phpstan.neon.dist
 parameters:
     tmpDir: .cache/phpstan-no-bundle
-    # (?) marks a path that PHPStan accepts before its tests exist.
     excludePaths:
         - tests/Support/Symfony
         - tests/Integration/Symfony
         - tests/Contract/Symfony
-        - tests/Integration/Conformance/SymfonyConformanceTest.php (?)
+        - tests/Integration/Conformance/SymfonyConformanceTest.php

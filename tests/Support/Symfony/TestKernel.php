@@ -19,10 +19,11 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
 /**
  * A Symfony application with symfony/mcp-bundle and one MCP server, `conformance` (`conformance-server` 2.0.0, HTTP on
- * `/mcp/conformance`), which exposes the tools under `Tools/`. Its cache and log directories live in the directory it
- * is given (`SymfonyTestCase` gives each kernel one under the test HOME). The `logger` service is a `MemoryLogger`, so
- * nothing reaches `error_log()`; a test that passes its own `logger` replaces it. Every `mcp.server.*` service is
- * public, so a test reads the servers and builders from the container.
+ * `/mcp/conformance`), which exposes the tools under `Tools/` in the order of the conformance suite: `echo`,
+ * `structured`, `refuses`, `boom`, `own`. Its cache and log directories live in the directory it is given
+ * (`SymfonyTestCase` gives each kernel one under the test HOME). The `logger` service is a `MemoryLogger`, so nothing
+ * reaches `error_log()`; a test that passes its own `logger` replaces it. Every `mcp.server.*` service is public, so a
+ * test reads the servers and builders from the container.
  */
 final class TestKernel extends Kernel
 {
@@ -30,6 +31,9 @@ final class TestKernel extends Kernel
 
     /** The `mcp.servers` entry of the `conformance` server. */
     public const array CONFORMANCE = ['name' => 'conformance-server', 'version' => '2.0.0', 'registry' => ['AgentCat\Tests\Support\Symfony\Tools\\'], 'http' => ['path' => '/mcp/conformance']];
+
+    /** The tools of `Tools/` by name, in the conformance suite's order; a tool not named here comes after them. */
+    public const array TOOLS = ['echo' => Tools\EchoTool::class, 'structured' => Tools\StructuredTool::class, 'refuses' => Tools\RefusesTool::class, 'boom' => Tools\BoomTool::class, 'own' => Tools\OwnTool::class];
 
     /** The default mcp configuration: the `conformance` server only. */
     public const array MCP = ['servers' => ['conformance' => self::CONFORMANCE]];
@@ -45,6 +49,12 @@ final class TestKernel extends Kernel
      * tool as a service: `SymfonyTestCase::streamingKernel()` gives it both.
      */
     public const array STREAMING = ['servers' => ['conformance' => ['registry' => [...self::CONFORMANCE['registry'], 'AgentCat\Tests\Support\Symfony\Streaming\\']] + self::CONFORMANCE]];
+
+    /**
+     * One full page: the `conformance` server with only `echo` and `FullPage\FullPageTools` (`t01` to `t14`), and a
+     * page size of 15, laravel/mcp's default page. The kernel needs the tools class as a service.
+     */
+    public const array FULL_PAGE = ['servers' => ['conformance' => ['registry' => [Tools\EchoTool::class, FullPage\FullPageTools::class], 'pagination_limit' => 15] + self::CONFORMANCE]];
 
     /**
      * @param string                       $directory the directory of the cache and log directories
@@ -142,6 +152,9 @@ final class TestKernel extends Kernel
             $container->extension('agentcat', $this->agentcat);
         }
         $services = $container->services()->defaults()->autowire()->autoconfigure();
+        foreach (self::TOOLS as $tool) {
+            $services->set($tool); // the bundle lists a server's tools in the order of their services
+        }
         $services->load('AgentCat\Tests\Support\Symfony\Tools\\', __DIR__ . '/Tools');
         $services->set('logger', MemoryLogger::class)->public();
         foreach ($this->services as $id => $service) {

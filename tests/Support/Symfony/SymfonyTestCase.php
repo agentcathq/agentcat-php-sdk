@@ -131,13 +131,17 @@ abstract class SymfonyTestCase extends TestCase
     /**
      * Boots a kernel with its own directory, so its container is compiled for this configuration.
      *
-     * @param array<string, mixed>         $agentcat the agentcat configuration
-     * @param array<string, string|object> $services more services: id => class name or instance (synthetic)
-     * @param array<string, mixed>|null    $mcp      the mcp configuration; null: the `conformance` server only
+     * @param array<string, mixed>         $agentcat  the agentcat configuration
+     * @param array<string, string|object> $services  more services: id => class name or instance (synthetic)
+     * @param array<string, mixed>|null    $mcp       the mcp configuration; null: the `conformance` server only
+     * @param string|null                  $directory the kernel's directory; null: a new one of this test. A kernel
+     *                                                loads the container that an earlier kernel of its directory
+     *                                                compiled, as each request of PHP-FPM does. A test that passes a
+     *                                                directory gives each configuration its own and removes them
      */
-    protected function kernel(array $agentcat = [], array $services = [], bool $withAgentCat = true, ?CompilerPassInterface $probe = null, ?array $mcp = null): TestKernel
+    protected function kernel(array $agentcat = [], array $services = [], bool $withAgentCat = true, ?CompilerPassInterface $probe = null, ?array $mcp = null, ?string $directory = null): TestKernel
     {
-        $kernel = new TestKernel($this->directory . '/kernel-' . count($this->kernels), $agentcat, $services, $mcp ?? TestKernel::MCP, $withAgentCat, $probe);
+        $kernel = new TestKernel($directory ?? $this->directory . '/kernel-' . count($this->kernels), $agentcat, $services, $mcp ?? TestKernel::MCP, $withAgentCat, $probe);
         $this->kernels[] = $kernel;
         $handler = $this->exceptionHandler();
         $kernel->boot();

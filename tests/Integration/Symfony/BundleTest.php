@@ -609,7 +609,7 @@ final class BundleTest extends SymfonyTestCase
         $tools = $http->listTools()->tools;
 
         $this->assertIsArray($tools);
-        $this->assertSame('structured', JsonAssert::at(end($tools), 'name'));
+        $this->assertSame('own', JsonAssert::at(end($tools), 'name'));
         $this->assertSame(['Warning: Failed to track server - Symfony\Component\DependencyInjection\Exception\EnvNotFoundException: Environment variable not found: "AGENTCAT_UNSET_PROJECT_ID".'], $this->agentCatLines($kernel));
     }
 
