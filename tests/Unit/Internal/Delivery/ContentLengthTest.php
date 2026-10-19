@@ -20,19 +20,19 @@ final class ContentLengthTest extends TestCase
 
     public function testAPlainAnswerGetsItsLengthInBytes(): void
     {
-        $this->assertSame('78', (new ContentLength())->of(['content-type' => ['application/json']], self::ANSWER), 'bytes, not characters: é is two');
+        $this->assertSame('78', (new ContentLength())->of(200, ['content-type' => ['application/json']], self::ANSWER), 'bytes, not characters: é is two');
     }
 
     /** laravel/mcp and mcp/sdk answer a notification with 202 and no body. */
     public function testAnEmptyAnswerGetsALengthOfZero(): void
     {
-        $this->assertSame('0', (new ContentLength())->of([], ''));
+        $this->assertSame('0', (new ContentLength())->of(202, [], ''));
     }
 
     /** A streamed answer (SSE) has no content: `StreamedResponse::getContent()` is false. */
     public function testAStreamedAnswerGetsNoLength(): void
     {
-        $this->assertNull((new ContentLength())->of(['content-type' => ['text/event-stream']], false));
+        $this->assertNull((new ContentLength())->of(200, ['content-type' => ['text/event-stream']], false));
     }
 
     /** @return iterable<string, array{array<array-key, mixed>}> the headers of the answer, as `HeaderBag::all()` gives them */
@@ -52,7 +52,32 @@ final class ContentLengthTest extends TestCase
     #[DataProvider('framedAnswers')]
     public function testAnAnswerThatFramesItselfGetsNoLength(array $headers): void
     {
-        $this->assertNull((new ContentLength())->of(['content-type' => ['application/json'], ...$headers], self::ANSWER));
+        $this->assertNull((new ContentLength())->of(200, ['content-type' => ['application/json'], ...$headers], self::ANSWER));
+    }
+
+    /** @return iterable<string, array{int, ?string}> */
+    public static function statuses(): iterable
+    {
+        yield '100' => [100, null];
+        yield '199' => [199, null];
+        yield '200' => [200, '78'];
+        yield '203' => [203, '78'];
+        yield '204: mcp/sdk answers OPTIONS so' => [204, null];
+        yield '205' => [205, '78'];
+        yield '303' => [303, '78'];
+        yield '304' => [304, null];
+        yield '305' => [305, '78'];
+        yield '400' => [400, '78'];
+    }
+
+    /**
+     * RFC 9110 §8.6: no `Content-Length` on an informational or a 204 answer. Symfony's `Response::prepare()` removes it
+     * from those and from 304, which have no body.
+     */
+    #[DataProvider('statuses')]
+    public function testAnAnswerWithoutABodyGetsNoLength(int $status, ?string $expected): void
+    {
+        $this->assertSame($expected, (new ContentLength())->of($status, [], self::ANSWER));
     }
 
     /** @return iterable<string, array{list<string>}> the bytes in each output buffer, from the bottom level up */
@@ -78,7 +103,7 @@ final class ContentLengthTest extends TestCase
         }
 
         try {
-            $length = (new ContentLength())->of([], self::ANSWER);
+            $length = (new ContentLength())->of(200, [], self::ANSWER);
         } finally {
             while (ob_get_level() > $level) {
                 ob_end_clean();
@@ -94,7 +119,7 @@ final class ContentLengthTest extends TestCase
         ob_start();
 
         try {
-            $length = (new ContentLength())->of([], self::ANSWER);
+            $length = (new ContentLength())->of(200, [], self::ANSWER);
         } finally {
             ob_end_clean();
         }
@@ -105,6 +130,6 @@ final class ContentLengthTest extends TestCase
     /** Headers that went out already (stray output without a buffer) cannot carry a length any more. */
     public function testAnAnswerAfterTheHeadersWentOutGetsNoLength(): void
     {
-        $this->assertNull((new ContentLength(static fn(): bool => true))->of([], self::ANSWER));
+        $this->assertNull((new ContentLength(static fn(): bool => true))->of(200, [], self::ANSWER));
     }
 }

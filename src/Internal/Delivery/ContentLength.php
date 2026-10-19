@@ -25,16 +25,17 @@ final readonly class ContentLength
     }
 
     /**
-     * The length in bytes to give an answer, or null when it goes as it is: a streamed answer (SSE), one with a
-     * `Content-Length` or `Transfer-Encoding` of its own, and one after stray output (headers that went out already, or
-     * bytes waiting in an output buffer, which go out first and would make the length short).
+     * The length in bytes to give an answer, or null when it goes as it is: an answer without a body (informational,
+     * 204, 304, as Symfony's `Response::prepare()` treats them), a streamed one (SSE), one with a `Content-Length` or
+     * `Transfer-Encoding` of its own, and one after stray output (headers that went out already, or bytes waiting in an
+     * output buffer, which go out first and would make the length short).
      *
      * @param array<array-key, mixed> $headers the answer's headers by name, in any case (`HeaderBag::all()`)
      * @param string|false            $content the answer's body; false for a streamed answer (`StreamedResponse`)
      */
-    public function of(array $headers, string|false $content): ?string
+    public function of(int $status, array $headers, string|false $content): ?string
     {
-        if ($content === false) {
+        if ($content === false || $status < 200 || $status === 204 || $status === 304) {
             return null;
         }
         $headers = array_change_key_case($headers);

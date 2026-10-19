@@ -62,6 +62,16 @@ final class AnswerLengthTest extends TestCase
         $this->assertSame('7', $response->headers->get('Content-Length'));
     }
 
+    /** The answer's status reaches the rule of `ContentLength`: a 204 has no body and gets no length. */
+    public function testAnAnswerWithoutABodyGetsNoLength(): void
+    {
+        $response = new Response('', 204);
+
+        (new AnswerLength())->handle(new RequestHandled($this->marked(), $response));
+
+        $this->assertFalse($response->headers->has('Content-Length'));
+    }
+
     /** D32: the listener runs inside Laravel's HTTP kernel, so nothing it meets may break the request. */
     public function testAResponseThatFailsLeavesTheRequestAlone(): void
     {
