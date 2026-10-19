@@ -47,6 +47,9 @@ return Application::create(
             if (($_SERVER['HTTP_X_E2E_IDENTIFY_SLEEP'] ?? null) === '1') {
                 $config->set('agentcat.identify', SleepingIdentify::class);
             }
+            if (($_SERVER['HTTP_X_E2E_STRAY_OUTPUT'] ?? null) === '1') {
+                echo "\n"; // a customer file with a newline after its closing tag, before the answer
+            }
             Mcp::web('/mcp/e2e', ConformanceServer::class);
             Mcp::web('/mcp/e2e-stream', StreamingServer::class);
             Mcp::local('e2e', ConformanceServer::class);

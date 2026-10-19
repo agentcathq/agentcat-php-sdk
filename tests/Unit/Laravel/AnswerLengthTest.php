@@ -25,7 +25,7 @@ final class AnswerLengthTest extends TestCase
     {
         $response = new Response(self::ANSWER, 200, ['Content-Type' => 'application/json']);
 
-        AnswerLength::handle(new RequestHandled($this->marked(), $response));
+        (new AnswerLength())->handle(new RequestHandled($this->marked(), $response));
 
         $this->assertSame('78', $response->headers->get('Content-Length'), 'bytes, not characters: é is two');
     }
@@ -35,7 +35,7 @@ final class AnswerLengthTest extends TestCase
     {
         $response = new Response('', 202);
 
-        AnswerLength::handle(new RequestHandled($this->marked(), $response));
+        (new AnswerLength())->handle(new RequestHandled($this->marked(), $response));
 
         $this->assertSame('0', $response->headers->get('Content-Length'));
     }
@@ -54,7 +54,7 @@ final class AnswerLengthTest extends TestCase
     {
         $response = new Response(self::ANSWER);
 
-        AnswerLength::handle(new RequestHandled($request, $response));
+        (new AnswerLength())->handle(new RequestHandled($request, $response));
 
         $this->assertFalse($response->headers->has('Content-Length'));
     }
@@ -70,7 +70,7 @@ final class AnswerLengthTest extends TestCase
             }
         };
 
-        AnswerLength::handle(new RequestHandled($this->marked(), $response));
+        (new AnswerLength())->handle(new RequestHandled($this->marked(), $response));
 
         $this->assertFalse($response->headers->has('Content-Length'));
     }
@@ -79,7 +79,7 @@ final class AnswerLengthTest extends TestCase
     {
         $response = new Response(self::ANSWER, 200, ['Content-Length' => '7']);
 
-        AnswerLength::handle(new RequestHandled($this->marked(), $response));
+        (new AnswerLength())->handle(new RequestHandled($this->marked(), $response));
 
         $this->assertSame('7', $response->headers->get('Content-Length'));
     }
@@ -88,7 +88,7 @@ final class AnswerLengthTest extends TestCase
     {
         $response = new Response(self::ANSWER, 200, ['Transfer-Encoding' => 'chunked']);
 
-        AnswerLength::handle(new RequestHandled($this->marked(), $response));
+        (new AnswerLength())->handle(new RequestHandled($this->marked(), $response));
 
         $this->assertFalse($response->headers->has('Content-Length'));
         $this->assertSame('chunked', $response->headers->get('Transfer-Encoding'));
@@ -105,7 +105,66 @@ final class AnswerLengthTest extends TestCase
             }
         };
 
-        AnswerLength::handle(new RequestHandled($this->marked(), $response));
+        (new AnswerLength())->handle(new RequestHandled($this->marked(), $response));
+
+        $this->assertFalse($response->headers->has('Content-Length'));
+    }
+
+    /** @return iterable<string, array{list<string>}> the bytes in each output buffer, from the bottom level up */
+    public static function strayOutput(): iterable
+    {
+        yield 'a BOM in the top buffer' => [["\xEF\xBB\xBF"]];
+        yield 'a newline after a closing tag, in a lower buffer' => [["\n", '']];
+    }
+
+    /**
+     * Bytes written before the answer wait in an output buffer (mod_php and php-cgi with `output_buffering`) and go out
+     * first: a length of the answer alone would cut the end of the JSON. The answer stays as laravel/mcp sends it.
+     *
+     * @param list<string> $buffers
+     */
+    #[DataProvider('strayOutput')]
+    public function testStrayOutputInAnOutputBufferLeavesTheAnswerAlone(array $buffers): void
+    {
+        $response = new Response(self::ANSWER);
+        $level = ob_get_level();
+        foreach ($buffers as $bytes) {
+            ob_start();
+            echo $bytes;
+        }
+
+        try {
+            (new AnswerLength())->handle(new RequestHandled($this->marked(), $response));
+        } finally {
+            while (ob_get_level() > $level) {
+                ob_end_clean();
+            }
+        }
+
+        $this->assertFalse($response->headers->has('Content-Length'));
+    }
+
+    /** An empty output buffer holds nothing that goes out before the answer. */
+    public function testAnEmptyOutputBufferDoesNotCount(): void
+    {
+        $response = new Response(self::ANSWER);
+        ob_start();
+
+        try {
+            (new AnswerLength())->handle(new RequestHandled($this->marked(), $response));
+        } finally {
+            ob_end_clean();
+        }
+
+        $this->assertSame('78', $response->headers->get('Content-Length'));
+    }
+
+    /** Headers that went out already (stray output without a buffer) cannot carry a length any more. */
+    public function testAnAnswerAfterTheHeadersWentOutStaysAsItIs(): void
+    {
+        $response = new Response(self::ANSWER);
+
+        (new AnswerLength(static fn(): bool => true))->handle(new RequestHandled($this->marked(), $response));
 
         $this->assertFalse($response->headers->has('Content-Length'));
     }

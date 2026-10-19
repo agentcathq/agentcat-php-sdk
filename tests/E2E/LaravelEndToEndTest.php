@@ -155,6 +155,33 @@ final class LaravelEndToEndTest extends TestCase
         $this->assertSame('stream', JsonAssert::at($this->event($scenario), 'resource_name'));
     }
 
+    /**
+     * Stray output before the answer under `php -S` with php.ini-production's `output_buffering=4096`, as on mod_php
+     * and php-cgi: the newline waits in PHP's output buffer and goes out before the JSON, so a length of the JSON alone
+     * would cut its end. AgentCat then leaves the answer as laravel/mcp sends it, and the client reads all of it when the
+     * request ends. Without stray output, the same buffering still gives the answer its length.
+     */
+    #[MaximumDuration(15000)]
+    public function testStrayOutputBeforeTheAnswerKeepsTheAnswerWhole(): void
+    {
+        $scenario = $this->collector()->scenario();
+        $server = BuiltInServer::start(__DIR__ . '/Laravel/http.php', self::environment(self::home()), ['output_buffering' => '4096']);
+
+        try {
+            $sized = $this->callOverHttp(['X-E2E-Collector' => $this->collector()->scenario()], server: $server);
+            $answer = $this->callOverHttp(['X-E2E-Collector' => $scenario, 'X-E2E-Stray-Output' => '1'], server: $server);
+        } finally {
+            $server->stop();
+        }
+
+        $this->assertSame((string) strlen($sized['body']), $sized['headers']['content-length'] ?? null, 'an answer without stray output gets its length');
+        $this->assertSame(200, $answer['status']);
+        $this->assertStringStartsWith("\n{", $answer['body']);
+        $this->assertSame('echo: hi', JsonAssert::at($this->answerResult($answer), 'content', 1, 'text')); // the whole JSON decodes
+        $this->assertArrayNotHasKey('content-length', $answer['headers']);
+        $this->assertSame('echo', JsonAssert::at($this->event($scenario), 'resource_name'));
+    }
+
     #[Group('ac-03-37')]
     #[Group('ac-02-44')]
     #[Group('ac-03-12')]
@@ -256,16 +283,18 @@ final class LaravelEndToEndTest extends TestCase
     }
 
     /**
-     * A `tools/call` over HTTP in the 2026-07-28 era: no handshake, the client in `_meta`. `echo` gets `msg` `hi`.
+     * A `tools/call` over HTTP in the 2026-07-28 era: no handshake, the client in `_meta`. `echo` gets `msg` `hi`. The
+     * class's `php -S` server answers unless the test passes its own.
      *
      * @param array<string, string> $headers
      *
      * @return array{status: int, headers: array<string, string>, body: string, receivedAt: float}
      */
-    private function callOverHttp(array $headers, string $tool = 'echo', string $path = '/mcp/e2e'): array
+    private function callOverHttp(array $headers, string $tool = 'echo', string $path = '/mcp/e2e', ?BuiltInServer $server = null): array
     {
-        $this->assertInstanceOf(BuiltInServer::class, self::$http);
-        $client = new McpHttpClient(self::$http->baseUrl() . $path);
+        $server ??= self::$http;
+        $this->assertInstanceOf(BuiltInServer::class, $server);
+        $client = new McpHttpClient($server->baseUrl() . $path);
         $arguments = $tool === 'echo' ? ['msg' => 'hi', 'session_id' => 'start', 'context' => 'e2e'] : ['session_id' => 'start'];
         $params = HttpHarness::modernParams(['name' => $tool, 'arguments' => (object) $arguments], ['name' => 'e2e-client', 'version' => '1.0.0']);
 
