@@ -148,6 +148,13 @@ final class CachedConfigurationTest extends BridgeTestCase
         self::cachedConfiguration([...self::DOT_ENV, 'AGENTCAT_DISABLE_DIAGNOSTICS' => 'true']);
     }
 
+    /** `.env` names the application channel for AgentCat's lines (D60: their own file otherwise). */
+    public function defineCachedLogChannel(): void
+    {
+        self::cachedConfiguration([...self::DOT_ENV, 'AGENTCAT_LOG_CHANNEL' => 'agentcat-cached']);
+        config(['logging.channels.agentcat-cached' => ['driver' => 'single', 'path' => $this->laravelDirectory . '/cached-channel.log']]);
+    }
+
     /** `.env` holds a word that is not a D44 word; the process turns AgentCat on. */
     public function defineCachedUnknown(): void
     {
@@ -296,6 +303,17 @@ final class CachedConfigurationTest extends BridgeTestCase
         AgentCat::track(TrackingFixture::builder());
 
         $this->assertFalse(Diagnostics::enabled());
+    }
+
+    #[DefineEnvironment('defineCachedLogChannel')]
+    public function testTheLinesGoToTheCachedLogChannel(): void
+    {
+        Log::setLogger(null); // the tracker chooses the logger
+
+        (new LaravelHarness(ConformanceServer::class))->listTools();
+
+        $this->assertStringContainsString('AgentCat setup started | project ' . LaravelTrackingFixture::PROJECT . ' | sdk laravel-mcp/server', (string) file_get_contents($this->laravelDirectory . '/cached-channel.log'));
+        $this->assertSame('', $this->agentCatLog());
     }
 
     /**

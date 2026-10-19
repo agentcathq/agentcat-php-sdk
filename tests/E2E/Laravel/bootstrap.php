@@ -33,11 +33,8 @@ return Application::create(
     basePath: $base,
     resolvingCallback: static function (LaravelApplication $app): void {
         $app->booted(static function () use ($app): void {
-            $home = (string) getenv('HOME');
             $config = $app->make('config');
-            $config->set('logging.channels.e2e', ['driver' => 'single', 'path' => $home . '/laravel.log']);
-            $config->set('agentcat.log_channel', 'e2e');
-            $config->set('app.debug', false);
+            $config->set('app.debug', false); // AgentCat logs to storage/logs/agentcat.log, its default (D60)
             // Laravel Boost's pattern: a local server with its own tools/call handler, excluded in config/agentcat.php.
             $config->push('agentcat.exclude', CustomCallServer::class);
             $collector = $_SERVER['HTTP_X_E2E_COLLECTOR'] ?? null;

@@ -50,7 +50,7 @@ final class LaravelEndToEndTest extends TestCase
     /** The directory of this class under the test HOME (Ruling R8): one HOME per server, each with its application. */
     private static string $dir = '';
 
-    /** The HOME of the `php -S` server: its laravel.log and the hook's marker. */
+    /** The HOME of the `php -S` server: its application, with AgentCat's log, and the hook's marker. */
     private static string $httpHome = '';
 
     /** @var list<StdioMcpClient> the stdio servers of the current test */
@@ -100,7 +100,7 @@ final class LaravelEndToEndTest extends TestCase
     public function testAnHttpCallIsDeliveredWithItsHeadersByTheEndOfTheRequest(): void
     {
         $scenario = $this->collector()->scenario();
-        FileTree::remove(self::$httpHome . '/laravel.log'); // the HTTP tests share it: only this request may write the line
+        FileTree::remove($this->agentCatLogPath(self::$httpHome)); // the HTTP tests share it: only this request may write the line
 
         $answer = $this->callOverHttp(['X-E2E-Collector' => $scenario, 'X-AgentCat-Health-Run' => 'L']);
 
@@ -108,7 +108,8 @@ final class LaravelEndToEndTest extends TestCase
         $this->assertSame('echo: hi', JsonAssert::at($this->answerResult($answer), 'content', 1, 'text'));
         $body = $this->event($scenario); // the shutdown function delivers within the 5 s budget (per-request SAPI)
         $this->assertSame(['conformance-server', 'e2e-client', 'L'], [JsonAssert::at($body, 'server_name'), JsonAssert::at($body, 'client_name'), JsonAssert::at($body, 'parameters', 'extra', 'requestInfo', 'headers', 'x-agentcat-health-run')]);
-        $this->assertStringContainsString('AgentCat setup started | project ' . self::PROJECT_ID . ' | sdk laravel-mcp/server', $this->laravelLog(self::$httpHome));
+        $this->assertStringContainsString('AgentCat setup started | project ' . self::PROJECT_ID . ' | sdk laravel-mcp/server', $this->agentCatLog(self::$httpHome)); // D60
+        $this->assertStringNotContainsString('AgentCat', $this->laravelLog(self::$httpHome));
     }
 
     /**
@@ -249,6 +250,7 @@ final class LaravelEndToEndTest extends TestCase
         $this->assertSame('[{"type":"text","text":"echo: hi"}]', json_encode(JsonAssert::at(Json::decode($lines[2]), 'result', 'content'), JSON_THROW_ON_ERROR));
         $this->assertSame([], $this->collector()->requests($scenario));
         $this->assertStringNotContainsString('AgentCat', $this->laravelLog($excluded['home']));
+        $this->assertFileDoesNotExist($this->agentCatLogPath($excluded['home']));
         $this->assertFileDoesNotExist($excluded['home'] . '/agentcat.log');
     }
 
@@ -420,10 +422,24 @@ final class LaravelEndToEndTest extends TestCase
         FileTree::remove(self::$httpHome . '/' . SleepingIdentify::MARKER);
     }
 
-    /** What the application wrote to `$home/laravel.log` (its `e2e` channel), '' before its first line. */
+    /** Where AgentCat's lines go in the application of `$home`: its own file (D60). */
+    private function agentCatLogPath(string $home): string
+    {
+        return $home . '/app/storage/logs/agentcat.log';
+    }
+
+    /** What AgentCat wrote to its own file in the application of `$home`, '' before its first line. */
+    private function agentCatLog(string $home): string
+    {
+        $path = $this->agentCatLogPath($home);
+
+        return is_file($path) ? (string) file_get_contents($path) : '';
+    }
+
+    /** What the application of `$home` wrote to its own log (Laravel's default channel), '' before its first line. */
     private function laravelLog(string $home): string
     {
-        $path = $home . '/laravel.log';
+        $path = $home . '/app/storage/logs/laravel.log';
 
         return is_file($path) ? (string) file_get_contents($path) : '';
     }

@@ -22,7 +22,7 @@ return [
         // App\Mcp\Servers\BillingServer::class => env('AGENTCAT_BILLING_PROJECT_ID'),
     ],
 
-    // The log channel for AgentCat's own lines. Unset: the application's default channel.
+    // The log channel for AgentCat's own lines, for example stack. Unset: their own file, storage/logs/agentcat.log.
     'log_channel' => env('AGENTCAT_LOG_CHANNEL'),
 
     // The AgentCat API. Unset: AgentCat's. MCPCAT_API_URL is the TypeScript SDK's name.

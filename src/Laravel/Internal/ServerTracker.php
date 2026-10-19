@@ -96,15 +96,22 @@ final class ServerTracker
     }
 
     /**
-     * D30: AgentCat's lines go to the configured log channel, else to the default one. The first adopted logger of the
-     * process wins, and a fake's diversion keeps priority; after a fake, the next server routes the lines again. The
-     * channel is resolved only while no logger is chosen: Laravel does not keep the emergency logger of a channel it
-     * cannot create, and logs that failure each time it is asked.
+     * D30, D60: AgentCat's lines go to the configured log channel, else to their own file, a `single` channel at
+     * `storage/logs/agentcat.log` built through Laravel's logging (TypeScript writes `~/mcpcat.log`): laravel/mcp builds
+     * a server per HTTP request, so the setup lines repeat per request, and they stay out of the application's log
+     * and its error trackers. The first adopted logger of the process wins, and a fake's diversion keeps priority;
+     * after a fake, the next server routes the lines again. The channel is resolved only while no logger is chosen:
+     * Laravel does not keep the emergency logger of a channel it cannot create, and logs that failure each time it is
+     * asked.
      */
     private function adoptLogger(Container $app, mixed $channel): void
     {
-        if (!Log::hasLogger()) {
-            Log::adopt($app->make('log')->channel(is_string($channel) && $channel !== '' ? $channel : null));
+        if (Log::hasLogger()) {
+            return;
         }
+        $log = $app->make('log');
+        Log::adopt(is_string($channel) && $channel !== ''
+            ? $log->channel($channel)
+            : $log->build(['driver' => 'single', 'name' => 'agentcat', 'path' => storage_path('logs/agentcat.log')]));
     }
 }

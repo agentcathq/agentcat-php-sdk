@@ -170,14 +170,45 @@ final class ServiceProviderTest extends BridgeTestCase
         yield 'not a name' => [5];
     }
 
+    /** D60: without a channel name, AgentCat's lines go to its own file, `storage/logs/agentcat.log`, not to the application's log. */
     #[DataProvider('defaultChannels')]
-    public function testWithoutALogChannelNameTheLinesGoToTheDefaultChannel(mixed $channel): void
+    public function testWithoutALogChannelNameTheLinesGoToStorageLogsAgentCatLog(mixed $channel): void
     {
         config(['agentcat.log_channel' => $channel]);
 
         (new LaravelHarness(ConformanceServer::class))->listTools();
 
+        $this->assertStringContainsString('AgentCat setup started | project ' . LaravelTrackingFixture::PROJECT . ' | sdk laravel-mcp/server', $this->agentCatLog());
+        $this->assertStringNotContainsString('AgentCat', $this->defaultChannelLog());
+    }
+
+    /** D60: `log_channel` routes the lines into any channel of the application, its default one too. */
+    public function testALogChannelNameRoutesTheLinesIntoTheApplicationsChannel(): void
+    {
+        config(['agentcat.log_channel' => 'single']);
+
+        (new LaravelHarness(ConformanceServer::class))->listTools();
+
         $this->assertStringContainsString('AgentCat setup started | project ' . LaravelTrackingFixture::PROJECT . ' | sdk laravel-mcp/server', $this->defaultChannelLog());
+        $this->assertSame('', $this->agentCatLog());
+    }
+
+    /**
+     * I3: laravel/mcp builds a server per HTTP request, so the setup lines, and an ERROR line for a tool that declares
+     * its own `session_id`, repeat per request. They stay out of the application's log and its error trackers.
+     */
+    public function testRequestsWriteNoAgentCatEntryIntoTheApplicationsLog(): void
+    {
+        $harness = new LaravelHarness(ConformanceServer::class);
+
+        for ($i = 0; $i < 3; ++$i) {
+            $harness->callTool('echo', ['msg' => 'hi', 'session_id' => 'start']);
+        }
+        $harness->listTools();
+
+        $this->assertSame('', $this->defaultChannelLog());
+        $this->assertStringContainsString('agentcat.ERROR: ERROR: Tool "own" already declares', $this->agentCatLog());
+        $this->assertSame(4, substr_count($this->agentCatLog(), 'AgentCat setup started | project ' . LaravelTrackingFixture::PROJECT));
     }
 
     /** Laravel does not keep the emergency logger of a channel it cannot create: AgentCat asks for it once. */
@@ -203,7 +234,7 @@ final class ServiceProviderTest extends BridgeTestCase
 
         (new LaravelHarness(ConformanceServer::class))->listTools();
 
-        $this->assertStringContainsString('AgentCat setup started | project ' . LaravelTrackingFixture::PROJECT . ' | sdk laravel-mcp/server', $this->defaultChannelLog());
+        $this->assertStringContainsString('AgentCat setup started | project ' . LaravelTrackingFixture::PROJECT . ' | sdk laravel-mcp/server', $this->agentCatLog());
     }
 
     public function testOneTrackerServesTheApplication(): void

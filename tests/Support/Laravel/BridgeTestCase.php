@@ -97,4 +97,12 @@ abstract class BridgeTestCase extends LaravelTestCase
 
         return is_file($path) ? (string) file_get_contents($path) : '';
     }
+
+    /** What AgentCat's own log file, `storage/logs/agentcat.log` (D60), holds; '' before its first line. */
+    protected function agentCatLog(): string
+    {
+        $path = $this->laravelDirectory . '/storage/logs/agentcat.log';
+
+        return is_file($path) ? (string) file_get_contents($path) : '';
+    }
 }
