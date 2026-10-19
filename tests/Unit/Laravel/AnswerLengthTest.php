@@ -72,6 +72,18 @@ final class AnswerLengthTest extends TestCase
         $this->assertFalse($response->headers->has('Content-Length'));
     }
 
+    /** The request's method reaches the rule of `ContentLength`: a HEAD answer gets no length. */
+    public function testAnAnswerToAHeadRequestGetsNoLength(): void
+    {
+        $request = $this->marked();
+        $request->setMethod('HEAD');
+        $response = new Response(self::ANSWER);
+
+        (new AnswerLength())->handle(new RequestHandled($request, $response));
+
+        $this->assertFalse($response->headers->has('Content-Length'));
+    }
+
     /** D32: the listener runs inside Laravel's HTTP kernel, so nothing it meets may break the request. */
     public function testAResponseThatFailsLeavesTheRequestAlone(): void
     {

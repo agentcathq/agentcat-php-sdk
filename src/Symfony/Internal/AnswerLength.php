@@ -77,7 +77,7 @@ final readonly class AnswerLength
                 return;
             }
             $response = $event->getResponse();
-            $length = $this->length->of($response->getStatusCode(), $response->headers->all(), $response->getContent());
+            $length = $this->length->of($event->getRequest()->getMethod(), $response->getStatusCode(), $response->headers->all(), $response->getContent());
             if ($length !== null) {
                 $response->headers->set('Content-Length', $length);
             }

@@ -116,6 +116,16 @@ final class AnswerLengthTest extends TestCase
         $this->assertFalse($response->headers->has('Content-Length'));
     }
 
+    /** The request's method reaches the rule of `ContentLength`: a HEAD answer gets no length. */
+    public function testAnAnswerToAHeadRequestGetsNoLength(): void
+    {
+        $response = new Response(self::ANSWER);
+
+        ($this->listener())($this->event(self::MAIN, $response, method: 'HEAD'));
+
+        $this->assertFalse($response->headers->has('Content-Length'));
+    }
+
     /** Headers that went out already (stray output without a buffer) cannot carry a length any more. */
     public function testAnAnswerAfterTheHeadersWentOutStaysAsItIs(): void
     {
@@ -192,9 +202,9 @@ final class AnswerLengthTest extends TestCase
         return new AnswerLength($tracker, $headersSent);
     }
 
-    private function event(mixed $controller, Response $response, int $type = HttpKernelInterface::MAIN_REQUEST): ResponseEvent
+    private function event(mixed $controller, Response $response, int $type = HttpKernelInterface::MAIN_REQUEST, string $method = 'POST'): ResponseEvent
     {
-        $request = Request::create('/mcp', 'POST');
+        $request = Request::create('/mcp', $method);
         if ($controller !== null) {
             $request->attributes->set('_controller', $controller);
         }

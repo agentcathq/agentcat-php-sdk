@@ -20,19 +20,19 @@ final class ContentLengthTest extends TestCase
 
     public function testAPlainAnswerGetsItsLengthInBytes(): void
     {
-        $this->assertSame('78', (new ContentLength())->of(200, ['content-type' => ['application/json']], self::ANSWER), 'bytes, not characters: é is two');
+        $this->assertSame('78', (new ContentLength())->of('POST', 200, ['content-type' => ['application/json']], self::ANSWER), 'bytes, not characters: é is two');
     }
 
     /** laravel/mcp and mcp/sdk answer a notification with 202 and no body. */
     public function testAnEmptyAnswerGetsALengthOfZero(): void
     {
-        $this->assertSame('0', (new ContentLength())->of(202, [], ''));
+        $this->assertSame('0', (new ContentLength())->of('POST', 202, [], ''));
     }
 
     /** A streamed answer (SSE) has no content: `StreamedResponse::getContent()` is false. */
     public function testAStreamedAnswerGetsNoLength(): void
     {
-        $this->assertNull((new ContentLength())->of(200, ['content-type' => ['text/event-stream']], false));
+        $this->assertNull((new ContentLength())->of('POST', 200, ['content-type' => ['text/event-stream']], false));
     }
 
     /** @return iterable<string, array{array<array-key, mixed>}> the headers of the answer, as `HeaderBag::all()` gives them */
@@ -52,7 +52,7 @@ final class ContentLengthTest extends TestCase
     #[DataProvider('framedAnswers')]
     public function testAnAnswerThatFramesItselfGetsNoLength(array $headers): void
     {
-        $this->assertNull((new ContentLength())->of(200, ['content-type' => ['application/json'], ...$headers], self::ANSWER));
+        $this->assertNull((new ContentLength())->of('POST', 200, ['content-type' => ['application/json'], ...$headers], self::ANSWER));
     }
 
     /** @return iterable<string, array{int, ?string}> */
@@ -77,7 +77,26 @@ final class ContentLengthTest extends TestCase
     #[DataProvider('statuses')]
     public function testAnAnswerWithoutABodyGetsNoLength(int $status, ?string $expected): void
     {
-        $this->assertSame($expected, (new ContentLength())->of($status, [], self::ANSWER));
+        $this->assertSame($expected, (new ContentLength())->of('POST', $status, [], self::ANSWER));
+    }
+
+    /** @return iterable<string, array{string, ?string}> */
+    public static function methods(): iterable
+    {
+        yield 'POST: an MCP message' => ['POST', '78'];
+        yield 'GET' => ['GET', '78'];
+        yield 'DELETE: the end of a session' => ['DELETE', '78'];
+        yield 'HEAD: served as GET, with the body emptied' => ['HEAD', null];
+    }
+
+    /**
+     * RFC 9110 §8.6: the `Content-Length` of a HEAD answer is the length the GET answer would have. Symfony serves HEAD as
+     * GET and `Response::prepare()` empties its body, so the length of what is left would be wrong: no length.
+     */
+    #[DataProvider('methods')]
+    public function testAnAnswerToAHeadRequestGetsNoLength(string $method, ?string $expected): void
+    {
+        $this->assertSame($expected, (new ContentLength())->of($method, 200, [], self::ANSWER));
     }
 
     /** @return iterable<string, array{list<string>}> the bytes in each output buffer, from the bottom level up */
@@ -103,7 +122,7 @@ final class ContentLengthTest extends TestCase
         }
 
         try {
-            $length = (new ContentLength())->of(200, [], self::ANSWER);
+            $length = (new ContentLength())->of('POST', 200, [], self::ANSWER);
         } finally {
             while (ob_get_level() > $level) {
                 ob_end_clean();
@@ -119,7 +138,7 @@ final class ContentLengthTest extends TestCase
         ob_start();
 
         try {
-            $length = (new ContentLength())->of(200, [], self::ANSWER);
+            $length = (new ContentLength())->of('POST', 200, [], self::ANSWER);
         } finally {
             ob_end_clean();
         }
@@ -130,6 +149,6 @@ final class ContentLengthTest extends TestCase
     /** Headers that went out already (stray output without a buffer) cannot carry a length any more. */
     public function testAnAnswerAfterTheHeadersWentOutGetsNoLength(): void
     {
-        $this->assertNull((new ContentLength(static fn(): bool => true))->of(200, [], self::ANSWER));
+        $this->assertNull((new ContentLength(static fn(): bool => true))->of('POST', 200, [], self::ANSWER));
     }
 }

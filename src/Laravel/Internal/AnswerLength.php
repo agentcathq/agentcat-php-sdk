@@ -62,7 +62,7 @@ final readonly class AnswerLength
                 return;
             }
             $response = $handled->response;
-            $length = $this->length->of($response->getStatusCode(), $response->headers->all(), $response->getContent());
+            $length = $this->length->of($handled->request->getMethod(), $response->getStatusCode(), $response->headers->all(), $response->getContent());
             if ($length !== null) {
                 $response->headers->set('Content-Length', $length);
             }

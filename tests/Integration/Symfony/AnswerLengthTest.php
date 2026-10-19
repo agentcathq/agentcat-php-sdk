@@ -135,6 +135,23 @@ final class AnswerLengthTest extends SymfonyTestCase
         $this->assertFalse($response->headers->has('Content-Length'));
     }
 
+    /**
+     * Symfony serves a HEAD request to the route as GET (mcp/sdk answers it with an error), and `Response::prepare()`
+     * empties the body: a length of what is left would not be the GET answer's (RFC 9110 §8.6).
+     */
+    #[MaximumDuration(1000)]
+    public function testAnAnswerToAHeadRequestStaysAsItIs(): void
+    {
+        $kernel = $this->kernel(agentcat: $this->on());
+        AnswerLength::register($kernel->getContainer(), true);
+        $this->toolCall($kernel); // the server is built and tracked
+
+        $response = $kernel->handle(Request::create('http://127.0.0.1' . SymfonyHttp::PATH, 'HEAD'));
+
+        $this->assertSame('', $response->getContent());
+        $this->assertFalse($response->headers->has('Content-Length'));
+    }
+
     /** A request no MCP route answers, in the same kernel after a tracked call: its answer stays as it is. */
     #[MaximumDuration(1000)]
     public function testAnotherRouteStaysAsItIs(): void
