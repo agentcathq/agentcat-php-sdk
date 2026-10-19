@@ -15,6 +15,7 @@ use AgentCat\Internal\Transport\Delivery;
 use AgentCat\Tests\Integration\Support\MockCollector;
 use AgentCat\Tests\Support\Environment;
 use AgentCat\Tests\Support\FileTree;
+use AgentCat\Tests\Support\GlobalHandlers;
 use AgentCat\Tests\Support\RecordingTransport;
 use AgentCat\Tests\Support\Symfony\Streaming\ProgressTool;
 use AgentCat\Tests\Support\ToolCalls;
@@ -43,6 +44,51 @@ abstract class SymfonyTestCase extends TestCase
     private array $kernels = [];
 
     private ?Environment $environment = null;
+
+    /** Whether this process ran its warm-up kernel (`setUpBeforeClass()`). */
+    private static bool $warm = false;
+
+    /**
+     * The first container that a PHP process compiles is slow: PHP compiles the files of Symfony, symfony/mcp-bundle and
+     * mcp/sdk then (about 0.2 s more on PHP 8.5, up to 1.5 s on a loaded host). So, once per process and before the
+     * first test class runs, a test case of its own boots one kernel with AgentCat on, sends it a tool call and tears it
+     * down, outside the time the slow-test detector measures for a test.
+     */
+    #[\Override]
+    public static function setUpBeforeClass(): void
+    {
+        parent::setUpBeforeClass();
+        if (!self::$warm && class_exists(McpBundle::class)) {
+            self::$warm = true;
+            self::warmUp();
+        }
+    }
+
+    /** Runs one test case's whole lifecycle, as PHPUnit does: a kernel, its handshake, a listing and a tool call. */
+    private static function warmUp(): void
+    {
+        $warmUp = new class ('testWarmUp') extends SymfonyTestCase {
+            public function testWarmUp(): void
+            {
+                $http = $this->http($this->kernel(agentcat: $this->on('proj_wwwwwwwwwwwwwwwwwwwwwwwwwww')), terminate: true);
+                $http->listTools();
+                $http->callTool('echo', ['msg' => 'warm-up', 'session_id' => 'start']);
+            }
+        };
+        $handlers = GlobalHandlers::save(); // the framework changes them, and no test puts them back
+        try {
+            $warmUp::setUpBeforeClass();
+            $warmUp->setUp();
+            try {
+                $warmUp->testWarmUp();
+            } finally {
+                $warmUp->tearDown();
+                $warmUp::tearDownAfterClass();
+            }
+        } finally {
+            $handlers->restore();
+        }
+    }
 
     #[\Override]
     protected function setUp(): void

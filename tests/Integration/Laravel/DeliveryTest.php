@@ -48,6 +48,7 @@ final class DeliveryTest extends BridgeTestCase
     #[\Override]
     public static function setUpBeforeClass(): void
     {
+        parent::setUpBeforeClass();
         self::$collector = MockCollector::start();
     }
 
@@ -56,6 +57,7 @@ final class DeliveryTest extends BridgeTestCase
     {
         self::$collector?->stop();
         self::$collector = null;
+        parent::tearDownAfterClass();
     }
 
     /**

@@ -13,6 +13,7 @@ use AgentCat\Internal\Support\BridgeConfig;
 use AgentCat\Internal\Support\TestMode;
 use AgentCat\Tests\Support\Environment;
 use AgentCat\Tests\Support\FileTree;
+use AgentCat\Tests\Support\GlobalHandlers;
 use AgentCat\Tests\Support\ToolCalls;
 use Illuminate\Foundation\Application;
 use Laravel\Mcp\Server\McpServiceProvider;
@@ -39,7 +40,50 @@ abstract class LaravelTestCase extends TestCase
     /** This test's directory under the test HOME. */
     protected string $laravelDirectory = '';
 
+    /** Whether this process built its warm-up application (`setUpBeforeClass()`). */
+    private static bool $warm = false;
+
     private ?Environment $environment = null;
+
+    /**
+     * The first Laravel application of a PHP process is slow: PHP compiles the framework's files then (about 0.07 s on
+     * PHP 8.5, up to 0.3 s on a loaded host, against 0.01 s for each later one). So, once per process and before the
+     * first test class runs, a test case of its own builds one application, sends it one request and tears it down,
+     * outside the time the slow-test detector measures for a test.
+     */
+    #[\Override]
+    public static function setUpBeforeClass(): void
+    {
+        if (!self::$warm) {
+            self::$warm = true;
+            self::warmUp();
+        }
+        parent::setUpBeforeClass();
+    }
+
+    /** Runs one test case's whole lifecycle, as PHPUnit does, with one request: a 404, through Laravel's HTTP kernel. */
+    private static function warmUp(): void
+    {
+        $warmUp = new class ('testWarmUp') extends LaravelTestCase {
+            public function testWarmUp(): void
+            {
+                $this->get('/agentcat-warm-up'); // a 404; no assertion, which PHPUnit would count for the next test
+            }
+        };
+        $handlers = GlobalHandlers::save(); // the framework changes them, and no test puts them back
+        try {
+            $warmUp::setUpBeforeClass();
+            $warmUp->setUp();
+            try {
+                $warmUp->testWarmUp();
+            } finally {
+                $warmUp->tearDown();
+                $warmUp::tearDownAfterClass();
+            }
+        } finally {
+            $handlers->restore();
+        }
+    }
 
     #[\Override]
     protected function setUp(): void

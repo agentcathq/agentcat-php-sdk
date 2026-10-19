@@ -35,6 +35,7 @@ final class DeliveryTest extends SymfonyTestCase
     #[\Override]
     public static function setUpBeforeClass(): void
     {
+        parent::setUpBeforeClass();
         self::$collector = MockCollector::start();
     }
 
@@ -43,6 +44,7 @@ final class DeliveryTest extends SymfonyTestCase
     {
         self::$collector?->stop();
         self::$collector = null;
+        parent::tearDownAfterClass();
     }
 
     #[Group('ac-03-12')]
