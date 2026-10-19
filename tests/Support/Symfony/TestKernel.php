@@ -74,15 +74,21 @@ final class TestKernel extends Kernel
         return $this->getCacheDir();
     }
 
-    /**
-     * Inside the cache directory: kernels of one process with the same configuration share the container class that
-     * the first one compiled, and symfony/dependency-injection writes a path outside the cache directory relative to
-     * that class's file, so `%kernel.logs_dir%` would name the first kernel's directory.
-     */
     #[\Override]
     public function getLogDir(): string
     {
-        return $this->getCacheDir() . '/log';
+        return $this->directory . '/log';
+    }
+
+    /**
+     * A container class of its own: kernels of one process with the same configuration would share the class that the
+     * first one compiled, and that class reads paths relative to its own file (`%kernel.logs_dir%`, the lazy proxies),
+     * so in the directory of the first kernel, which its test removed.
+     */
+    #[\Override]
+    protected function getContainerClass(): string
+    {
+        return parent::getContainerClass() . '_' . hash('xxh3', $this->directory);
     }
 
     /** Sets the synthetic services before the bundles boot, so a bundle's `boot()` can use them. */
