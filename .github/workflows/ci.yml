@@ -153,10 +153,33 @@ jobs:
       - run: vendor/bin/phpstan analyse --no-progress --error-format=github --configuration=phpstan.no-bundle.neon
       - run: vendor/bin/phpunit --testsuite Contract,Integration,E2E
 
+  runtime:
+    name: Runtime delivery (Docker, PHP 8.3)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.3'
+          coverage: none
+      - uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
+        with:
+          dependency-versions: highest
+      - name: Build the CLI image and pull the others
+        run: |
+          docker build --tag agentcat-runtime-cli:8.3.35 tests/Runtime/docker
+          for image in php:8.3.35-fpm-bookworm php:8.3.35-apache-bookworm dunglas/frankenphp:1.13.1-php8.3.35-bookworm phpswoole/swoole:6.2.3-php8.3 unit:1.34.2-php8.3; do docker pull "$image"; done
+      - run: vendor/bin/phpunit --testsuite Runtime --group runtime
+        env:
+          AGENTCAT_RUNTIME_TESTS: '1'
+
   all-green:
     name: All green
     if: always()
-    needs: [static, tests, coverage, mutation, mcp-sdk-main]
+    needs: [static, tests, coverage, mutation, mcp-sdk-main, runtime]
     runs-on: ubuntu-latest
     steps:
       - uses: re-actors/alls-green@b5b5b37504aa4183270bd3d855c52a67f212be35 # v1.3.0

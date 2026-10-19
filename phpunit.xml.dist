@@ -26,6 +26,9 @@
         <testsuite name="E2E">
             <directory>tests/E2E</directory>
         </testsuite>
+        <testsuite name="Runtime">
+            <directory>tests/Runtime</directory>
+        </testsuite>
         <testsuite name="Architecture">
             <directory>tests/Architecture</directory>
             <!-- PHPat rules run inside PHPStan, not PHPUnit -->
@@ -35,6 +38,7 @@
     <groups>
         <exclude>
             <group>network</group>
+            <group>runtime</group>
         </exclude>
     </groups>
     <source>
