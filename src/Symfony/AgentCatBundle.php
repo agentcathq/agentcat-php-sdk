@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace AgentCat\Symfony;
 
 use AgentCat\Internal\Support\BridgeConfig;
-use AgentCat\Internal\Support\ConfigOptions;
-use AgentCat\Internal\Support\TestMode;
 use AgentCat\Symfony\Internal\DependencyInjection\TrackBuildersPass;
 use AgentCat\Symfony\Internal\ServerTracker;
 use Symfony\Component\Config\Definition\Configurator\DefinitionConfigurator;
@@ -94,10 +92,10 @@ final class AgentCatBundle extends AbstractBundle
     }
 
     /**
-     * `agentcat.enabled` decides for every client, the shared one too, before AGENTCAT_ENABLED (plan E1 header conflict
-     * 12): a literal, a parameter or a secret of the configuration is not in the environment. Unset or unknown: no
-     * switch. A fake still records. The same for every other name AgentCat reads, and diagnostics get the kernel's
-     * environment. The tracker logs the bad values; nothing is logged here, and boot tracks nothing.
+     * `agentcat.enabled` and every other name AgentCat reads decide for every client, the shared one too, before the
+     * environment (plan E1 header conflict 12): a literal, a parameter or a secret of the configuration is not in the
+     * environment. Diagnostics get the kernel's environment. A fake still records. The tracker logs the bad values;
+     * nothing is logged here, and boot tracks nothing.
      */
     #[\Override]
     public function boot(): void
@@ -112,18 +110,6 @@ final class AgentCatBundle extends AbstractBundle
         } catch (\Throwable) {
             // A variable without a default is not set: the tracker logs it when it tracks a server (D32).
         }
-        TestMode::configure(TestMode::word($config['enabled'] ?? null));
-        BridgeConfig::configure([
-            'AGENTCAT_PROJECT_ID' => $this->string($config['project_id'] ?? null),
-            'AGENTCAT_API_URL' => $this->string($config['api_url'] ?? null),
-            'AGENTCAT_DIAGNOSTICS_ENDPOINT' => $this->string($config['diagnostics_endpoint'] ?? null),
-            'AGENTCAT_DIAGNOSTICS_TOKEN' => $this->string($config['diagnostics_token'] ?? null),
-            'APP_ENV' => $this->string($this->container->getParameter('kernel.environment')),
-        ], ConfigOptions::diagnosticsOff($config['disable_diagnostics'] ?? null));
-    }
-
-    private function string(mixed $value): ?string
-    {
-        return is_string($value) ? $value : null;
+        BridgeConfig::fromBridge($config, $this->container->getParameter('kernel.environment'));
     }
 }
