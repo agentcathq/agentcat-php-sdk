@@ -8,3 +8,4 @@ parameters:
         - tests/Integration/Symfony
         - tests/Contract/Symfony
         - tests/Integration/Conformance/SymfonyConformanceTest.php
+        - tests/Runtime/Fixtures/symfony-front.php
