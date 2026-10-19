@@ -16,6 +16,7 @@ use AgentCat\Internal\Engine\TrackedServer;
 use AgentCat\Internal\Engine\TrackedServers;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Pipeline\QueuedEvent;
+use AgentCat\Internal\Support\BridgeConfig;
 use AgentCat\Internal\Support\Env;
 use AgentCat\Internal\Support\ErrorText;
 use AgentCat\Internal\Support\TestMode;
@@ -87,7 +88,7 @@ final readonly class Client
                 return $server; // D44 AGENTCAT_ENABLED, else D31: nothing in test environments unless fake()
             }
             $options ??= new Options();
-            $projectId ??= Env::get('AGENTCAT_PROJECT_ID') ?? ''; // D36: '' means telemetry only
+            $projectId ??= BridgeConfig::env('AGENTCAT_PROJECT_ID') ?? ''; // D36: '' means telemetry only; a bridge's configuration first
             if ($this->telemetry) {
                 // TS: the first statement of track(), before the server is checked; the first call in the process decides.
                 Diagnostics::init($projectId, $options->disableDiagnostics, $this->publisher->queue());
@@ -110,7 +111,7 @@ final readonly class Client
             if (!$tracked) {
                 $library->inspect($server); // a tracked Builder can be built by now: tracking it again changes nothing
             }
-            if (($options->apiBaseUrl ?? '') !== '' || Env::get('AGENTCAT_API_URL') !== null || Env::get('MCPCAT_API_URL') !== null) {
+            if (($options->apiBaseUrl ?? '') !== '' || BridgeConfig::env('AGENTCAT_API_URL') !== null || Env::get('MCPCAT_API_URL') !== null) {
                 $this->publisher->queue()->configure($options->apiBaseUrl); // before the already-tracked check; the last call wins
             }
             $project = $projectId !== '' ? $projectId : '(telemetry-only)';

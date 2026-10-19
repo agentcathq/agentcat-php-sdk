@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AgentCat\Tests\Unit\Internal\Transport;
 
+use AgentCat\Internal\Support\BridgeConfig;
 use AgentCat\Internal\Transport\ApiBaseUrl;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -28,6 +29,7 @@ final class ApiBaseUrlTest extends TestCase
     #[\Override]
     protected function tearDown(): void
     {
+        BridgeConfig::reset();
         foreach ($this->saved as $name => $saved) {
             putenv($saved['getenv'] === false ? $name : $name . '=' . $saved['getenv']);
             unset($_ENV[$name], $_SERVER[$name]);
@@ -66,6 +68,17 @@ final class ApiBaseUrlTest extends TestCase
         putenv('MCPCAT_API_URL=https://b.test');
 
         $this->assertSame('https://a.test', ApiBaseUrl::resolve());
+    }
+
+    /** A bridge's configuration (a cached Laravel configuration) comes after the option, before both variables. */
+    public function testAConfiguredUrlComesAfterTheOptionAndBeforeTheVariables(): void
+    {
+        putenv('AGENTCAT_API_URL=https://a.test');
+        putenv('MCPCAT_API_URL=https://b.test');
+        BridgeConfig::configure(['AGENTCAT_API_URL' => 'https://configured.test/'], false);
+
+        $this->assertSame('https://configured.test', ApiBaseUrl::resolve());
+        $this->assertSame('https://opt.test', ApiBaseUrl::resolve('https://opt.test'));
     }
 
     #[Group('ac-01-57')]

@@ -17,6 +17,7 @@ use AgentCat\Internal\Engine\Libraries;
 use AgentCat\Internal\Engine\TrackedServers;
 use AgentCat\Internal\Json\Json;
 use AgentCat\Internal\Logging\Log;
+use AgentCat\Internal\Support\BridgeConfig;
 use AgentCat\Internal\Tools\GetMoreTools;
 use AgentCat\Internal\Transport\CurlTransport;
 use AgentCat\Internal\Transport\Delivery;
@@ -107,6 +108,7 @@ final class ClientTrackTest extends TestCase
         }
         TrackedServers::resetIncomplete(); // a failed track() marks the process
         TrackedServers::resetSkipped(); // so does a track() while AgentCat is off
+        BridgeConfig::reset();
         Log::reset();
         $this->environment->restore();
     }
@@ -341,6 +343,22 @@ final class ClientTrackTest extends TestCase
         $this->assertCount(1, $this->transport->deliveries);
     }
 
+    /** A bridge's configured project (a cached Laravel configuration) comes before AGENTCAT_PROJECT_ID. */
+    #[Group('ac-01-5')]
+    public function testANullProjectReadsTheConfiguredProjectFirst(): void
+    {
+        $project = 'proj_' . str_repeat('c', 27);
+        putenv('AGENTCAT_PROJECT_ID=proj_' . str_repeat('b', 27));
+        BridgeConfig::configure(['AGENTCAT_PROJECT_ID' => $project], false);
+        $builder = TrackingFixture::builder();
+        Tools::echo($builder);
+
+        $this->client->track($builder);
+
+        $this->harness($builder)->callTool('echo', ['msg' => 'hi']);
+        $this->assertSame($project, $this->event()->projectId);
+    }
+
     #[Group('ac-01-6')]
     public function testAnEmptyProjectStaysTelemetryOnlyWithAgentCatProjectIdSet(): void
     {
@@ -520,6 +538,21 @@ final class ClientTrackTest extends TestCase
 
         $this->assertTrue($this->queue->flush());
         $this->assertSame(['https://env.test/v1/public/events/'], $this->urls());
+    }
+
+    /** A bridge's configured URL (a cached Laravel configuration) is set by a track() without the option, like a variable. */
+    public function testAConfiguredApiUrlIsUsedByATrackWithoutTheOption(): void
+    {
+        $this->queue->configure('https://earlier.test'); // an earlier track() with its own option
+        BridgeConfig::configure(['AGENTCAT_API_URL' => 'https://configured.test'], false);
+        $builder = TrackingFixture::builder();
+        Tools::echo($builder);
+
+        $this->client->track($builder, self::PROJECT);
+        $this->harness($builder)->callTool('echo', ['msg' => 'hi']);
+
+        $this->assertTrue($this->queue->flush());
+        $this->assertSame(['https://configured.test/v1/public/events/'], $this->urls());
     }
 
     public function testUnderPhpUnitTheDefaultClientLeavesTheBuilderAlone(): void

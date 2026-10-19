@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace AgentCat\Internal\Diagnostics;
 
 use AgentCat\Internal\SdkVersion;
-use AgentCat\Internal\Support\Env;
+use AgentCat\Internal\Support\BridgeConfig;
 
 /**
  * The OTLP attributes of diagnostics (D48): PHP values in the Node vocabulary. Empty values are left out (TS `attr()`).
@@ -40,7 +40,7 @@ final class DiagnosticsAttributes
             ['os.type', self::osType(PHP_OS_FAMILY)],
             ['os.version', $uname ? php_uname('r') : null],
             ['host.arch', $uname ? self::arch(php_uname('m')) : null],
-            ['deployment.environment', Env::get('APP_ENV')],
+            ['deployment.environment', BridgeConfig::env('APP_ENV')], // Laravel: `app.env`
         ]);
     }
 

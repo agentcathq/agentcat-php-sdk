@@ -25,7 +25,8 @@ return [
     // The log channel for AgentCat's own lines. Unset: the application's default channel.
     'log_channel' => env('AGENTCAT_LOG_CHANNEL'),
 
-    'api_url' => env('AGENTCAT_API_URL'),
+    // The AgentCat API. Unset: AgentCat's. MCPCAT_API_URL is the TypeScript SDK's name.
+    'api_url' => env('AGENTCAT_API_URL', env('MCPCAT_API_URL')),
 
     'enable_report_missing' => true,
     'enable_tracing' => true,
@@ -45,6 +46,13 @@ return [
     // Your own telemetry tools: name => ['type' => 'otlp'|'datadog'|'sentry'|'posthog', …]. A null entry is skipped.
     'exporters' => null,
 
-    'disable_diagnostics' => env('AGENTCAT_DISABLE_DIAGNOSTICS'),
+    // Diagnostics: AgentCat's own log lines, sent to AgentCat so that it can find broken installs. true turns them off;
+    // in a list, one true value is enough. DISABLE_DIAGNOSTICS is the TypeScript SDK's name.
+    'disable_diagnostics' => [env('AGENTCAT_DISABLE_DIAGNOSTICS'), env('DISABLE_DIAGNOSTICS')],
+
+    // Where diagnostics go: an OpenTelemetry collector (OTLP/HTTP logs) and its bearer token. Unset: AgentCat's.
+    'diagnostics_endpoint' => env('AGENTCAT_DIAGNOSTICS_ENDPOINT'),
+    'diagnostics_token' => env('AGENTCAT_DIAGNOSTICS_TOKEN'),
+
     'disable_signal_handlers' => false,
 ];

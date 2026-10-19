@@ -9,6 +9,7 @@ use AgentCat\Internal\Delivery\EventQueue;
 use AgentCat\Internal\Diagnostics\Diagnostics;
 use AgentCat\Internal\Engine\TrackedServers;
 use AgentCat\Internal\Logging\Log;
+use AgentCat\Internal\Support\BridgeConfig;
 use AgentCat\Internal\Support\TestMode;
 use AgentCat\Tests\Support\Environment;
 use AgentCat\Tests\Support\FileTree;
@@ -91,6 +92,7 @@ abstract class LaravelTestCase extends TestCase
     {
         ToolCalls::reset();
         TestMode::reset(); // also the configured switch that AgentCat's service provider sets
+        BridgeConfig::reset(); // and the configured values
         Log::reset();
         Diagnostics::reset();
         EventQueue::setGlobal(null);

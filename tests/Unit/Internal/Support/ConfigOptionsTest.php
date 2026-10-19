@@ -168,6 +168,42 @@ final class ConfigOptionsTest extends TestCase
         $this->assertInstanceOf(\Closure::class, $options->identify); // fails when it runs, inside the hook guard (D32)
     }
 
+    /** @return iterable<string, array{mixed, bool}> */
+    public static function diagnosticsValues(): iterable
+    {
+        yield 'unset' => [null, false];
+        yield 'true' => [true, true];
+        yield 'the word off: on' => ['off', false];
+        yield 'the file\'s list, both unset' => [[null, null], false];
+        yield 'the file\'s list, AGENTCAT_DISABLE_DIAGNOSTICS=true' => [['true', null], true];
+        yield 'the file\'s list, DISABLE_DIAGNOSTICS=1' => [[null, '1'], true];
+        yield 'off wins: false and yes' => [[false, 'yes'], true];
+        yield 'off wins: yes and false' => [['yes', false], true];
+        yield 'both false' => [[false, 'no'], false];
+    }
+
+    /** D50 in config/agentcat.php: each value can turn diagnostics off, and off wins. */
+    #[DataProvider('diagnosticsValues')]
+    public function testDisableDiagnosticsTakesOneValueOrAListWhereOffWins(mixed $value, bool $off): void
+    {
+        $this->assertSame($off, ConfigOptions::diagnosticsOff($value));
+        $this->assertSame($off, ConfigOptions::options(['disable_diagnostics' => $value], ServerTracker::BRIDGE_KEYS, $this->resolve)->disableDiagnostics);
+        $this->assertSame([], $this->logger->messages());
+    }
+
+    /** An opt-out fails closed: an unknown value turns diagnostics off, and the options log it once, by the key's name. */
+    public function testAnUnknownDisableDiagnosticsValueTurnsThemOff(): void
+    {
+        $this->assertTrue(ConfigOptions::diagnosticsOff([null, 'maybe']));
+        $this->assertSame([], $this->logger->messages(), 'the provider reads it without a line');
+
+        $this->assertTrue(ConfigOptions::options(['disable_diagnostics' => ['false', 'maybe', [1]]], ServerTracker::BRIDGE_KEYS, $this->resolve)->disableDiagnostics);
+        $this->assertSame([
+            'WARN: AgentCat config "agentcat.disable_diagnostics" is "maybe", not one of true, 1, yes, on, false, 0, no, off; the value is treated as true',
+            'WARN: AgentCat config "agentcat.disable_diagnostics" is "array", not one of true, 1, yes, on, false, 0, no, off; the value is treated as true',
+        ], $this->logger->messages());
+    }
+
     public function testAnUnknownKeyLeavesTheKeysAfterIt(): void
     {
         $options = ConfigOptions::options([0 => 'stray', 'enable_tracing' => false], ServerTracker::BRIDGE_KEYS, $this->resolve);

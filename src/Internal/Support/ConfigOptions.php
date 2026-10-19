@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AgentCat\Internal\Support;
 
+use AgentCat\Internal\Diagnostics\DiagnosticsSwitch;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Options;
 
@@ -37,6 +38,8 @@ final class ConfigOptions
 
     private const array HOOKS = ['resolveSessionId', 'identify', 'redactSensitiveInformation', 'redactEvent', 'eventTags', 'eventProperties'];
 
+    private const string BAD_DIAGNOSTICS_VALUE = 'WARN: AgentCat config "agentcat.disable_diagnostics" is "%s", not one of true, 1, yes, on, false, 0, no, off; the value is treated as true';
+
     /**
      * Never throws: an unknown key or a bad value logs one line and the default is used (`Options::fromArray()`).
      *
@@ -60,12 +63,40 @@ final class ConfigOptions
             if ($value === null) {
                 continue; // env() of an unset variable: the default
             }
+            if ($option === 'disableDiagnostics') {
+                $mapped[$option] = self::diagnosticsOff($value, log: true);
+
+                continue;
+            }
             $mapped[$option] = in_array($option, self::HOOKS, true) && is_string($value) && !is_callable($value)
                 ? self::named($value, $resolve)
                 : $value;
         }
 
         return Options::fromArray($mapped);
+    }
+
+    /**
+     * The `disable_diagnostics` value of a bridge's configuration: one value, or a list of them (config/agentcat.php
+     * lists `AGENTCAT_DISABLE_DIAGNOSTICS` and the TypeScript name `DISABLE_DIAGNOSTICS`), each in the words of
+     * `DiagnosticsSwitch::option()`. True when one of them turns diagnostics off: off wins (D50). Null is unset. Any
+     * other value turns them off too, as an opt-out fails closed, and with `$log` it logs one line.
+     */
+    public static function diagnosticsOff(mixed $value, bool $log = false): bool
+    {
+        $off = false;
+        foreach (is_array($value) ? $value : [$value] as $entry) {
+            if ($entry === null) {
+                continue;
+            }
+            $disabled = DiagnosticsSwitch::option($entry);
+            if ($disabled === null && $log) {
+                Log::write(sprintf(self::BAD_DIAGNOSTICS_VALUE, is_scalar($entry) ? (string) $entry : get_debug_type($entry)));
+            }
+            $off = $off || ($disabled ?? true);
+        }
+
+        return $off;
     }
 
     /**

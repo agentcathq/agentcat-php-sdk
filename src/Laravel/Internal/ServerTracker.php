@@ -33,7 +33,7 @@ use Laravel\Mcp\Server;
 final class ServerTracker
 {
     /** @var list<string> The keys of config/agentcat.php that the bridge reads itself; the others are options. */
-    public const array BRIDGE_KEYS = ['enabled', 'project_id', 'exclude', 'projects', 'log_channel'];
+    public const array BRIDGE_KEYS = ['enabled', 'project_id', 'exclude', 'projects', 'log_channel', 'diagnostics_endpoint', 'diagnostics_token'];
 
     private ?Client $client = null;
 

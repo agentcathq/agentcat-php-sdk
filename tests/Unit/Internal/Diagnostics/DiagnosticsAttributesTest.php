@@ -7,6 +7,7 @@ namespace AgentCat\Tests\Unit\Internal\Diagnostics;
 use AgentCat\Internal\Diagnostics\DiagnosticsAttributes;
 use AgentCat\Internal\Json\Json;
 use AgentCat\Internal\SdkVersion;
+use AgentCat\Internal\Support\BridgeConfig;
 use AgentCat\Tests\Support\Environment;
 use AgentCat\Tests\Support\JsonAssert;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -27,6 +28,7 @@ final class DiagnosticsAttributesTest extends TestCase
     #[\Override]
     protected function tearDown(): void
     {
+        BridgeConfig::reset();
         $this->environment->restore();
     }
 
@@ -105,6 +107,15 @@ final class DiagnosticsAttributesTest extends TestCase
 
         $this->assertSame('deployment.environment', array_key_last($pairs));
         $this->assertSame('staging', $pairs['deployment.environment'] ?? null);
+    }
+
+    /** A cached Laravel configuration hides `.env` from the process: Laravel's `app.env` comes first. */
+    public function testTheConfiguredAppEnvironmentComesBeforeAppEnv(): void
+    {
+        putenv('APP_ENV=local');
+        BridgeConfig::configure(['APP_ENV' => 'production'], false);
+
+        $this->assertSame('production', $this->pairs(DiagnosticsAttributes::resource('proj_x'))['deployment.environment'] ?? null);
     }
 
     #[Group('ac-06-56')]
