@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace AgentCat\Tests\Support\Symfony;
 
 use AgentCat\Tests\Support\McpSdk\HttpHarness;
-use PHPUnit\Framework\Assert;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -45,15 +44,11 @@ final class SymfonyHttp
     /** Sends `initialize` and `notifications/initialized`; returns the `initialize` result. */
     public function initialize(string $clientName = 'harness-client', string $clientVersion = '1.0.0', string $protocolVersion = '2025-06-18'): \stdClass
     {
-        $result = HttpHarness::result($this->request('initialize', [
-            'protocolVersion' => $protocolVersion,
-            'capabilities' => new \stdClass(),
-            'clientInfo' => ['name' => $clientName, 'version' => $clientVersion],
-        ]));
-        $this->protocolVersion = is_string($result->protocolVersion ?? null) ? $result->protocolVersion : $protocolVersion;
+        $result = HttpHarness::result($this->request('initialize', HttpHarness::initializeParams($clientName, $clientVersion, $protocolVersion)));
+        $this->protocolVersion = HttpHarness::negotiated($result, $protocolVersion);
 
-        $response = $this->handle($this->build(['jsonrpc' => '2.0', 'method' => 'notifications/initialized'], [], true));
-        Assert::assertSame(202, $response->getStatusCode(), 'notifications/initialized');
+        $response = $this->handle($this->build(HttpHarness::INITIALIZED, [], true));
+        HttpHarness::assertInitialized($response->getStatusCode(), (string) $response->getContent());
 
         return $result;
     }
@@ -102,12 +97,8 @@ final class SymfonyHttp
     public function callRequest(string $name, array $arguments, ?array $meta = null): Request
     {
         $this->session();
-        $params = ['name' => $name, 'arguments' => (object) $arguments];
-        if ($meta !== null) {
-            $params['_meta'] = (object) $meta;
-        }
 
-        return $this->message('tools/call', $params, [], true);
+        return $this->message('tools/call', HttpHarness::callParams($name, $arguments, $meta), [], true);
     }
 
     /**
