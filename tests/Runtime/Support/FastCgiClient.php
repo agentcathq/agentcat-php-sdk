@@ -50,6 +50,7 @@ final readonly class FastCgiClient
         if (!is_finite($timeout) || $timeout <= 0.0 || $timeout > self::MAX_SECONDS) {
             throw new \InvalidArgumentException(sprintf('A FastCGI timeout must be above 0 and at most %d s: %s', (int) self::MAX_SECONDS, var_export($timeout, true)));
         }
+        $records = $this->records($script, $method, $uri, $headers, $body); // a parameter too long for a record throws here
         $deadline = microtime(true) + $timeout;
         set_error_handler(static function (int $severity, string $message): never {
             throw new \RuntimeException('FastCGI: ' . $message);
@@ -62,7 +63,7 @@ final readonly class FastCgiClient
             }
 
             try {
-                $this->write($socket, $this->records($script, $method, $uri, $headers, $body), $deadline);
+                $this->write($socket, $records, $deadline);
                 [$stdout, $endedAt] = $this->readAnswer($socket, $deadline);
             } finally {
                 fclose($socket);
