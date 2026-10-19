@@ -86,10 +86,11 @@ abstract class SymfonyTestCase extends TestCase
      *
      * @param array<string, mixed>         $agentcat the agentcat configuration
      * @param array<string, string|object> $services more services: id => class name or instance (synthetic)
+     * @param array<string, mixed>|null    $mcp      the mcp configuration; null: the `conformance` server only
      */
-    protected function kernel(array $agentcat = [], array $services = [], bool $withAgentCat = true, ?CompilerPassInterface $probe = null): TestKernel
+    protected function kernel(array $agentcat = [], array $services = [], bool $withAgentCat = true, ?CompilerPassInterface $probe = null, ?array $mcp = null): TestKernel
     {
-        $kernel = new TestKernel($this->directory . '/kernel-' . count($this->kernels), $agentcat, $services, withAgentCat: $withAgentCat, probe: $probe);
+        $kernel = new TestKernel($this->directory . '/kernel-' . count($this->kernels), $agentcat, $services, $mcp ?? TestKernel::MCP, $withAgentCat, $probe);
         $this->kernels[] = $kernel;
         $handler = $this->exceptionHandler();
         $kernel->boot();
@@ -98,6 +99,12 @@ abstract class SymfonyTestCase extends TestCase
         }
 
         return $kernel;
+    }
+
+    /** `HttpHarness`'s API over the kernel's MCP route at `$path`: the `conformance` server's by default. */
+    protected function http(TestKernel $kernel, string $path = SymfonyHttp::PATH): SymfonyHttp
+    {
+        return new SymfonyHttp($kernel, $path);
     }
 
     /**

@@ -6,6 +6,6 @@ parameters:
     # (?) marks a path that PHPStan accepts before its tests exist.
     excludePaths:
         - tests/Support/Symfony
-        - tests/Integration/Symfony (?)
+        - tests/Integration/Symfony
         - tests/Contract/Symfony
         - tests/Integration/Conformance/SymfonyConformanceTest.php (?)

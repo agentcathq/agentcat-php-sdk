@@ -29,12 +29,14 @@ return (new Configuration())
     // event() helpers. PHPat keeps Laravel out of these files (LayeringTest).
     ->ignoreErrorsOnPackageAndPaths('laravel/framework', [__DIR__ . '/src/Internal/Support/TestMode.php', __DIR__ . '/src/Internal/Support/BridgeConfig.php', __DIR__ . '/src/Client.php'], [ErrorType::DEV_DEPENDENCY_IN_PROD])
     // Symfony is optional (01 AC-90): dev dependencies used only by the Symfony bundle.
-    ->ignoreErrorsOnPackageAndPath('symfony/http-foundation', __DIR__ . '/src/Symfony', [ErrorType::DEV_DEPENDENCY_IN_PROD])
+    ->ignoreErrorsOnPackagesAndPaths(['symfony/config', 'symfony/dependency-injection', 'symfony/http-foundation', 'symfony/http-kernel'], [__DIR__ . '/src/Symfony'], [ErrorType::DEV_DEPENDENCY_IN_PROD])
+    // The bundle configures the Mcp\Server\Builder services of symfony/mcp-bundle, which requires mcp/sdk.
+    ->ignoreErrorsOnPackageAndPath('mcp/sdk', __DIR__ . '/src/Symfony', [ErrorType::DEV_DEPENDENCY_IN_PROD])
+    // Psr\Container\ContainerInterface arrives with symfony/dependency-injection; the tracker reads the hook locator through it.
+    ->ignoreErrorsOnPackageAndPath('psr/container', __DIR__ . '/src/Symfony', [ErrorType::SHADOW_DEPENDENCY])
     // Orchestra\Testbench\TestCase lives in orchestra/testbench-core, which orchestra/testbench requires; the Laravel tests extend it.
     ->ignoreErrorsOnPackageAndPath('orchestra/testbench-core', __DIR__ . '/tests', [ErrorType::SHADOW_DEPENDENCY])
     // Symfony\Component\Console arrives with laravel/framework; the artisan fixture hands its input and output to Laravel's console kernel.
     ->ignoreErrorsOnPackageAndPath('symfony/console', __DIR__ . '/tests/E2E/Laravel', [ErrorType::SHADOW_DEPENDENCY])
     // Symfony\Component\Routing arrives with symfony/framework-bundle and symfony/mcp-bundle; the test kernel imports the bundle's MCP routes with it.
-    ->ignoreErrorsOnPackageAndPath('symfony/routing', __DIR__ . '/tests/Support/Symfony/TestKernel.php', [ErrorType::SHADOW_DEPENDENCY])
-    // The test kernel registers AgentCat's Symfony bundle, whose class src/Symfony/AgentCatBundle.php is not written yet. Remove this line with it.
-    ->ignoreUnknownClasses(['AgentCat\Symfony\AgentCatBundle']);
+    ->ignoreErrorsOnPackageAndPath('symfony/routing', __DIR__ . '/tests/Support/Symfony/TestKernel.php', [ErrorType::SHADOW_DEPENDENCY]);

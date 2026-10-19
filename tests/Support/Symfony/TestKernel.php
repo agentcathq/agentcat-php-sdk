@@ -28,6 +28,12 @@ final class TestKernel extends Kernel
 {
     use MicroKernelTrait;
 
+    /** The `mcp.servers` entry of the `conformance` server. */
+    public const array CONFORMANCE = ['name' => 'conformance-server', 'version' => '2.0.0', 'registry' => ['AgentCat\Tests\Support\Symfony\Tools\\'], 'http' => ['path' => '/mcp/conformance']];
+
+    /** The default mcp configuration: the `conformance` server only. */
+    public const array MCP = ['servers' => ['conformance' => self::CONFORMANCE]];
+
     /**
      * @param string                       $directory the directory of the cache and log directories
      * @param array<string, mixed>         $agentcat  the agentcat configuration
@@ -38,7 +44,7 @@ final class TestKernel extends Kernel
         private readonly string $directory,
         private readonly array $agentcat = [],
         private readonly array $services = [],
-        private readonly array $mcp = ['servers' => ['conformance' => ['name' => 'conformance-server', 'version' => '2.0.0', 'registry' => ['AgentCat\Tests\Support\Symfony\Tools\\'], 'http' => ['path' => '/mcp/conformance']]]],
+        private readonly array $mcp = self::MCP,
         private readonly bool $withAgentCat = true,
         private readonly ?CompilerPassInterface $probe = null,
     ) {
@@ -52,7 +58,6 @@ final class TestKernel extends Kernel
         yield new FrameworkBundle();
         yield new McpBundle();
         if ($this->withAgentCat) {
-            // @phpstan-ignore class.notFound (src/Symfony/AgentCatBundle.php is not written yet), generator.valueType (the same class)
             yield new AgentCatBundle();
         }
     }
@@ -69,10 +74,15 @@ final class TestKernel extends Kernel
         return $this->getCacheDir();
     }
 
+    /**
+     * Inside the cache directory: kernels of one process with the same configuration share the container class that
+     * the first one compiled, and symfony/dependency-injection writes a path outside the cache directory relative to
+     * that class's file, so `%kernel.logs_dir%` would name the first kernel's directory.
+     */
     #[\Override]
     public function getLogDir(): string
     {
-        return $this->directory . '/log';
+        return $this->getCacheDir() . '/log';
     }
 
     /** Sets the synthetic services before the bundles boot, so a bundle's `boot()` can use them. */
