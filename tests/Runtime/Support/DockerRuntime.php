@@ -108,9 +108,10 @@ final class DockerRuntime
      * @param non-empty-list<string> $command  the command, after the image's entrypoint
      * @param array<string, string>  $env      the container's environment: `RuntimeTestCase::env()` plus the test's own
      * @param array<string, string>  $mounts   host path (in the output directory) => container path
+     * @param bool                   $init     `--init`; `Images::CLI` and `Images::SWOOLE` always get it
      * @param float                  $timeout  how long the port may take to accept a connection
      * @param bool                   $remove   false keeps a stopped container for `logs()` until `stop()` (ruling P16)
-     * @param float                  $lifetime how long the container may run at most
+     * @param float                  $lifetime how long the container may run at most: longer than any runtime test
      */
     public static function start(
         string $image,
@@ -161,6 +162,7 @@ final class DockerRuntime
      * @param list<string>          $command
      * @param array<string, string> $env
      * @param array<string, string> $mounts host path (in the output directory) => container path
+     * @param bool                  $init   `--init`; `Images::CLI` and `Images::SWOOLE` always get it
      *
      * @return list<string>
      */
