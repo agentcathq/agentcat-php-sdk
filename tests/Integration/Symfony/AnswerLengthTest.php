@@ -6,8 +6,6 @@ namespace AgentCat\Tests\Integration\Symfony;
 
 use AgentCat\Internal\Delivery\FinishRequest;
 use AgentCat\Symfony\Internal\AnswerLength;
-use AgentCat\Tests\Integration\Support\MockCollector;
-use AgentCat\Tests\Support\Symfony\Streaming\ProgressTool;
 use AgentCat\Tests\Support\Symfony\SymfonyHttp;
 use AgentCat\Tests\Support\Symfony\SymfonyTestCase;
 use AgentCat\Tests\Support\Symfony\TestKernel;
@@ -29,18 +27,12 @@ final class AnswerLengthTest extends SymfonyTestCase
 {
     private const string PROJECT = 'proj_lllllllllllllllllllllllllll';
 
-    /** Two servers: `conformance` and `second` (`second-server`, on `/mcp/second`), with the same tools. */
-    private const array TWO_SERVERS = ['servers' => [
-        'conformance' => TestKernel::CONFORMANCE,
-        'second' => ['name' => 'second-server', 'http' => ['path' => '/mcp/second']] + TestKernel::CONFORMANCE,
-    ]];
-
     /** Under the CLI the bundle adds no listener: the SAPI has no request that ends with the script. */
     #[MaximumDuration(1000)]
     public function testThisSapiGetsNoListener(): void
     {
         $this->assertFalse(FinishRequest::responseEndsWithTheScript(PHP_SAPI, $_SERVER, function_exists(...)));
-        $kernel = $this->kernel(agentcat: $this->on());
+        $kernel = $this->kernel(agentcat: $this->on(self::PROJECT));
 
         $response = $this->toolCall($kernel);
 
@@ -53,7 +45,7 @@ final class AnswerLengthTest extends SymfonyTestCase
     #[MaximumDuration(1000)]
     public function testTheListenerRunsLast(): void
     {
-        $kernel = $this->kernel(agentcat: $this->on());
+        $kernel = $this->kernel(agentcat: $this->on(self::PROJECT));
 
         AnswerLength::register($kernel->getContainer(), true);
 
@@ -64,7 +56,7 @@ final class AnswerLengthTest extends SymfonyTestCase
     #[MaximumDuration(1000)]
     public function testATrackedServersAnswerGetsItsLength(): void
     {
-        $kernel = $this->kernel(agentcat: $this->on());
+        $kernel = $this->kernel(agentcat: $this->on(self::PROJECT));
         AnswerLength::register($kernel->getContainer(), true);
 
         $response = $this->toolCall($kernel);
@@ -81,7 +73,7 @@ final class AnswerLengthTest extends SymfonyTestCase
     #[MaximumDuration(1000)]
     public function testOnlyATrackedServersRouteGetsTheLength(): void
     {
-        $kernel = $this->kernel(agentcat: [...$this->on(), 'exclude_servers' => ['second']], mcp: self::TWO_SERVERS);
+        $kernel = $this->kernel(agentcat: [...$this->on(self::PROJECT), 'exclude_servers' => ['second']], mcp: TestKernel::TWO_SERVERS);
         AnswerLength::register($kernel->getContainer(), true);
 
         $excluded = $this->toolCall($kernel, '/mcp/second');
@@ -96,7 +88,7 @@ final class AnswerLengthTest extends SymfonyTestCase
     #[MaximumDuration(1000)]
     public function testAnAnswerWhileAgentCatIsOffStaysAsItIs(): void
     {
-        $kernel = $this->kernel(agentcat: [...$this->on(), 'enabled' => 'false']);
+        $kernel = $this->kernel(agentcat: [...$this->on(self::PROJECT), 'enabled' => 'false']);
         AnswerLength::register($kernel->getContainer(), true);
 
         $response = $this->toolCall($kernel);
@@ -110,7 +102,7 @@ final class AnswerLengthTest extends SymfonyTestCase
     #[MaximumDuration(1000)]
     public function testAStreamedAnswerStaysAsItIs(): void
     {
-        $kernel = $this->kernel(agentcat: $this->on(), services: [ProgressTool::class => ProgressTool::class], mcp: ['servers' => ['conformance' => ['registry' => [...TestKernel::CONFORMANCE['registry'], 'AgentCat\Tests\Support\Symfony\Streaming\\']] + TestKernel::CONFORMANCE]]);
+        $kernel = $this->streamingKernel($this->on(self::PROJECT));
         AnswerLength::register($kernel->getContainer(), true);
         $http = $this->http($kernel);
         $http->listTools();
@@ -125,7 +117,7 @@ final class AnswerLengthTest extends SymfonyTestCase
     #[MaximumDuration(1000)]
     public function testAnAnswerWithoutABodyStaysAsItIs(): void
     {
-        $kernel = $this->kernel(agentcat: $this->on());
+        $kernel = $this->kernel(agentcat: $this->on(self::PROJECT));
         AnswerLength::register($kernel->getContainer(), true);
         $this->toolCall($kernel); // the server is built and tracked
 
@@ -142,7 +134,7 @@ final class AnswerLengthTest extends SymfonyTestCase
     #[MaximumDuration(1000)]
     public function testAnAnswerToAHeadRequestStaysAsItIs(): void
     {
-        $kernel = $this->kernel(agentcat: $this->on());
+        $kernel = $this->kernel(agentcat: $this->on(self::PROJECT));
         AnswerLength::register($kernel->getContainer(), true);
         $this->toolCall($kernel); // the server is built and tracked
 
@@ -156,7 +148,7 @@ final class AnswerLengthTest extends SymfonyTestCase
     #[MaximumDuration(1000)]
     public function testAnotherRouteStaysAsItIs(): void
     {
-        $kernel = $this->kernel(agentcat: $this->on());
+        $kernel = $this->kernel(agentcat: $this->on(self::PROJECT));
         AnswerLength::register($kernel->getContainer(), true);
         $this->assertTrue($this->toolCall($kernel)->headers->has('Content-Length'));
 
@@ -172,15 +164,5 @@ final class AnswerLengthTest extends SymfonyTestCase
         $http = $this->http($kernel, $path);
 
         return $kernel->handle($http->callRequest('echo', ['msg' => 'hi', 'session_id' => 'start']));
-    }
-
-    /**
-     * AgentCat on, with a project. A test that forgets its collector fails closed: the API URL is a closed local port.
-     *
-     * @return array<string, string>
-     */
-    private function on(): array
-    {
-        return ['enabled' => 'true', 'project_id' => self::PROJECT, 'api_url' => MockCollector::closedPortUrl()];
     }
 }

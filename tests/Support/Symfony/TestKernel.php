@@ -34,6 +34,18 @@ final class TestKernel extends Kernel
     /** The default mcp configuration: the `conformance` server only. */
     public const array MCP = ['servers' => ['conformance' => self::CONFORMANCE]];
 
+    /** Two servers: `conformance` and `second` (`second-server`, on `/mcp/second`), with the same tools. */
+    public const array TWO_SERVERS = ['servers' => [
+        'conformance' => self::CONFORMANCE,
+        'second' => ['name' => 'second-server', 'http' => ['path' => '/mcp/second']] + self::CONFORMANCE,
+    ]];
+
+    /**
+     * The `conformance` server with `Streaming\ProgressTool` too, whose answer is an SSE stream. The kernel needs the
+     * tool as a service: `SymfonyTestCase::streamingKernel()` gives it both.
+     */
+    public const array STREAMING = ['servers' => ['conformance' => ['registry' => [...self::CONFORMANCE['registry'], 'AgentCat\Tests\Support\Symfony\Streaming\\']] + self::CONFORMANCE]];
+
     /**
      * @param string                       $directory the directory of the cache and log directories
      * @param array<string, mixed>         $agentcat  the agentcat configuration

@@ -54,12 +54,6 @@ final class BundleTest extends SymfonyTestCase
 
     private const string LITERAL_ID = 'WARN: AgentCat option "agentcat.%s" must be a literal service ID, not an environment variable; the default is used';
 
-    /** Two servers: `conformance` and `second` (`second-server`, on `/mcp/second`), with the same tools. */
-    private const array TWO_SERVERS = ['servers' => [
-        'conformance' => TestKernel::CONFORMANCE,
-        'second' => ['name' => 'second-server', 'http' => ['path' => '/mcp/second']] + TestKernel::CONFORMANCE,
-    ]];
-
     private ?Environment $variables = null;
 
     #[\Override]
@@ -211,7 +205,7 @@ final class BundleTest extends SymfonyTestCase
         putenv('AGENTCAT_TEST_EXCLUDE=second');
         $probe = new DefinitionsProbe();
 
-        $this->kernel(agentcat: [...self::ON, 'exclude_servers' => $exclusion], probe: $probe, mcp: ['servers' => [...self::TWO_SERVERS['servers'], 'my-third' => ['name' => 'third-server', 'http' => ['path' => '/mcp/third']] + TestKernel::CONFORMANCE]]);
+        $this->kernel(agentcat: [...self::ON, 'exclude_servers' => $exclusion], probe: $probe, mcp: ['servers' => [...TestKernel::TWO_SERVERS['servers'], 'my-third' => ['name' => 'third-server', 'http' => ['path' => '/mcp/third']] + TestKernel::CONFORMANCE]]);
 
         $this->assertEquals($configurators, array_map(static fn(array $builder): mixed => $builder['configurator'], $probe->builders));
     }
@@ -256,7 +250,7 @@ final class BundleTest extends SymfonyTestCase
     #[MaximumDuration(1000)]
     public function testAnExclusionLeavesTheOtherServersTracked(): void
     {
-        $kernel = $this->kernel(agentcat: [...self::ON, 'exclude_servers' => ['conformance']], mcp: self::TWO_SERVERS);
+        $kernel = $this->kernel(agentcat: [...self::ON, 'exclude_servers' => ['conformance']], mcp: TestKernel::TWO_SERVERS);
 
         $tools = $this->http($kernel, '/mcp/second')->listTools()->tools;
 
@@ -318,7 +312,7 @@ final class BundleTest extends SymfonyTestCase
     #[MaximumDuration(1000)]
     public function testTwoServersSendToTwoProjects(): void
     {
-        $kernel = $this->kernel(agentcat: [...self::ON, 'projects' => ['second' => self::OTHER_PROJECT]], mcp: self::TWO_SERVERS);
+        $kernel = $this->kernel(agentcat: [...self::ON, 'projects' => ['second' => self::OTHER_PROJECT]], mcp: TestKernel::TWO_SERVERS);
 
         $this->http($kernel)->callTool('echo', ['msg' => 'hi', 'session_id' => self::SESSION]);
         $this->http($kernel, '/mcp/second')->callTool('echo', ['msg' => 'hi', 'session_id' => self::SESSION]);
@@ -331,7 +325,7 @@ final class BundleTest extends SymfonyTestCase
     #[MaximumDuration(1000)]
     public function testANullProjectEntryGoesToTheProjectId(): void
     {
-        $kernel = $this->kernel(agentcat: [...self::ON, 'projects' => ['conformance' => '%env(default::AGENTCAT_BILLING_PROJECT_ID)%', 'second' => self::OTHER_PROJECT]], mcp: self::TWO_SERVERS);
+        $kernel = $this->kernel(agentcat: [...self::ON, 'projects' => ['conformance' => '%env(default::AGENTCAT_BILLING_PROJECT_ID)%', 'second' => self::OTHER_PROJECT]], mcp: TestKernel::TWO_SERVERS);
 
         $this->http($kernel)->callTool('echo', ['msg' => 'hi', 'session_id' => self::SESSION]);
 
@@ -355,7 +349,7 @@ final class BundleTest extends SymfonyTestCase
         putenv('AGENTCAT_PROJECT_ID=' . self::PROJECT); // the default of a project_id that is no string
         $logger = new MemoryLogger();
         Log::setLogger($logger);
-        $kernel = $this->kernel(agentcat: ['enabled' => true, 'project_id' => 12345, 'projects' => ['conformance' => 7, 'second' => self::OTHER_PROJECT], 'logger' => 5, 'diagnostics_endpoint' => 5, 'diagnostics_token' => false], mcp: self::TWO_SERVERS);
+        $kernel = $this->kernel(agentcat: ['enabled' => true, 'project_id' => 12345, 'projects' => ['conformance' => 7, 'second' => self::OTHER_PROJECT], 'logger' => 5, 'diagnostics_endpoint' => 5, 'diagnostics_token' => false], mcp: TestKernel::TWO_SERVERS);
 
         $this->http($kernel)->callTool('echo', ['msg' => 'hi', 'session_id' => self::SESSION]);
         $this->http($kernel, '/mcp/second')->callTool('echo', ['msg' => 'hi', 'session_id' => self::SESSION]);
@@ -494,7 +488,7 @@ final class BundleTest extends SymfonyTestCase
     {
         $logger = new MemoryLogger();
         Log::setLogger($logger);
-        $kernel = $this->kernel(agentcat: ['enabled' => 'maybe', 'enable_report_missing' => 'maybe'], mcp: self::TWO_SERVERS);
+        $kernel = $this->kernel(agentcat: ['enabled' => 'maybe', 'enable_report_missing' => 'maybe'], mcp: TestKernel::TWO_SERVERS);
 
         $this->http($kernel)->listTools();
         $this->http($kernel, '/mcp/second')->listTools();

@@ -12,9 +12,11 @@ use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Support\BridgeConfig;
 use AgentCat\Internal\Support\TestMode;
 use AgentCat\Internal\Transport\Delivery;
+use AgentCat\Tests\Integration\Support\MockCollector;
 use AgentCat\Tests\Support\Environment;
 use AgentCat\Tests\Support\FileTree;
 use AgentCat\Tests\Support\RecordingTransport;
+use AgentCat\Tests\Support\Symfony\Streaming\ProgressTool;
 use AgentCat\Tests\Support\ToolCalls;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\McpBundle\McpBundle;
@@ -100,6 +102,27 @@ abstract class SymfonyTestCase extends TestCase
         }
 
         return $kernel;
+    }
+
+    /**
+     * A kernel whose `conformance` server also has the `progress` tool, which answers with an SSE stream.
+     *
+     * @param array<string, mixed> $agentcat the agentcat configuration
+     */
+    protected function streamingKernel(array $agentcat): TestKernel
+    {
+        return $this->kernel(agentcat: $agentcat, services: [ProgressTool::class => ProgressTool::class], mcp: TestKernel::STREAMING);
+    }
+
+    /**
+     * The agentcat configuration with AgentCat on and a project. A test that forgets its collector fails closed: the API
+     * URL is a closed local port.
+     *
+     * @return array<string, string>
+     */
+    protected function on(string $project): array
+    {
+        return ['enabled' => 'true', 'project_id' => $project, 'api_url' => MockCollector::closedPortUrl()];
     }
 
     /** `HttpHarness`'s API over the kernel's MCP route at `$path`: the `conformance` server's by default. */

@@ -12,10 +12,8 @@ use AgentCat\Symfony\Internal\TerminateListener;
 use AgentCat\Tests\Integration\Support\MockCollector;
 use AgentCat\Tests\Support\JsonAssert;
 use AgentCat\Tests\Support\Symfony\HeaderIdentity;
-use AgentCat\Tests\Support\Symfony\Streaming\ProgressTool;
 use AgentCat\Tests\Support\Symfony\SymfonyHttp;
 use AgentCat\Tests\Support\Symfony\SymfonyTestCase;
-use AgentCat\Tests\Support\Symfony\TestKernel;
 use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
@@ -52,7 +50,7 @@ final class DeliveryTest extends SymfonyTestCase
     #[MaximumDuration(1000)]
     public function testKernelTerminateDeliversTheRequestsEvents(): void
     {
-        $kernel = $this->kernel(agentcat: $this->on());
+        $kernel = $this->kernel(agentcat: $this->on(self::PROJECT));
         $http = $this->http($kernel);
         $http->listTools();
         $request = $http->callRequest('echo', ['msg' => 'hi', 'session_id' => 'start']);
@@ -68,7 +66,7 @@ final class DeliveryTest extends SymfonyTestCase
     #[MaximumDuration(1000)]
     public function testTheListenerRunsLast(): void
     {
-        $kernel = $this->kernel(agentcat: $this->on());
+        $kernel = $this->kernel(agentcat: $this->on(self::PROJECT));
         $dispatcher = $kernel->getContainer()->get('event_dispatcher');
         $this->assertInstanceOf(EventDispatcherInterface::class, $dispatcher);
 
@@ -84,7 +82,7 @@ final class DeliveryTest extends SymfonyTestCase
     #[MaximumDuration(1000)]
     public function testAWorkerWaitsAtMostTheCapAndTheNextRequestDeliversTheRest(): void
     {
-        $kernel = $this->kernel(agentcat: $this->on());
+        $kernel = $this->kernel(agentcat: $this->on(self::PROJECT));
         $http = $this->http($kernel);
         $http->listTools();
         $this->transport->complete = false; // an API that does not answer within the request; the clock is simulated
@@ -113,7 +111,7 @@ final class DeliveryTest extends SymfonyTestCase
         $this->assertInstanceOf(MockCollector::class, $collector);
         $scenario = $collector->scenario([['status' => 202, 'delayMs' => 4000]]);
         EventQueue::setGlobal(new EventQueue()); // the real curl transport, before the kernel builds a server
-        $kernel = $this->kernel(agentcat: [...$this->on(), 'api_url' => $scenario]);
+        $kernel = $this->kernel(agentcat: [...$this->on(self::PROJECT), 'api_url' => $scenario]);
         $http = $this->http($kernel);
         $http->listTools();
         $request = $http->callRequest('echo', ['msg' => 'hi', 'session_id' => 'start']);
@@ -142,7 +140,7 @@ final class DeliveryTest extends SymfonyTestCase
     #[MaximumDuration(2000)]
     public function testAHookThatReadsTheRequestStackNeverSeesALaterRequest(): void
     {
-        $kernel = $this->kernel(agentcat: [...$this->on(), 'identify' => 'app.identify'], services: ['app.identify' => HeaderIdentity::class]);
+        $kernel = $this->kernel(agentcat: [...$this->on(self::PROJECT), 'identify' => 'app.identify'], services: ['app.identify' => HeaderIdentity::class]);
         $identity = $kernel->getContainer()->get('app.identify');
         $this->assertInstanceOf(HeaderIdentity::class, $identity);
         $http = $this->http($kernel);
@@ -173,7 +171,7 @@ final class DeliveryTest extends SymfonyTestCase
     #[MaximumDuration(1000)]
     public function testAStreamedAnswersEventCarriesItsOwnRequestsHeaders(): void
     {
-        $kernel = $this->kernel(agentcat: $this->on(), services: [ProgressTool::class => ProgressTool::class], mcp: ['servers' => ['conformance' => ['registry' => [...TestKernel::CONFORMANCE['registry'], 'AgentCat\Tests\Support\Symfony\Streaming\\']] + TestKernel::CONFORMANCE]]);
+        $kernel = $this->streamingKernel($this->on(self::PROJECT));
         $http = $this->http($kernel);
         $http->listTools();
         $request = $http->callRequest('progress', ['msg' => 'hi', 'session_id' => 'start'], ['progressToken' => 'p1'], ['X-User' => 'streamed']);
@@ -188,15 +186,5 @@ final class DeliveryTest extends SymfonyTestCase
         $this->assertCount(1, $this->transport->deliveries);
         $headers = JsonAssert::at(Json::decode($this->transport->deliveries[0]->body), 'parameters', 'extra', 'requestInfo', 'headers');
         $this->assertSame('streamed', JsonAssert::at($headers, 'x-user'));
-    }
-
-    /**
-     * AgentCat on, with a project. A test that forgets its collector fails closed: the API URL is a closed local port.
-     *
-     * @return array<string, string>
-     */
-    private function on(): array
-    {
-        return ['enabled' => 'true', 'project_id' => self::PROJECT, 'api_url' => MockCollector::closedPortUrl()];
     }
 }
