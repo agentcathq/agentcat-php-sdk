@@ -483,6 +483,222 @@ final class EventQueueTest extends TestCase
         $this->assertSame(1, $transport->waits);
     }
 
+    /**
+     * A request-end wait is a `flush()`: before it returns, every waiting event's hooks run, also with every slot busy
+     * and no time left, so that a hook reads its own request (an Octane worker serves the next one in the process).
+     */
+    #[Group('ac-03-1')]
+    public function testFlushRunsTheHooksOfEveryWaitingEventWhateverTheFreeSlots(): void
+    {
+        $transport = new RecordingTransport(complete: false);
+        $queue = new EventQueue(transport: $transport);
+        $ran = new \ArrayObject();
+        for ($i = 0; $i < 7; ++$i) {
+            $queue->add($this->recorded('event-' . $i, $ran));
+        }
+
+        $this->assertFalse($queue->flush(0.0));
+
+        $this->assertSame(['event-0', 'event-1', 'event-2', 'event-3', 'event-4', 'event-5', 'event-6'], $ran->getArrayCopy());
+        $this->assertSame(['event-0', 'event-1', 'event-2', 'event-3', 'event-4'], $this->resourceNames($transport));
+        $this->assertSame(['queueLength' => 2, 'activeRequests' => 5], $queue->stats());
+        $this->assertSame(0, $transport->waits);
+        $transport->complete = true;
+        $transport->pump(); // the API answers: the slots are free, and two payloads still wait
+
+        $this->assertSame(['queueLength' => 2, 'activeRequests' => 0], $queue->stats());
+        $this->assertTrue($queue->hasWork());
+        $this->assertTrue($queue->flush(1.0));
+        $this->assertSame(['event-0', 'event-1', 'event-2', 'event-3', 'event-4', 'event-5', 'event-6'], $this->resourceNames($transport));
+        $this->assertCount(7, $ran, 'each hook ran once');
+    }
+
+    /** Outside `flush()` an event's hooks still run when it gets a slot: a pump runs none for an event that waits. */
+    public function testPumpRunsNoHookOfAnEventThatFindsNoFreeSlot(): void
+    {
+        $transport = new RecordingTransport(complete: false);
+        $queue = new EventQueue(transport: $transport);
+        $ran = new \ArrayObject();
+        for ($i = 0; $i < 7; ++$i) {
+            $queue->add($this->recorded('event-' . $i, $ran));
+        }
+
+        $queue->pump();
+
+        $this->assertSame(['event-0', 'event-1', 'event-2', 'event-3', 'event-4'], $ran->getArrayCopy());
+        $this->assertSame(['queueLength' => 2, 'activeRequests' => 5], $queue->stats());
+    }
+
+    /** The process ends with `shutdown()`: it spends its budget on the events it can start, not on hooks of the others. */
+    public function testShutdownRunsNoHookOfAnEventThatFindsNoFreeSlot(): void
+    {
+        $transport = new RecordingTransport(complete: false);
+        $queue = new EventQueue(transport: $transport);
+        $ran = new \ArrayObject();
+        for ($i = 0; $i < 7; ++$i) {
+            $queue->add($this->recorded('event-' . $i, $ran));
+        }
+
+        $queue->shutdown();
+
+        $this->assertSame(['event-0', 'event-1', 'event-2', 'event-3', 'event-4'], $ran->getArrayCopy());
+        $this->assertSame(['Shutting down with 2 events still in queue'], $this->logger->messages());
+    }
+
+    public function testEventsThatAFlushPreparedGoBeforeLaterOnes(): void
+    {
+        $transport = new RecordingTransport(complete: false);
+        $queue = new EventQueue(transport: $transport);
+        $ran = new \ArrayObject();
+        for ($i = 0; $i < 6; ++$i) {
+            $queue->add($this->recorded('event-' . $i, $ran));
+        }
+        $queue->flush(0.0);
+        $queue->add($this->recorded('later', $ran));
+        $transport->complete = true;
+
+        $queue->pump(); // the API answers the five in flight
+        $queue->pump();
+
+        $this->assertSame(['event-0', 'event-1', 'event-2', 'event-3', 'event-4', 'event-5', 'later'], $this->resourceNames($transport));
+        $this->assertSame(['event-0', 'event-1', 'event-2', 'event-3', 'event-4', 'event-5', 'later'], $ran->getArrayCopy());
+    }
+
+    /** A hook that queues an event during a flush (a custom event): the flush runs that event's hooks too. */
+    public function testFlushRunsTheHooksOfAnEventThatAHookQueued(): void
+    {
+        $transport = new RecordingTransport(complete: false);
+        $queue = new EventQueue(transport: $transport);
+        $ran = new \ArrayObject();
+        for ($i = 0; $i < 5; ++$i) {
+            $queue->add(new QueuedEvent($this->event('event-' . $i)));
+        }
+        $queue->add(new QueuedEvent($this->event('parent'), pending: [
+            function () use ($queue, $ran): void {
+                $ran->append('parent');
+                $queue->add($this->recorded('child', $ran));
+            },
+        ]));
+
+        $queue->flush(0.0);
+
+        $this->assertSame(['parent', 'child'], $ran->getArrayCopy());
+        $this->assertSame(['queueLength' => 2, 'activeRequests' => 5], $queue->stats());
+    }
+
+    /** The cap counts the prepared payloads too, and the oldest of them goes first. */
+    #[Group('ac-03-2')]
+    #[MaximumDuration(5000)]
+    public function testAFullQueueDropsTheOldestPreparedEventFirst(): void
+    {
+        $transport = new RecordingTransport(complete: false);
+        $queue = new EventQueue(transport: $transport);
+        for ($i = 0; $i < 10_000; ++$i) {
+            $queue->add(new QueuedEvent($this->event('event-' . $i)));
+        }
+        $queue->flush(0.0); // five in flight, 9 995 prepared
+
+        for ($i = 0; $i < 6; ++$i) {
+            $queue->add(new QueuedEvent($this->event('new-' . $i)));
+        }
+
+        $this->assertSame(['Event queue full, dropping oldest event'], $this->logger->messages());
+        $this->assertSame(10_000, $queue->stats()['queueLength']);
+        $transport->complete = true;
+        $this->assertTrue($queue->flush());
+        $names = $this->resourceNames($transport);
+        $this->assertCount(10_005, $names);
+        $this->assertSame(['event-4', 'event-6'], array_slice($names, 4, 2));
+        $this->assertSame(['event-9999', 'new-0'], array_slice($names, 9_998, 2));
+    }
+
+    public function testAPreparedEventGoesToTheEndpointOfTheLastConfigure(): void
+    {
+        $transport = new RecordingTransport(complete: false);
+        $queue = new EventQueue(transport: $transport);
+        for ($i = 0; $i < 6; ++$i) {
+            $queue->add(new QueuedEvent($this->event('event-' . $i)));
+        }
+        $queue->flush(0.0);
+
+        $queue->configure('https://later.example.test');
+        $transport->complete = true;
+        $queue->pump();
+        $queue->pump();
+
+        $this->assertCount(6, $transport->deliveries);
+        $this->assertSame('https://api.agentcat.com/v1/public/events/', $transport->deliveries[4]->url);
+        $this->assertSame('https://later.example.test/v1/public/events/', $transport->deliveries[5]->url);
+    }
+
+    public function testAnEventThatAHookDropsDuringAFlushLeavesTheQueue(): void
+    {
+        $transport = new RecordingTransport(complete: false);
+        $queue = new EventQueue(transport: $transport);
+        for ($i = 0; $i < 5; ++$i) {
+            $queue->add(new QueuedEvent($this->event('event-' . $i)));
+        }
+        $queue->add(new QueuedEvent($this->event('dropped'), static fn(Event $event): ?Event => null));
+
+        $queue->flush(0.0);
+
+        $this->assertSame(['Event dropped by redactEvent hook'], $this->logger->messages());
+        $this->assertSame(['queueLength' => 0, 'activeRequests' => 5], $queue->stats());
+    }
+
+    /**
+     * An event that goes to the exporters only, prepared by a flush, keeps its place: the exporters get it in its turn,
+     * and an event that did not encode logs why after its export, as in a pass.
+     */
+    public function testAPreparedEventWithoutABodyIsExportedInItsTurn(): void
+    {
+        $transport = new RecordingTransport(complete: false);
+        $exporter = new RecordingExporter(new \RuntimeException('boom'));
+        $queue = new EventQueue(
+            transport: $transport,
+            exporters: $exporter,
+            encode: static fn(Event $event): string => $event->resourceName === 'bad' ? throw new \RuntimeException('cannot encode') : '{}',
+        );
+        for ($i = 0; $i < 5; ++$i) {
+            $queue->add(new QueuedEvent($this->event('event-' . $i)));
+        }
+        $telemetryOnly = $this->event('telemetry', null);
+        $bad = $this->event('bad');
+        $queue->add(new QueuedEvent($telemetryOnly));
+        $queue->add(new QueuedEvent($bad));
+
+        $queue->flush(0.0);
+
+        $this->assertSame([], $this->logger->messages(), 'nothing exported yet: each export logs the exporter\'s error');
+        $transport->complete = true;
+        $transport->pump();
+        $queue->pump();
+
+        $this->assertCount(5, $transport->deliveries);
+        $this->assertSame(['event-0', 'event-1', 'event-2', 'event-3', 'event-4', 'telemetry', 'bad'], array_map(static fn(Event $event): ?string => $event->resourceName, $exporter->events));
+        $this->assertSame([$telemetryOnly, $bad], array_slice($exporter->events, 5));
+        $this->assertSame(
+            [...array_fill(0, 7, 'Telemetry export error: RuntimeException: boom'), 'Failed to encode event ' . $bad->id . ': RuntimeException: cannot encode'],
+            $this->logger->messages(),
+        );
+    }
+
+    #[Group('ac-03-9')]
+    public function testShutdownCountsThePreparedEventsStillWaiting(): void
+    {
+        $transport = new RecordingTransport(complete: false);
+        $queue = new EventQueue(transport: $transport);
+        for ($i = 0; $i < 7; ++$i) {
+            $queue->add(new QueuedEvent($this->event()));
+        }
+        $queue->flush(0.0);
+        $queue->add(new QueuedEvent($this->event()));
+
+        $queue->shutdown();
+
+        $this->assertSame(['Shutting down with 3 events still in queue'], $this->logger->messages());
+    }
+
     #[Group('ac-03-9')]
     public function testShutdownReportsEventsStillWaiting(): void
     {
@@ -1242,6 +1458,20 @@ final class EventQueueTest extends TestCase
     private function event(string $resourceName = 'tool', ?string $projectId = 'proj_test'): Event
     {
         return new Event(projectId: $projectId, eventType: 'mcp:tools/call', resourceName: $resourceName);
+    }
+
+    /**
+     * An event whose pending hook appends its resource name to `$ran` when it runs.
+     *
+     * @param \ArrayObject<int, string> $ran
+     */
+    private function recorded(string $resourceName, \ArrayObject $ran): QueuedEvent
+    {
+        return new QueuedEvent($this->event($resourceName), pending: [
+            static function () use ($resourceName, $ran): void {
+                $ran->append($resourceName);
+            },
+        ]);
     }
 
     /** @return list<mixed> the `resource_name` of every delivery body */

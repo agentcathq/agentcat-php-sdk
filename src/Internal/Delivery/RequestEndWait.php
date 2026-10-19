@@ -13,10 +13,11 @@ namespace AgentCat\Internal\Delivery;
  * deadline (D47).
  *
  * The wait is `EventQueue::flush()`: a window of its own that fixes no shutdown deadline, keeps the queue open, ticks
- * the companions without finishing them, and waits for events and exporter requests but not for diagnostics. What is
- * left — waiting events, transfers in flight, retries scheduled for later — moves on at the next request's `pump()`
- * and wait, and at the worker's stop, whose `shutdown()` fixes the single 5 s deadline and keeps its last 10 % (at
- * most 0.5 s) for the companions' `finish()`.
+ * the companions without finishing them, and waits for events and exporter requests but not for diagnostics. Before it
+ * returns, the hooks of every waiting event have run, in the request of their event. What is left — payloads waiting
+ * for a free slot, transfers in flight, retries scheduled for later — moves on at the next request's `pump()` and
+ * wait, and at the worker's stop, whose `shutdown()` fixes the single 5 s deadline and keeps its last 10 % (at most
+ * 0.5 s) for the companions' `finish()`.
  *
  * @internal
  */

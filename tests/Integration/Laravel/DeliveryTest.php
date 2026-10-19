@@ -17,7 +17,9 @@ use AgentCat\Tests\Integration\Support\MockCollector;
 use AgentCat\Tests\Support\Environment;
 use AgentCat\Tests\Support\JsonAssert;
 use AgentCat\Tests\Support\Laravel\BridgeTestCase;
+use AgentCat\Tests\Support\Laravel\ContainerRequestIdentity;
 use AgentCat\Tests\Support\Laravel\HeaderIdentity;
+use AgentCat\Tests\Support\Laravel\InjectedRequestIdentity;
 use AgentCat\Tests\Support\LaravelMcp\HeaderIdentityServer;
 use AgentCat\Tests\Support\LaravelMcp\LaravelHarness;
 use AgentCat\Tests\Support\LaravelMcp\LaravelTrackingFixture;
@@ -235,6 +237,43 @@ final class DeliveryTest extends BridgeTestCase
         $bodies = array_map(static fn(Delivery $d): mixed => Json::decode($d->body), $this->transport->deliveries);
         $this->assertSame(['ann', 'bob', 'cid'], array_map(static fn(mixed $body): mixed => JsonAssert::at($body, 'identify_actor_given_id'), $bodies));
         $this->assertSame(['ann', 'bob', 'cid'], array_map(static fn(mixed $body): mixed => JsonAssert::at($body, 'parameters', 'extra', 'requestInfo', 'headers', 'x-user'), $bodies));
+    }
+
+    /**
+     * `identify` hooks that read the container, as Laravel code reads the authenticated user.
+     *
+     * @return iterable<string, array{class-string}>
+     */
+    public static function containerHooks(): iterable
+    {
+        yield 'the container\'s current request' => [ContainerRequestIdentity::class];
+        yield 'a request injected into the constructor' => [InjectedRequestIdentity::class];
+    }
+
+    /**
+     * Review Focus 4 with a hook that reads the container and an AgentCat API that backs up. The first five deliveries
+     * stay in flight, so the sixth event waits for a free slot past its own request. Its hook still runs before that
+     * request's wait returns, in that request: the payload alone waits for the transport.
+     *
+     * @param class-string $hook
+     */
+    #[DataProvider('containerHooks')]
+    #[Group('ac-03-1')]
+    #[MaximumDuration(2000)]
+    public function testAContainerReadingHookRunsInItsOwnRequestWhileTheApiIsBackedUp(string $hook): void
+    {
+        config(['agentcat.identify' => $hook]);
+        $this->transport->complete = false; // a slow AgentCat API: the deliveries stay in flight; the clock is simulated
+        $users = ['u1', 'u2', 'u3', 'u4', 'u5', 'u6', 'u7'];
+
+        foreach ($users as $user) {
+            $this->transport->complete = $user === 'u7'; // the API answers again before the seventh request
+            $this->postJson('/mcp/test', $this->toolCall('echo', ['msg' => $user, 'session_id' => 'start']), [...$this->modernHeaders('echo'), 'X-User' => $user])->assertOk();
+        }
+
+        $bodies = array_map(static fn(Delivery $d): mixed => Json::decode($d->body), $this->transport->deliveries);
+        $this->assertSame($users, array_map(static fn(mixed $body): mixed => JsonAssert::at($body, 'parameters', 'request', 'params', 'arguments', 'msg'), $bodies));
+        $this->assertSame($users, array_map(static fn(mixed $body): mixed => JsonAssert::at($body, 'identify_actor_given_id'), $bodies));
     }
 
     /** Review Focus 4: an AgentCat API that does not answer holds each request for the cap, not for the 5 s budget. */
