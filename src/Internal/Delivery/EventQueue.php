@@ -416,12 +416,13 @@ final class EventQueue
      *
      * An event a hook queues meanwhile waits for the next pass: an event that starts no transfer (telemetry only, an
      * encode failure, dropped by a hook) leaves the slots free, so a hook that keeps queueing such events cannot hold
-     * the pass. A hook can only add events (the cap drops one for each new one), so `$left` never outruns the queue.
+     * the pass. A signal drain during a hook (`finalShutdown()`) delivers the whole queue: the pass stops when the
+     * queue is empty.
      */
     private function pumpOnce(bool $tick = true): void
     {
         try {
-            for ($left = $this->queued(); $left > 0 && $this->transport->inFlight() < self::CONCURRENCY; --$left) {
+            for ($left = $this->queued(); $left > 0 && $this->queued() > 0 && $this->transport->inFlight() < self::CONCURRENCY; --$left) {
                 $ready = $this->ready->isEmpty() ? $this->prepare($this->waiting->dequeue()) : $this->ready->dequeue();
                 if ($ready instanceof ReadyEvent) {
                     $this->send($ready);
@@ -461,12 +462,12 @@ final class EventQueue
 
     /**
      * The pipeline of the events that waited when the pass began, whatever the free slots (`flush()`): the payloads wait
-     * in order. An event a hook queues meanwhile waits for the next pass. A hook can only add waiting events (the cap
-     * drops a prepared one first, and a waiting one only for a new one), so `$left` never outruns the queue.
+     * in order. An event a hook queues meanwhile waits for the next pass. A signal drain during a hook
+     * (`finalShutdown()`) delivers the whole queue: the pass stops when no event waits.
      */
     private function prepareWaiting(): void
     {
-        for ($left = $this->waiting->count(); $left > 0; --$left) {
+        for ($left = $this->waiting->count(); $left > 0 && !$this->waiting->isEmpty(); --$left) {
             $ready = $this->prepare($this->waiting->dequeue());
             if ($ready instanceof ReadyEvent) {
                 $this->ready->enqueue($ready);

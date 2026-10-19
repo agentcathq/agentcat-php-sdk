@@ -673,6 +673,58 @@ final class EventQueueTest extends TestCase
         $this->assertFalse($delivered);
     }
 
+    /**
+     * A SIGTERM during a hook, with an earlier handler that keeps the process running (`03` AC-11): the signal drain
+     * (`finalShutdown()`) delivers the whole queue in the middle of the pass. The pass then stops at the empty queue,
+     * logs nothing, and still pumps the transport, so the event whose hook ran completes too.
+     */
+    public function testASignalDrainDuringAHookEndsThePumpPassCleanly(): void
+    {
+        $transport = new RecordingTransport();
+        $queue = new EventQueue(transport: $transport);
+        $queue->add(new QueuedEvent($this->event('event-0'), pending: [
+            static function () use ($queue): void {
+                $queue->finalShutdown();
+            },
+        ]));
+        $queue->add(new QueuedEvent($this->event('event-1')));
+        $queue->add(new QueuedEvent($this->event('event-2')));
+
+        $queue->pump();
+
+        $this->assertSame([], $this->logger->messages());
+        $this->assertSame(['queueLength' => 0, 'activeRequests' => 0], $queue->stats(), 'the pass pumped the transport');
+        $names = $this->resourceNames($transport);
+        sort($names);
+        $this->assertSame(['event-0', 'event-1', 'event-2'], $names, 'each event delivered once');
+    }
+
+    /** The same drain during a hook of a flush's prepare pass: the pass stops at the empty queue, and the flush delivers. */
+    public function testASignalDrainDuringAHookEndsThePreparePassCleanly(): void
+    {
+        $transport = new RecordingTransport(complete: false);
+        $queue = new EventQueue(transport: $transport);
+        for ($i = 0; $i < 5; ++$i) {
+            $queue->add(new QueuedEvent($this->event('event-' . $i)));
+        }
+        $queue->add(new QueuedEvent($this->event('event-5'), pending: [
+            static function () use ($queue, $transport): void {
+                $transport->complete = true; // the API answers the five in flight, so the drain empties the queue
+                $queue->finalShutdown();
+            },
+        ]));
+        $queue->add(new QueuedEvent($this->event('event-6')));
+
+        $delivered = $queue->flush(1.0);
+
+        $this->assertSame([], $this->logger->messages());
+        $this->assertTrue($delivered);
+        $this->assertSame(['queueLength' => 0, 'activeRequests' => 0], $queue->stats());
+        $names = $this->resourceNames($transport);
+        sort($names);
+        $this->assertSame(['event-0', 'event-1', 'event-2', 'event-3', 'event-4', 'event-5', 'event-6'], $names, 'each event delivered once');
+    }
+
     /** The process ends with `shutdown()`: it spends its budget on the events it can start, not on hooks of the others. */
     public function testShutdownRunsNoHookOfAnEventThatFindsNoFreeSlot(): void
     {
