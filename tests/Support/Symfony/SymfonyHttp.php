@@ -93,12 +93,13 @@ final class SymfonyHttp
      *
      * @param array<array-key, mixed>   $arguments
      * @param array<string, mixed>|null $meta
+     * @param array<string, string>     $headers more headers of the request
      */
-    public function callRequest(string $name, array $arguments, ?array $meta = null): Request
+    public function callRequest(string $name, array $arguments, ?array $meta = null, array $headers = []): Request
     {
         $this->session();
 
-        return $this->message('tools/call', HttpHarness::callParams($name, $arguments, $meta), [], true);
+        return $this->message('tools/call', HttpHarness::callParams($name, $arguments, $meta), $headers, true);
     }
 
     /**
@@ -166,20 +167,33 @@ final class SymfonyHttp
         return $response;
     }
 
+    /**
+     * The body of an answer. A streamed one (SSE) is sent into an output buffer whose handler keeps every chunk:
+     * mcp/sdk flushes each event (`@ob_flush()`), which would hand a plain buffer's bytes to the buffer below it.
+     */
+    public static function body(Response $response): string
+    {
+        if (!$response instanceof StreamedResponse) {
+            return (string) $response->getContent();
+        }
+        $chunks = new \ArrayObject();
+        ob_start(static function (string $chunk) use ($chunks): string {
+            $chunks->append($chunk);
+
+            return '';
+        });
+        try {
+            $response->sendContent();
+        } finally {
+            ob_end_flush(); // the handler gets the rest and passes on nothing
+        }
+
+        return implode('', $chunks->getArrayCopy());
+    }
+
     /** The message of an answer that answers request `$id`: a JSON body, or a `data:` line of an SSE stream. */
     private function answer(Response $response, int $id): \stdClass
     {
-        if ($response instanceof StreamedResponse) {
-            ob_start();
-            try {
-                $response->sendContent();
-            } finally {
-                $body = (string) ob_get_clean();
-            }
-        } else {
-            $body = (string) $response->getContent();
-        }
-
-        return HttpHarness::decode($body, (string) $response->headers->get('Content-Type'), $id);
+        return HttpHarness::decode(self::body($response), (string) $response->headers->get('Content-Type'), $id);
     }
 }

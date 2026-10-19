@@ -34,6 +34,8 @@ return (new Configuration())
     ->ignoreErrorsOnPackageAndPath('mcp/sdk', __DIR__ . '/src/Symfony', [ErrorType::DEV_DEPENDENCY_IN_PROD])
     // Psr\Container\ContainerInterface arrives with symfony/dependency-injection; the tracker reads the hook locator through it.
     ->ignoreErrorsOnPackageAndPath('psr/container', __DIR__ . '/src/Symfony', [ErrorType::SHADOW_DEPENDENCY])
+    // Symfony\Component\EventDispatcher arrives with symfony/http-kernel; the bundle tests read the kernel's listeners from it.
+    ->ignoreErrorsOnPackageAndPath('symfony/event-dispatcher', __DIR__ . '/tests/Integration/Symfony', [ErrorType::SHADOW_DEPENDENCY])
     // Orchestra\Testbench\TestCase lives in orchestra/testbench-core, which orchestra/testbench requires; the Laravel tests extend it.
     ->ignoreErrorsOnPackageAndPath('orchestra/testbench-core', __DIR__ . '/tests', [ErrorType::SHADOW_DEPENDENCY])
     // Symfony\Component\Console arrives with laravel/framework; the artisan fixture hands its input and output to Laravel's console kernel.

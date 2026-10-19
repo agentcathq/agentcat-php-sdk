@@ -7,6 +7,7 @@ namespace AgentCat\Symfony;
 use AgentCat\Internal\Support\BridgeConfig;
 use AgentCat\Symfony\Internal\DependencyInjection\TrackBuildersPass;
 use AgentCat\Symfony\Internal\ServerTracker;
+use AgentCat\Symfony\Internal\TerminateListener;
 use Symfony\Component\Config\Definition\Configurator\DefinitionConfigurator;
 use Symfony\Component\DependencyInjection\Argument\ServiceClosureArgument;
 use Symfony\Component\DependencyInjection\Compiler\PassConfig;
@@ -16,6 +17,7 @@ use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigura
 use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\DependencyInjection\ServiceLocator;
 use Symfony\Component\HttpKernel\Bundle\AbstractBundle;
+use Symfony\Component\HttpKernel\KernelEvents;
 
 /**
  * Tracks every symfony/mcp-bundle server of the application with AgentCat. The Flex recipe registers it and writes
@@ -98,6 +100,9 @@ final class AgentCatBundle extends AbstractBundle
             '%agentcat.servers%', // every server name, which TrackBuildersPass writes
             $variables,
         ]);
+        // D58: the wait for delivery after each response, last of kernel.terminate (header conflict 7).
+        $builder->register('agentcat.terminate_listener', TerminateListener::class)
+            ->addTag('kernel.event_listener', ['event' => KernelEvents::TERMINATE, 'priority' => TerminateListener::PRIORITY]);
     }
 
     /** Whether a value of the configuration holds an environment variable, which resolves at runtime only. */
