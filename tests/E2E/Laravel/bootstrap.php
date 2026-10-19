@@ -6,15 +6,15 @@ use AgentCat\Laravel\AgentCatServiceProvider;
 use AgentCat\Tests\Support\Laravel\SleepingIdentify;
 use AgentCat\Tests\Support\LaravelMcp\ConformanceServer;
 use AgentCat\Tests\Support\LaravelMcp\CustomCallServer;
+use AgentCat\Tests\Support\LaravelMcp\StreamingServer;
 use Illuminate\Foundation\Application as LaravelApplication;
-use Illuminate\Foundation\Http\Events\RequestHandled;
 use Laravel\Mcp\Facades\Mcp;
 use Laravel\Mcp\Server\McpServiceProvider;
 use Orchestra\Testbench\Foundation\Application;
 
 require dirname(__DIR__, 3) . '/vendor/autoload.php';
 
-// A booted Laravel application with laravel/mcp, one web and two local servers, and AgentCat only as the service
+// A booted Laravel application with laravel/mcp, two web and two local servers, and AgentCat only as the service
 // provider that package discovery registers from composer.json (ServiceProviderTest checks that entry). Every setting
 // comes from the environment the test passes and, under php -S, from the request's X-E2E-* headers.
 //
@@ -47,16 +47,8 @@ return Application::create(
             if (($_SERVER['HTTP_X_E2E_IDENTIFY_SLEEP'] ?? null) === '1') {
                 $config->set('agentcat.identify', SleepingIdentify::class);
             }
-            if (($_SERVER['HTTP_X_E2E_CONTENT_LENGTH'] ?? null) === '1') {
-                // A customer's listener that sends the length of each answer: laravel/mcp sends none.
-                $app->make('events')->listen(RequestHandled::class, static function (RequestHandled $handled): void {
-                    $content = $handled->response->getContent();
-                    if (is_string($content)) {
-                        $handled->response->headers->set('Content-Length', (string) strlen($content));
-                    }
-                });
-            }
             Mcp::web('/mcp/e2e', ConformanceServer::class);
+            Mcp::web('/mcp/e2e-stream', StreamingServer::class);
             Mcp::local('e2e', ConformanceServer::class);
             Mcp::local('boost-style', CustomCallServer::class);
         });

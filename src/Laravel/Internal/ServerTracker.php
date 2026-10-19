@@ -8,6 +8,8 @@ use AgentCat\AgentCat;
 use AgentCat\Client;
 use AgentCat\Internal\ClientSeams;
 use AgentCat\Internal\Delivery\EventQueue;
+use AgentCat\Internal\Engine\TrackedServer;
+use AgentCat\Internal\Engine\TrackedServers;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Support\ConfigOptions;
 use AgentCat\Internal\Support\EnabledGate;
@@ -51,6 +53,9 @@ final class ServerTracker
             $client = FakeLog::of($client) instanceof FakeLog ? $client : ($this->client ??= new Client(ClientSeams::of(EventQueue::global(), EnabledGate::of($config['enabled'] ?? null))));
             $this->options ??= ConfigOptions::options($config, self::BRIDGE_KEYS, $this->resolve(...));
             $client->track($server, $this->project($server, $config), $this->options);
+            if (TrackedServers::get($server) instanceof TrackedServer) {
+                AnswerLength::mark($server); // D59; a server that AgentCat did not track (off, or failed) keeps its answer
+            }
         } catch (\Throwable $e) {
             Log::write('Warning: Failed to track server - ' . ErrorText::of($e));
         }

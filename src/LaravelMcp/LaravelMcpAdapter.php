@@ -172,9 +172,9 @@ final class LaravelMcpAdapter
 
     /**
      * The request of the server's HTTP transport; null on another transport, and when the transport or its request
-     * cannot be read (drift), which logs the compatibility line once per server.
+     * cannot be read (drift), which logs the compatibility line once per server. Never throws.
      */
-    private static function request(Server $server): ?Request
+    public static function request(Server $server): ?Request
     {
         try {
             return StrictErrors::run(static function () use ($server): ?Request {

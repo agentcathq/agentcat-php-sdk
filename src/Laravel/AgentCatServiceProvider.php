@@ -9,6 +9,7 @@ use AgentCat\Client;
 use AgentCat\Internal\Support\TestMode;
 use AgentCat\Laravel\Console\InstallCommand;
 use AgentCat\Laravel\Internal\AfterRequest;
+use AgentCat\Laravel\Internal\AnswerLength;
 use AgentCat\Laravel\Internal\ServerTracker;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Support\ServiceProvider;
@@ -44,6 +45,7 @@ final class AgentCatServiceProvider extends ServiceProvider
             $this->app->afterResolving(Server::class, static function (Server $server, Container $app) use ($tracker): void {
                 $tracker->track($server, $app);
             });
+            AnswerLength::register($this->app); // D59: only where a response ends with the script
         }
         AfterRequest::register($this->app); // callbacks only: nothing runs at boot
     }

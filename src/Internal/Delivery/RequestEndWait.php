@@ -36,9 +36,7 @@ final class RequestEndWait
         if ($console) {
             return 0.0;
         }
-        $outlivesRequest = $sapi === 'cli' || $sapi === 'phpdbg'
-            || ($sapi === 'frankenphp' && FinishRequest::isFrankenPhpWorker($server ?? $_SERVER, $getenv));
 
-        return $outlivesRequest ? self::WORKER_SECONDS : 0.0;
+        return FinishRequest::outlivesRequest($sapi, $server ?? $_SERVER, $getenv) ? self::WORKER_SECONDS : 0.0;
     }
 }

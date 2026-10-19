@@ -111,20 +111,20 @@ final class LaravelEndToEndTest extends TestCase
     }
 
     /**
-     * D57 under `php -S`: Laravel sends the answer, then AgentCat's shutdown function runs the hooks and delivers. The
-     * answer carries its length (a customer's listener in `bootstrap.php`), so the client has all of it at once. The
-     * hook sleeps 3 s; the 2 s bound leaves room for a slow runner, and the marker and the collector prove the order.
+     * D59 with D57 under `php -S`: AgentCat's listener gives laravel/mcp's plain answer its length, Laravel sends it, and
+     * only then does AgentCat's shutdown function run the hooks and deliver, so the client has the whole answer first.
+     * The hook sleeps 3 s; the 2 s bound leaves room for a slow runner, and the marker and the collector prove the order.
      */
     #[Group('ac-02-48')]
     #[Group('ac-03-1')]
     #[MaximumDuration(15000)]
-    public function testAnAnswerWithItsLengthReachesTheClientBeforeTheHooksAndTheDelivery(): void
+    public function testAnAnswerGetsItsLengthAndReachesTheClientBeforeTheHooksAndTheDelivery(): void
     {
         $scenario = $this->collector()->scenario();
         $this->removeMarker();
         $sentAt = microtime(true);
 
-        $answer = $this->callOverHttp(['X-E2E-Collector' => $scenario, 'X-E2E-Identify-Sleep' => '1', 'X-E2E-Content-Length' => '1']);
+        $answer = $this->callOverHttp(['X-E2E-Collector' => $scenario, 'X-E2E-Identify-Sleep' => '1']);
 
         $this->assertLessThan(SleepingIdentify::SECONDS - 1.0, $answer['receivedAt'] - $sentAt, 'the answer arrived before the hook woke up');
         $this->assertSame((string) strlen($answer['body']), $answer['headers']['content-length'] ?? null);
@@ -136,25 +136,22 @@ final class LaravelEndToEndTest extends TestCase
     }
 
     /**
-     * Header conflict 15: laravel/mcp's JSON answer has no `Content-Length`, so under `php -S` (and any SAPI without a
-     * finish-request function) the client has it only when the request ends and the server closes the connection:
-     * after AgentCat's hooks and delivery. Under PHP-FPM, `fastcgi_finish_request()` ends the response before both
-     * (Plan E2's runtime tests).
+     * D59 leaves a streamed answer as laravel/mcp sends it: server-sent events without `Content-Length`, the progress
+     * notifications, then the result with AgentCat's session block. Its event comes when the stream ends.
      */
     #[MaximumDuration(15000)]
-    public function testAnAnswerWithoutItsLengthArrivesWhenTheRequestEnds(): void
+    public function testAStreamedAnswerKeepsItsOwnHeaders(): void
     {
         $scenario = $this->collector()->scenario();
-        $this->removeMarker();
-        $sentAt = microtime(true);
 
-        $answer = $this->callOverHttp(['X-E2E-Collector' => $scenario, 'X-E2E-Identify-Sleep' => '1']);
+        $answer = $this->callOverHttp(['X-E2E-Collector' => $scenario], 'stream', '/mcp/e2e-stream');
 
+        $this->assertSame(200, $answer['status']);
+        $this->assertStringStartsWith('text/event-stream', $answer['headers']['content-type'] ?? '');
         $this->assertArrayNotHasKey('content-length', $answer['headers']);
-        $this->assertSame('echo: hi', JsonAssert::at($this->answerResult($answer), 'content', 1, 'text'));
-        $this->assertGreaterThanOrEqual(SleepingIdentify::SECONDS, $answer['receivedAt'] - $sentAt, 'the answer waited for the hook');
-        $this->assertLessThan($answer['receivedAt'], $this->hookWokeAt(), 'identify ran before the client had its answer');
-        $this->assertLessThan($answer['receivedAt'], $this->deliveredAt($scenario), 'the delivery ran before the request ended');
+        $this->assertSame(3, substr_count($answer['body'], 'data: '), 'two notifications, then the result');
+        $this->assertSame('done', JsonAssert::at($this->answerResult($answer), 'content', 1, 'text'));
+        $this->assertSame('stream', JsonAssert::at($this->event($scenario), 'resource_name'));
     }
 
     #[Group('ac-03-37')]
@@ -258,19 +255,20 @@ final class LaravelEndToEndTest extends TestCase
     }
 
     /**
-     * `tools/call` `echo` over HTTP in the 2026-07-28 era: no handshake, the client in `_meta`.
+     * A `tools/call` over HTTP in the 2026-07-28 era: no handshake, the client in `_meta`. `echo` gets `msg` `hi`.
      *
      * @param array<string, string> $headers
      *
      * @return array{status: int, headers: array<string, string>, body: string, receivedAt: float}
      */
-    private function callOverHttp(array $headers): array
+    private function callOverHttp(array $headers, string $tool = 'echo', string $path = '/mcp/e2e'): array
     {
         $this->assertInstanceOf(BuiltInServer::class, self::$http);
-        $client = new McpHttpClient(self::$http->baseUrl() . '/mcp/e2e');
-        $params = HttpHarness::modernParams(['name' => 'echo', 'arguments' => (object) ['msg' => 'hi', 'session_id' => 'start', 'context' => 'e2e']], ['name' => 'e2e-client', 'version' => '1.0.0']);
+        $client = new McpHttpClient(self::$http->baseUrl() . $path);
+        $arguments = $tool === 'echo' ? ['msg' => 'hi', 'session_id' => 'start', 'context' => 'e2e'] : ['session_id' => 'start'];
+        $params = HttpHarness::modernParams(['name' => $tool, 'arguments' => (object) $arguments], ['name' => 'e2e-client', 'version' => '1.0.0']);
 
-        return $client->post(['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/call', 'params' => $params], [...HttpHarness::modernHeaders('tools/call', 'echo'), ...$headers]);
+        return $client->post(['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/call', 'params' => $params], [...HttpHarness::modernHeaders('tools/call', $tool), ...$headers]);
     }
 
     /** @param array{status: int, headers: array<string, string>, body: string, receivedAt: float} $answer */

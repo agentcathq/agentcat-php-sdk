@@ -44,6 +44,31 @@ final class FinishRequest
         return isset($server['FRANKENPHP_WORKER']) || ($getenv ?? getenv(...))('FRANKENPHP_WORKER') !== false;
     }
 
+    /**
+     * The process outlives the request: the command line (Octane on Swoole or RoadRunner, a Symfony Runtime worker, a
+     * stdio server) or FrankenPHP worker mode.
+     *
+     * @param array<array-key, mixed>               $server `$_SERVER`
+     * @param (\Closure(string): (string|false))|null $getenv default `getenv()`
+     */
+    public static function outlivesRequest(string $sapi, array $server, ?\Closure $getenv = null): bool
+    {
+        return $sapi === 'cli' || $sapi === 'phpdbg' || ($sapi === 'frankenphp' && self::isFrankenPhpWorker($server, $getenv));
+    }
+
+    /**
+     * A web SAPI that runs one request per script and has no finish-request function (mod_php, php-cgi, `php -S`):
+     * the client has a response only when the script ends, unless the response carries its length (D57, D59).
+     *
+     * @param array<array-key, mixed>               $server         `$_SERVER`
+     * @param \Closure(string): bool                $functionExists
+     * @param (\Closure(string): (string|false))|null $getenv         default `getenv()`
+     */
+    public static function responseEndsWithTheScript(string $sapi, array $server, \Closure $functionExists, ?\Closure $getenv = null): bool
+    {
+        return !self::outlivesRequest($sapi, $server, $getenv) && self::functionFor($sapi, $server, $functionExists, $getenv) === null;
+    }
+
     /** @return (\Closure(): void)|null the finish call of this SAPI, if it has one */
     public static function detect(): ?\Closure
     {
