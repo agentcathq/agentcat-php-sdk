@@ -52,6 +52,7 @@ final class CachedConfigurationTest extends BridgeTestCase
         $this->diagnosticsEnvironment = Environment::clear('AGENTCAT_DISABLE_DIAGNOSTICS', 'DISABLE_DIAGNOSTICS', 'AGENTCAT_DIAGNOSTICS_TOKEN', 'MCPCAT_API_URL', 'APP_ENV');
         putenv('AGENTCAT_DISABLE_DIAGNOSTICS=true'); // tests/bootstrap.php's value: a test that wants diagnostics says so
         $this->cachedCollector = MockCollector::closedPortUrl() . '/cached';
+        Diagnostics::reset(); // the first init() of the process decides: a test of another class can have made it
         parent::setUp();
         Log::setLogger($this->logger = new MemoryLogger()); // nothing goes to agentcat.log in the test HOME
     }
