@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace AgentCat\Tests\Runtime;
 
 use AgentCat\Tests\Integration\Support\MockCollector;
+use AgentCat\Tests\Runtime\Support\DockerRuntime;
+use AgentCat\Tests\Runtime\Support\Images;
 use AgentCat\Tests\Runtime\Support\RuntimeTestCase;
 use AgentCat\Tests\Support\Environment;
 use AgentCat\Tests\Support\Thrown;
@@ -64,6 +66,46 @@ final class HarnessTest extends RuntimeTestCase
         $this->assertTrue($refused, 'the collector still listens');
     }
 
+    /** A killed PHPUnit run leaves its containers: the next run removes them, and leaves those of live processes. */
+    #[MaximumDuration(60000)]
+    public function testTheSweepRemovesTheContainersOfDeadTestProcessesOnly(): void
+    {
+        $pidMax = file_get_contents('/proc/sys/kernel/pid_max');
+        $this->assertIsString($pidMax);
+        $dead = $this->detachedSleep('agentcat-rt-' . ((int) trim($pidMax) + 1) . '-' . bin2hex(random_bytes(4))); // no process has this PID
+        $live = $this->detachedSleep('agentcat-rt-1-' . bin2hex(random_bytes(4))); // PID 1 always runs
+
+        try {
+            DockerRuntime::removeStale();
+            $deadLeft = $this->containerIds($dead);
+            $liveLeft = $this->containerIds($live);
+        } finally {
+            (new Process(['docker', 'rm', '--force', $dead, $live], null, null, null, 30.0))->run();
+        }
+
+        $this->assertSame('', $deadLeft);
+        $this->assertNotSame('', $liveLeft);
+    }
+
+    /** A container that a killed run leaves behind ends on its own after its lifetime. */
+    #[MaximumDuration(60000)]
+    public function testAStartedContainerEndsOnItsOwnAfterItsLifetime(): void
+    {
+        $prefix = 'agentcat-rt-' . getmypid() . '-';
+        $started = microtime(true);
+
+        DockerRuntime::start(Images::CLI, ['php', '-r', 'sleep(120);'], $this->env(), [], lifetime: 2.0);
+
+        $this->assertNotSame('', $this->containerIds($prefix));
+        $deadline = $started + 20.0;
+        while ($this->containerIds($prefix) !== '' && microtime(true) < $deadline) {
+            usleep(100_000);
+        }
+        $lived = microtime(true) - $started;
+        $this->assertSame('', $this->containerIds($prefix), 'the container outlived its lifetime');
+        $this->assertGreaterThan(1.5, $lived, sprintf('the container ended %.2f s after its start, before its lifetime', $lived));
+    }
+
     /**
      * Runs the smoke test in a new PHPUnit process.
      *
@@ -75,6 +117,29 @@ final class HarnessTest extends RuntimeTestCase
         $process->run();
 
         return $process;
+    }
+
+    /** Starts a container under `$name` that sleeps 60 s and is removed when it ends. */
+    private function detachedSleep(string $name): string
+    {
+        $run = new Process(['docker', 'run', '--detach', '--rm', '--pull', 'never', '--name', $name, '--network', 'none', Images::CLI, 'sleep', '60'], null, null, null, 30.0);
+        $run->run();
+        $this->assertTrue($run->isSuccessful(), $run->getErrorOutput());
+
+        return $name;
+    }
+
+    /**
+     * The IDs of the containers whose names start with `$name`.
+     *
+     * @phpstan-impure containers come and go
+     */
+    private function containerIds(string $name): string
+    {
+        $list = new Process(['docker', 'ps', '--all', '--quiet', '--filter', 'name=^/' . $name], null, null, null, 30.0);
+        $list->mustRun();
+
+        return trim($list->getOutput());
     }
 
     /**

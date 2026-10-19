@@ -45,6 +45,9 @@ abstract class RuntimeTestCase extends TestCase
 
     protected static MockCollector $collector;
 
+    /** Whether this process removed the containers of dead runs yet. */
+    private static bool $swept = false;
+
     private ?string $out = null;
 
     #[\Override]
@@ -52,6 +55,10 @@ abstract class RuntimeTestCase extends TestCase
     {
         self::assertTheRuntimeGroup();
         if (DockerRuntime::available()) {
+            if (!self::$swept) {
+                self::$swept = true;
+                DockerRuntime::removeStale(); // a killed run's containers
+            }
             self::$collector = MockCollector::start();
         }
     }

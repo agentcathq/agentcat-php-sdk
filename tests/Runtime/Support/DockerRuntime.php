@@ -14,7 +14,8 @@ use Symfony\Component\Process\Process;
  * `AGENTCAT_DIAGNOSTICS_ENDPOINT` there (`RuntimeTestCase::env()`), so a fixture that forgets its collector fails
  * closed. The repository is mounted read-only at its own path and is the working directory; every other mount is an
  * existing path under the test HOME (`--mount` never creates a host path). Every container is named
- * `agentcat-rt-<pid>-<hex>` and runs with `--rm`; `removeAll()` removes the ones that outlive their docker client.
+ * `agentcat-rt-<pid>-<hex>` and runs with `--rm`; `removeAll()` removes the ones that outlive their docker client,
+ * `removeStale()` those of a test process that died, and a started container ends on its own after its lifetime.
  * Every docker command runs with a timeout.
  */
 final class DockerRuntime
@@ -37,6 +38,17 @@ final class DockerRuntime
     private const int POLL_MICROSECONDS = 50_000;
 
     private const string FAIL_CLOSED_PREFIX = 'http://127.0.0.1:';
+
+    private const string NAME_PREFIX = 'agentcat-rt-';
+
+    /**
+     * Run by `sh -c` in front of a started container's entrypoint (`$1` is the lifetime): after the lifetime it sends
+     * SIGTERM to PID 1 (with `--init`, tini passes it on), and 10 s later SIGKILL to every other process.
+     */
+    private const string LIFETIME_SCRIPT = '(sleep "$1"; kill -TERM 1; sleep 10; kill -KILL -1) >/dev/null 2>&1 & shift; exec "$@"';
+
+    /** @var array<string, list<string>> the entrypoint of each image */
+    private static array $entrypoints = [];
 
     private static bool $checked = false;
 
@@ -82,13 +94,15 @@ final class DockerRuntime
     }
 
     /**
-     * Starts a detached container and waits until `$port` accepts TCP connections on 127.0.0.1.
+     * Starts a detached container and waits until `$port` accepts TCP connections on 127.0.0.1. The container ends on
+     * its own after `$lifetime` seconds, also when the test process dies before its cleanup.
      *
-     * @param list<string>          $command the command, after the image's entrypoint
-     * @param array<string, string> $env     the container's environment: `RuntimeTestCase::env()` plus the test's own
-     * @param array<string, string> $mounts  host path (under the test HOME) => container path
-     * @param float                 $timeout how long the port may take to accept a connection
-     * @param bool                  $remove  false keeps a stopped container for `logs()` until `stop()` (ruling P16)
+     * @param non-empty-list<string> $command  the command, after the image's entrypoint
+     * @param array<string, string>  $env      the container's environment: `RuntimeTestCase::env()` plus the test's own
+     * @param array<string, string>  $mounts   host path (under the test HOME) => container path
+     * @param float                  $timeout  how long the port may take to accept a connection
+     * @param bool                   $remove   false keeps a stopped container for `logs()` until `stop()` (ruling P16)
+     * @param float                  $lifetime how long the container may run at most
      */
     public static function start(
         string $image,
@@ -99,10 +113,13 @@ final class DockerRuntime
         bool $init = false,
         float $timeout = 30.0,
         bool $remove = true,
+        float $lifetime = 300.0,
     ): self {
         $timeout = self::seconds($timeout);
+        $lifetime = (string) (int) ceil(self::seconds($lifetime));
         $runtime = new self(self::newName());
-        $run = self::docker(['run', '--detach', ...self::options($runtime->name, $env, $mounts, $init, $remove), $image, ...$command]);
+        $options = self::options($runtime->name, $env, $mounts, $init, $remove);
+        $run = self::docker(['run', '--detach', ...$options, '--entrypoint', 'sh', $image, '-c', self::LIFETIME_SCRIPT, 'sh', $lifetime, ...self::entrypoint($image), ...$command]);
         if (!$run->isSuccessful()) {
             throw new \RuntimeException(sprintf('docker run %s failed: %s', $image, $run->getErrorOutput()));
         }
@@ -150,18 +167,26 @@ final class DockerRuntime
      */
     public static function removeAll(): void
     {
-        $list = self::docker(['ps', '--all', '--quiet', '--filter', 'name=^/' . self::namePrefix()]);
-        if (!$list->isSuccessful()) {
-            throw new \RuntimeException('docker ps failed: ' . $list->getErrorOutput());
-        }
-        $ids = preg_split('/\s+/', trim($list->getOutput()), -1, PREG_SPLIT_NO_EMPTY);
-        if ($ids === false || $ids === []) {
+        self::remove(self::names(self::namePrefix()));
+    }
+
+    /**
+     * Removes the containers of runtime test processes that no longer run on this host, for example a PHPUnit run that
+     * was killed before its cleanup. `RuntimeTestCase` calls it once per process, before the first container. Names
+     * of another form, and those of a live process, stay; without `/proc`, nothing is removed.
+     */
+    public static function removeStale(): void
+    {
+        if (!is_dir('/proc/self')) {
             return;
         }
-        $remove = self::docker(['rm', '--force', ...$ids]);
-        if (!$remove->isSuccessful() && !str_contains($remove->getErrorOutput(), 'No such container')) {
-            throw new \RuntimeException('docker rm failed: ' . $remove->getErrorOutput());
+        $stale = [];
+        foreach (self::names(self::NAME_PREFIX) as $name) {
+            if (preg_match('/\A' . self::NAME_PREFIX . '(\d+)-[0-9a-f]+\z/', $name, $match) === 1 && !is_dir('/proc/' . $match[1])) {
+                $stale[] = $name;
+            }
         }
+        self::remove($stale);
     }
 
     /**
@@ -204,10 +229,65 @@ final class DockerRuntime
     /** `docker rm --force`; a container that is already gone is fine. */
     public function stop(): void
     {
-        $remove = self::docker(['rm', '--force', $this->name]);
-        if (!$remove->isSuccessful() && !str_contains($remove->getErrorOutput(), 'No such container')) {
-            throw new \RuntimeException(sprintf('docker rm %s failed: %s', $this->name, $remove->getErrorOutput()));
+        self::remove([$this->name]);
+    }
+
+    /**
+     * The names of all containers, running or not, whose names start with `$prefix`.
+     *
+     * @return list<string>
+     */
+    private static function names(string $prefix): array
+    {
+        $list = self::docker(['ps', '--all', '--format', '{{.Names}}', '--filter', 'name=^/' . $prefix]);
+        if (!$list->isSuccessful()) {
+            throw new \RuntimeException('docker ps failed: ' . $list->getErrorOutput());
         }
+        $names = preg_split('/\s+/', trim($list->getOutput()), -1, PREG_SPLIT_NO_EMPTY);
+
+        return $names === false ? [] : $names;
+    }
+
+    /**
+     * `docker rm --force`; a container that is already gone is fine.
+     *
+     * @param list<string> $names
+     */
+    private static function remove(array $names): void
+    {
+        if ($names === []) {
+            return;
+        }
+        $remove = self::docker(['rm', '--force', ...$names]);
+        if (!$remove->isSuccessful() && !str_contains($remove->getErrorOutput(), 'No such container')) {
+            throw new \RuntimeException('docker rm failed: ' . $remove->getErrorOutput());
+        }
+    }
+
+    /**
+     * The image's entrypoint, which `start()` runs after its lifetime script.
+     *
+     * @return list<string>
+     */
+    private static function entrypoint(string $image): array
+    {
+        if (isset(self::$entrypoints[$image])) {
+            return self::$entrypoints[$image];
+        }
+        $inspect = self::docker(['image', 'inspect', '--format', '{{json .Config.Entrypoint}}', $image]);
+        if (!$inspect->isSuccessful()) {
+            throw new \RuntimeException(sprintf('docker image inspect %s failed: %s', $image, $inspect->getErrorOutput()));
+        }
+        $decoded = json_decode(trim($inspect->getOutput()), true, 8, JSON_THROW_ON_ERROR);
+        $entrypoint = [];
+        foreach (is_array($decoded) ? $decoded : [] as $part) {
+            if (!is_string($part)) {
+                throw new \RuntimeException(sprintf('The entrypoint of %s is not a list of strings: %s', $image, $inspect->getOutput()));
+            }
+            $entrypoint[] = $part;
+        }
+
+        return self::$entrypoints[$image] = $entrypoint;
     }
 
     private function waitForPort(int $port, float $timeout): void
@@ -339,7 +419,7 @@ final class DockerRuntime
     {
         $pid = getmypid();
 
-        return 'agentcat-rt-' . ($pid === false ? 0 : $pid) . '-';
+        return self::NAME_PREFIX . ($pid === false ? 0 : $pid) . '-';
     }
 
     /** A timeout the docker commands and the deadlines can use: finite, positive and at most `MAX_SECONDS`. */
