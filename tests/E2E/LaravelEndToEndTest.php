@@ -100,6 +100,7 @@ final class LaravelEndToEndTest extends TestCase
     public function testAnHttpCallIsDeliveredWithItsHeadersByTheEndOfTheRequest(): void
     {
         $scenario = $this->collector()->scenario();
+        FileTree::remove(self::$httpHome . '/laravel.log'); // the HTTP tests share it: only this request may write the line
 
         $answer = $this->callOverHttp(['X-E2E-Collector' => $scenario, 'X-AgentCat-Health-Run' => 'L']);
 
