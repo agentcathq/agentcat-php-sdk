@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AgentCat\Internal\Transport;
 
 use AgentCat\Internal\Logging\Log;
+use AgentCat\Internal\Logging\RepeatedLines;
 use AgentCat\Internal\Support\Clock;
 use AgentCat\Internal\Support\ErrorText;
 
@@ -145,6 +146,8 @@ final class CurlTransport implements Transport
     #[\Override]
     public function drain(float $deadline): bool
     {
+        RepeatedLines::begin(); // a failure of every pass is logged once
+
         try {
             while (true) {
                 $this->pump();
@@ -160,6 +163,8 @@ final class CurlTransport implements Transport
             Log::write(self::GAVE_UP . ErrorText::of($error));
 
             return false;
+        } finally {
+            RepeatedLines::end();
         }
     }
 
@@ -193,7 +198,7 @@ final class CurlTransport implements Transport
 
     /**
      * Runs transport work: PHP warnings are suppressed (a framework handler may turn them into exceptions) and
-     * any throwable is logged, never thrown (D32).
+     * any throwable is logged, never thrown (D32); inside a delivery, a repeated one once (`RepeatedLines`).
      *
      * @param \Closure(): void $work
      */
@@ -204,7 +209,7 @@ final class CurlTransport implements Transport
         try {
             $work();
         } catch (\Throwable $error) {
-            Log::write(self::GAVE_UP . ErrorText::of($error));
+            RepeatedLines::write(self::GAVE_UP . ErrorText::of($error));
         } finally {
             restore_error_handler();
         }

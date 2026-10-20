@@ -6,6 +6,7 @@ namespace AgentCat\Internal\Delivery;
 
 use AgentCat\Event;
 use AgentCat\Internal\Logging\Log;
+use AgentCat\Internal\Logging\RepeatedLines;
 use AgentCat\Internal\Pipeline\EventProcessor;
 use AgentCat\Internal\Pipeline\QueuedEvent;
 use AgentCat\Internal\Support\ErrorText;
@@ -365,6 +366,7 @@ final class EventQueue
             return false;
         }
         $this->busy = true;
+        RepeatedLines::begin(); // a failure of every pass is logged once
 
         try {
             $until = $deadline();
@@ -390,6 +392,7 @@ final class EventQueue
             return false;
         } finally {
             $this->busy = false;
+            RepeatedLines::end();
         }
     }
 
@@ -430,7 +433,7 @@ final class EventQueue
             }
             $this->transport->pump();
         } catch (\Throwable $e) {
-            Log::write(self::GAVE_UP . ErrorText::of($e));
+            RepeatedLines::write(self::GAVE_UP . ErrorText::of($e));
         }
         if ($tick) {
             foreach ($this->companions as $companion) {
