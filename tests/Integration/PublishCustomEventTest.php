@@ -41,6 +41,8 @@ final class PublishCustomEventTest extends TestCase
 
     private const string NOT_TRACKED = 'Server is not tracked. Please call agentcat.track() first or provide a session ID string.';
 
+    private const string STATELESS = 'Server is not tracked: pass the Mcp\Server\Builder (or the Mcp\Server built from it) to AgentCat::publishCustomEvent(); Builder::buildStateless() returns a StatelessProtocol, which AgentCat cannot map to its Builder';
+
     private const string NO_SESSION = 'publishCustomEvent: no sessionId provided; event will be published without a session. Pass eventData.sessionId to attribute it to a task.';
 
     private const string PUBLISHED_WITHOUT_SESSION = "Published custom event without a session with type 'agentcat:custom'";
@@ -117,6 +119,18 @@ final class PublishCustomEventTest extends TestCase
     }
 
     /** @return iterable<string, array{\Closure(): object}> */
+    /** What `Builder::buildStateless()` returns cannot be mapped to its Builder, so the message says what to pass. */
+    public function testAStatelessProtocolIsRejectedWithTheObjectToPass(): void
+    {
+        $protocol = TrackingFixture::builder()->buildStateless();
+
+        $error = Thrown::by(\InvalidArgumentException::class, fn() => $this->client->publishCustomEvent($protocol, self::PROJECT, new CustomEvent(sessionId: 'ses_1')));
+
+        $this->assertSame(self::STATELESS, $error->getMessage());
+        $this->assertNothingQueued();
+        $this->assertSame([], $this->logger->messages());
+    }
+
     public static function untracked(): iterable
     {
         yield 'a Builder' => [TrackingFixture::builder(...)];

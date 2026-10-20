@@ -48,6 +48,12 @@ final class Libraries
         return implode(' ', array_map(static fn(Library $library): string => $library->supportMatrix(), self::all()));
     }
 
+    /** What to pass instead of an object that no library can map to a tracked server; null when there is no advice. */
+    public static function untrackedAdvice(object $server): ?string
+    {
+        return McpSdkLibrary::untrackedAdvice($server);
+    }
+
     public static function trackedServer(object $server): ?TrackedServer
     {
         foreach (self::all() as $library) {

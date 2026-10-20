@@ -226,6 +226,11 @@ final readonly class Client
                     return;
                 }
 
+                $advice = Libraries::untrackedAdvice($serverOrSessionId);
+                if ($advice !== null) {
+                    throw new \InvalidArgumentException('Server is not tracked: ' . $advice);
+                }
+
                 throw new \InvalidArgumentException('Server is not tracked. Please call agentcat.track() first or provide a session ID string.');
             }
             if ($sessionId === '') {
