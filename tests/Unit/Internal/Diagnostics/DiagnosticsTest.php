@@ -33,10 +33,13 @@ final class DiagnosticsTest extends TestCase
 
     private const int WALL_MILLIS = 1_792_163_096_821;
 
-    /** Read by diagnostics (D50), and the unprefixed names an application can have for itself. */
+    /**
+     * Read by diagnostics (D50), the unprefixed names an application can have for itself, and FrankenPHP's worker flag,
+     * which decides the 2 s window (D47).
+     */
     private const array VARIABLES = [
         'AGENTCAT_DISABLE_DIAGNOSTICS', 'AGENTCAT_DIAGNOSTICS_ENDPOINT', 'AGENTCAT_DIAGNOSTICS_TOKEN',
-        'DISABLE_DIAGNOSTICS', 'DIAGNOSTICS_ENDPOINT', 'DIAGNOSTICS_TOKEN', 'APP_ENV',
+        'DISABLE_DIAGNOSTICS', 'DIAGNOSTICS_ENDPOINT', 'DIAGNOSTICS_TOKEN', 'APP_ENV', 'FRANKENPHP_WORKER',
     ];
 
     private Environment $environment;
@@ -237,17 +240,25 @@ final class DiagnosticsTest extends TestCase
         $this->assertSame(2, $this->posts());
     }
 
-    /** @return iterable<string, array{string}> */
+    /** @return iterable<string, array{string, array<string, string>}> */
     public static function longRunningSapis(): iterable
     {
-        yield 'command line' => ['cli'];
-        yield 'phpdbg' => ['phpdbg'];
+        yield 'command line' => ['cli', []];
+        yield 'phpdbg' => ['phpdbg', []];
+        yield 'FrankenPHP worker mode' => ['frankenphp', ['FRANKENPHP_WORKER' => '1']]; // the worker's $_SERVER only
     }
 
-    /** D47: a process that outlives its requests (a stdio server, a worker) keeps the TypeScript 2 s window. */
+    /**
+     * D47: a process that outlives its requests (a stdio server, a worker) keeps the TypeScript 2 s window.
+     *
+     * @param array<string, string> $server more `$_SERVER` entries of the process
+     */
     #[DataProvider('longRunningSapis')]
-    public function testALongRunningProcessPostsOnceItsOldestLineIsTwoSecondsOld(string $sapi): void
+    public function testALongRunningProcessPostsOnceItsOldestLineIsTwoSecondsOld(string $sapi, array $server): void
     {
+        foreach ($server as $name => $value) {
+            $_SERVER[$name] = $value; // setUp() cleared VARIABLES, and tearDown() restores them
+        }
         $this->init('proj_ABC', sapi: $sapi);
         Log::write('first');
         $this->now += 2.0;
