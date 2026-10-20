@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace AgentCat\Tests\Contract\McpSdk;
 
+use AgentCat\Client;
+use AgentCat\Internal\ClientSeams;
 use AgentCat\Internal\Delivery\EventQueue;
 use AgentCat\Internal\Engine\CallInterceptor;
 use AgentCat\Internal\Engine\Publisher;
 use AgentCat\Internal\Engine\TrackedServer;
+use AgentCat\Internal\Engine\TrackedServers;
 use AgentCat\Internal\Logging\Log;
+use AgentCat\McpSdk\Internal\Access\BuilderAccess;
 use AgentCat\McpSdk\Internal\CallToolInterceptor;
 use AgentCat\McpSdk\Internal\ListToolsInterceptor;
 use AgentCat\McpSdk\McpSdkAdapter;
@@ -60,6 +64,7 @@ final class RuntimeDriftTest extends TestCase
     #[\Override]
     protected function tearDown(): void
     {
+        TrackedServers::resetIncomplete(); // a failed track() marks the process
         Log::reset();
     }
 
@@ -76,6 +81,32 @@ final class RuntimeDriftTest extends TestCase
         );
         $this->assertInstanceOf(\ErrorException::class, $error->getPrevious());
         $this->assertSame([self::COMPATIBILITY], $this->logger->messages());
+    }
+
+    /**
+     * The server name is read from `$parts['configuration']->serverInfo`. When only that read fails at track() (the
+     * configuration is a string here, as a changed mcp/sdk could make it, while the request handlers stay readable),
+     * track() returns the Builder untracked, and the failure line names `serverInfo`.
+     */
+    #[Group('ac-02-3')]
+    public function testTrackLeavesABuilderUntrackedWhenItsServerInfoCannotBeRead(): void
+    {
+        $builder = $this->builder();
+        $this->setParts($builder, ['requestHandlers' => [], 'configuration' => 'configuration']);
+        $client = new Client(ClientSeams::of($this->queue, static fn(): bool => true));
+
+        $this->assertSame($builder, $client->track($builder, 'proj_aaaaaaaaaaaaaaaaaaaaaaaaaaa'));
+
+        $this->assertSame([
+            self::COMPATIBILITY,
+            sprintf(
+                'Warning: Failed to track server - UnexpectedValueException: AgentCat SDK compatibility error: mcp/sdk %s internals changed (ErrorException: Attempt to read property "serverInfo" on string). %s',
+                McpSdkAdapter::version(),
+                McpSdkAdapter::SUPPORT_MATRIX,
+            ),
+        ], $this->logger->messages());
+        $this->assertNull(TrackedServers::get($builder), 'nothing is tracked');
+        $this->assertNull(BuilderAccess::container($builder), 'nothing is installed');
     }
 
     public function testSignalsLeaveOutBuiltWhenPartsCannotBeRead(): void

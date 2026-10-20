@@ -242,12 +242,8 @@ final class ClientTrackTest extends TestCase
         $this->assertSame(['echo'], $this->names($this->harness($builder)->listTools()), 'no AgentCat handler was added');
     }
 
-    /**
-     * The Builder keeps the server name in a member that AgentCat reads (`$parts`, set by `build()`). When that member
-     * cannot be read, track() returns the Builder untracked, and the compatibility lines name the member.
-     */
-    #[Group('ac-02-3')]
-    public function testABuilderWhoseServerInfoCannotBeReadIsReturnedUntracked(): void
+    /** When `Builder::$parts` cannot be read, track() returns the Builder untracked, and the lines name the member. */
+    public function testABuilderWhosePartsCannotBeReadIsReturnedUntracked(): void
     {
         $builder = TrackingFixture::builder();
         Tools::echo($builder);
