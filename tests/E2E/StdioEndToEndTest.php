@@ -266,7 +266,7 @@ final class StdioEndToEndTest extends TestCase
         $requests = $this->collector()->requests($diagnostics);
         $this->assertCount(1, $requests, sprintf('one diagnostics POST; the server lived %.3f s', $lifetime));
         $this->assertSame('/v1/logs', $requests[0]->path);
-        $body = $this->body($requests[0]);
+        $body = MockCollector::body($requests[0]);
         $this->assertStringContainsString('"stringValue":"php"', $body);
         $this->assertStringContainsString('AgentCat setup complete | project proj_', $body);
         $this->assertSame(1, substr_count($body, 'Successfully sent event '), 'the per-event line of the EOF drain');
@@ -421,15 +421,6 @@ final class StdioEndToEndTest extends TestCase
         } while (microtime(true) < $deadline);
 
         return null;
-    }
-
-    /** The body of a request the collector recorded. */
-    private function body(\stdClass $request): string
-    {
-        $body = $request->body ?? null;
-        $this->assertIsString($body);
-
-        return $body;
     }
 
     /** The server's agentcat.log. */

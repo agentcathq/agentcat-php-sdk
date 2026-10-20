@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AgentCat\Tests\Runtime;
 
 use AgentCat\Internal\Json\Json;
+use AgentCat\Tests\Integration\Support\MockCollector;
 use AgentCat\Tests\Runtime\Support\DockerRuntime;
 use AgentCat\Tests\Runtime\Support\FastCgiClient;
 use AgentCat\Tests\Runtime\Support\Images;
@@ -117,14 +118,14 @@ final class FpmTest extends RuntimeTestCase
         $more = $fpm->request(self::repo() . self::HTTP_SERVER, 'POST', '/mcp', $this->headers('echo', $headers), $this->modernCall('echo', ['msg' => 'two', 'session_id' => 'start']));
         $this->assertSame(200, $more['status'], $more['body']);
         $second = $this->eventId($this->requestAt($events, 1));
-        $posts = $this->waitForPostWith($diagnostics, 'Successfully sent event ' . $second);
+        $posts = $this->waitUntil($diagnostics, static fn(array $posts): bool => MockCollector::withASentEvent($posts, $second) !== [], self::COLLECTOR_DEADLINE_SECONDS, 'the one more request posted its diagnostics');
 
         $this->assertCount(2, $posts, 'one diagnostics POST per request');
         foreach ($posts as $post) {
             $this->assertSame('/v1/logs', $post->path ?? null);
-            $this->assertSame(1, substr_count($this->body($post), 'AgentCat setup started'), 'each POST carries all the lines of one request');
+            $this->assertSame(1, substr_count(MockCollector::body($post), 'AgentCat setup started'), 'each POST carries all the lines of one request');
         }
-        $own = array_values(array_filter($posts, fn(\stdClass $post): bool => str_contains($this->body($post), 'Successfully sent event ' . $first)));
+        $own = MockCollector::withASentEvent($posts, $first);
         $this->assertCount(1, $own, 'one POST carries the delivery line of the first request');
         $this->assertGreaterThan($answer['endedAt'] + self::AFTER_THE_HOOK_SECONDS, $this->start($own[0]), 'the first request posted its diagnostics after the hook, which ran after the answer');
     }
@@ -247,7 +248,7 @@ final class FpmTest extends RuntimeTestCase
     /** The event that a request to the collector carried. */
     private function event(\stdClass $request): \stdClass
     {
-        $event = Json::decode($this->body($request));
+        $event = Json::decode(MockCollector::body($request));
         $this->assertInstanceOf(\stdClass::class, $event);
 
         return $event;
@@ -259,34 +260,6 @@ final class FpmTest extends RuntimeTestCase
         $this->assertIsString($id);
 
         return $id;
-    }
-
-    /**
-     * Waits until a request of `$scenario` carries `$line`, and fails the test after the deadline.
-     *
-     * @return list<\stdClass> every request of the scenario so far
-     */
-    private function waitForPostWith(string $scenario, string $line): array
-    {
-        $deadline = microtime(true) + self::COLLECTOR_DEADLINE_SECONDS;
-        do {
-            $posts = self::$collector->requests($scenario);
-            foreach ($posts as $post) {
-                if (str_contains($this->body($post), $line)) {
-                    return $posts;
-                }
-            }
-            usleep(20_000);
-        } while (microtime(true) < $deadline);
-        self::fail(sprintf('No request of %s carried "%s" within %.1f s: %d requests', $scenario, $line, self::COLLECTOR_DEADLINE_SECONDS, count($posts)));
-    }
-
-    private function body(\stdClass $request): string
-    {
-        $body = $request->body ?? null;
-        $this->assertIsString($body);
-
-        return $body;
     }
 
     /** When the request reached the collector. */

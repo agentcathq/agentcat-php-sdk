@@ -41,8 +41,6 @@ abstract class RuntimeTestCase extends TestCase
         'app/storage/logs',
     ];
 
-    private const int POLL_MICROSECONDS = 20_000;
-
     protected static MockCollector $collector;
 
     /** Whether this process removed the containers of dead runs yet. */
@@ -185,13 +183,22 @@ abstract class RuntimeTestCase extends TestCase
      */
     final protected function waitForRequests(string $scenario, int $count, float $timeout): array
     {
-        $deadline = microtime(true) + $timeout;
-        $requests = self::$collector->requests($scenario);
-        while (count($requests) < $count && microtime(true) < $deadline) {
-            usleep(self::POLL_MICROSECONDS);
-            $requests = self::$collector->requests($scenario);
-        }
-        $this->assertGreaterThanOrEqual($count, count($requests), sprintf('%d of %d requests reached the collector within %.1f s', count($requests), $count, $timeout));
+        return $this->waitUntil($scenario, static fn(array $requests): bool => count($requests) >= $count, $timeout, sprintf('%d requests reached the collector', $count));
+    }
+
+    /**
+     * Waits until `$done` accepts the requests of the collector's scenario, and fails the test after `$timeout` seconds
+     * with `$what` and the number of requests.
+     *
+     * @param \Closure(list<\stdClass>): bool $done
+     * @param string                          $what what `$done` waits for, for the failure message
+     *
+     * @return list<\stdClass> every request of the scenario so far, in arrival order
+     */
+    final protected function waitUntil(string $scenario, \Closure $done, float $timeout, string $what): array
+    {
+        $requests = self::$collector->waitFor($scenario, $done, $timeout);
+        $this->assertTrue($done($requests), sprintf('Not within %.1f s: %s (%d requests)', $timeout, $what, count($requests)));
 
         return $requests;
     }
