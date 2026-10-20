@@ -45,7 +45,7 @@ final class SymfonyConformanceTest extends SymfonyTestCase
     {
         parent::setUpBeforeClass();
         if (!class_exists(McpBundle::class)) {
-            return; // the mcp/sdk main leg: every test skips
+            return; // the mcp/sdk 0.9 leg: every test skips
         }
         self::$apiUrl = MockCollector::closedPortUrl();
         WarmUp::run(static function (): void {

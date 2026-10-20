@@ -263,7 +263,7 @@ final class CallToolTest extends TestCase
 
     /**
      * Header conflict 4: mcp/sdk cannot tell `{}` from `[]`, so an empty structuredContent is an empty object to the
-     * mirror and to the event. On main (C3), mcp/sdk itself rejects `[]` against an object outputSchema first.
+     * mirror and to the event. On 0.9.0 and main (C3), mcp/sdk itself rejects `[]` against an object outputSchema first.
      */
     public function testAnEmptyStructuredContentCountsAsAnEmptyObject(): void
     {
@@ -276,7 +276,7 @@ final class CallToolTest extends TestCase
         $result = HttpHarness::result($harness->callTool('structured', ['session_id' => 'start']));
 
         $event = $this->fixture->event();
-        if (McpSdkVersion::isMain()) {
+        if (McpSdkVersion::hasModernEra()) {
             $this->assertTrue(JsonAssert::at($result, 'isError'));
             $texts = $this->texts($result);
             $this->assertCount(2, $texts);

@@ -272,11 +272,11 @@ final class StdioEndToEndTest extends TestCase
         $this->assertSame(1, substr_count($body, 'Successfully sent event '), 'the per-event line of the EOF drain');
     }
 
-    /** mcp/sdk main serves the 2026-07-28 era over stdio when the first request carries its envelope. */
+    /** mcp/sdk 0.9.0 and main serve the 2026-07-28 era over stdio when the first request carries its envelope. */
     #[MaximumDuration(15000)]
     public function testAModernEraFirstRequestIsTrackedWithoutAHandshake(): void
     {
-        if (!McpSdkVersion::isMain()) {
+        if (!McpSdkVersion::hasModernEra()) {
             self::markTestSkipped('mcp/sdk 0.8.1 serves only the handshake era over stdio');
         }
         $client = $this->start();

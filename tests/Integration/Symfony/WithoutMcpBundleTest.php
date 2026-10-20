@@ -22,7 +22,7 @@ use Symfony\Component\HttpKernel\KernelEvents;
 /**
  * AgentCatBundle in a Symfony application without symfony/mcp-bundle, FrameworkBundle and AgentCatBundle only: the Flex
  * recipe registers the bundle in every application that requires agentcat/sdk, a plain mcp/sdk one too. These tests
- * need no symfony/mcp-bundle, so they run in the mcp/sdk main leg too (`tests/bin/mcp-sdk-main.sh`), which removes it.
+ * need no symfony/mcp-bundle, so they run in the mcp/sdk 0.9 leg too (`tests/bin/mcp-sdk-leg.sh`), which removes it.
  */
 final class WithoutMcpBundleTest extends SymfonyTestCase
 {

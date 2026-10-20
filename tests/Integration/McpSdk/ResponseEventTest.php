@@ -131,11 +131,11 @@ final class ResponseEventTest extends TestCase
         $listing = $harness->listToolsModern();
         $call = HttpHarness::result($harness->callToolModern('echo', ['msg' => 'hi']));
 
-        // mcp/sdk 0.8.1 dispatches no ResponseEvent in the 2026-07-28 era; main does.
+        // mcp/sdk 0.8.1 dispatches no ResponseEvent in the 2026-07-28 era; 0.9.0 and main do.
         $lists = $this->dispatcher->results('tools/list');
         $calls = $this->dispatcher->results('tools/call');
-        $this->assertCount(McpSdkVersion::isMain() ? 1 : 0, $lists);
-        $this->assertCount(McpSdkVersion::isMain() ? 1 : 0, $calls);
+        $this->assertCount(McpSdkVersion::hasModernEra() ? 1 : 0, $lists);
+        $this->assertCount(McpSdkVersion::hasModernEra() ? 1 : 0, $calls);
         foreach ($lists as $result) {
             $this->assertInstanceOf(ListToolsResult::class, $result);
             $this->assertWireCarries($listing, $result);
