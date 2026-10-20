@@ -14,8 +14,9 @@ final class FinishRequest
 {
     /**
      * PHP-FPM `fastcgi_finish_request`, LiteSpeed `litespeed_finish_request`, FrankenPHP (classic mode)
-     * `frankenphp_finish_request` or its `fastcgi_finish_request` alias; null elsewhere. FrankenPHP worker mode
-     * (`isFrankenPhpWorker()`) gets null: its shutdown functions do not run per request.
+     * `frankenphp_finish_request` or its `fastcgi_finish_request` alias, NGINX Unit (`isUnit()`)
+     * `fastcgi_finish_request`; null elsewhere. FrankenPHP worker mode (`isFrankenPhpWorker()`) gets null: its shutdown
+     * functions do not run per request.
      *
      * @param array<array-key, mixed>               $server         `$_SERVER`
      * @param \Closure(string): bool                $functionExists
@@ -27,6 +28,7 @@ final class FinishRequest
             $sapi === 'fpm-fcgi' => 'fastcgi_finish_request',
             $sapi === 'litespeed' => 'litespeed_finish_request',
             $sapi === 'frankenphp' && !self::isFrankenPhpWorker($server, $getenv) => $functionExists('frankenphp_finish_request') ? 'frankenphp_finish_request' : 'fastcgi_finish_request',
+            $sapi === 'cli-server' && self::isUnit($server) => 'fastcgi_finish_request',
             default => null,
         };
 
@@ -42,6 +44,19 @@ final class FinishRequest
     public static function isFrankenPhpWorker(array $server, ?\Closure $getenv = null): bool
     {
         return isset($server['FRANKENPHP_WORKER']) || ($getenv ?? getenv(...))('FRANKENPHP_WORKER') !== false;
+    }
+
+    /**
+     * NGINX Unit: its PHP module reports the SAPI of `php -S` (`cli-server`), and Unit names itself in
+     * `SERVER_SOFTWARE` (`Unit/<version>`), where `php -S` names PHP's development server.
+     *
+     * @param array<array-key, mixed> $server `$_SERVER`
+     */
+    private static function isUnit(array $server): bool
+    {
+        $software = $server['SERVER_SOFTWARE'] ?? null;
+
+        return is_string($software) && str_starts_with($software, 'Unit/');
     }
 
     /**
