@@ -40,7 +40,7 @@ final readonly class BridgeKeys
     }
 
     /**
-     * A list of strings, such as the server classes AgentCat never tracks. A string is a list of one, but the empty string
+     * A list of strings, such as the server classes AgentCat never tracks. A string is a list of one, but a blank string
      * names nothing: the default, with one line. A null entry is unset.
      *
      * @param list<string> $default the value when the key is unset, and when it is of a wrong type
@@ -50,7 +50,7 @@ final readonly class BridgeKeys
     public function strings(string $key, array $default): array
     {
         $value = $this->config[$key] ?? $default;
-        if ($value === '') {
+        if (is_string($value) && trim($value) === '') {
             ($this->warn)(sprintf(self::WRONG_TYPE, $key, 'array or non-empty string', 'empty string')); // names no server
 
             return $default;
