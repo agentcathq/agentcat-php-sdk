@@ -38,16 +38,19 @@ final class CliTest extends RuntimeTestCase
 
     private const int SIGTERM = 15;
 
-    /** @return iterable<string, array{list<string>, string}> the server's command, and AgentCat's log in `/out` */
+    /** @return iterable<string, array{list<string>, string, int}> the server's command, AgentCat's log in `/out`, and the exit code after the signal */
     public static function stdioServers(): iterable
     {
-        yield 'mcp/sdk' => [['php', self::repo() . '/tests/E2E/Fixtures/stdio-server.php'], 'agentcat.log'];
-        yield 'laravel/mcp artisan mcp:start' => [['php', self::repo() . '/tests/E2E/Laravel/artisan.php'], 'app/storage/logs/agentcat.log'];
+        yield 'mcp/sdk' => [['php', self::repo() . '/tests/E2E/Fixtures/stdio-server.php'], 'agentcat.log', 128 + self::SIGTERM];
+        yield 'laravel/mcp artisan mcp:start' => [['php', self::repo() . '/tests/E2E/Laravel/artisan.php'], 'app/storage/logs/agentcat.log', 128 + self::SIGTERM];
+        yield 'symfony/mcp-bundle mcp:server' => [['php', self::repo() . '/tests/Runtime/Fixtures/symfony-console.php', 'mcp:server'], 'symfony/log/agentcat.log', 0];
     }
 
     /**
      * `03` AC-10 and AC-37: the signal drain delivers the queued event, then raises SIGTERM again with the default
-     * disposition, so the container ends with 128 + 15; stdout carries only the JSON-RPC answers.
+     * disposition, so the container ends with 128 + 15; stdout carries only the JSON-RPC answers. Under Symfony's
+     * `mcp:server` the drain chains to the handler that Symfony Console registered, which dispatches its signal event
+     * (exit code 0 by default) and calls `exit(0)`: the code is Console's own, 0, and AgentCat never raises the signal.
      *
      * @param list<string> $server
      */
@@ -55,7 +58,7 @@ final class CliTest extends RuntimeTestCase
     #[Group('ac-03-10')]
     #[Group('ac-03-37')]
     #[MaximumDuration(60000)]
-    public function testSigtermDeliversTheQueueOnAStockBuildAndStdoutStaysJsonRpc(array $server, string $log): void
+    public function testSigtermDeliversTheQueueOnAStockBuildAndStdoutStaysJsonRpc(array $server, string $log, int $exitCode): void
     {
         $scenario = self::$collector->scenario();
         $out = $this->out();
@@ -70,7 +73,7 @@ final class CliTest extends RuntimeTestCase
 
         $client->signal(self::SIGTERM); // docker run passes it to the container's init, which passes it to PHP
 
-        $this->assertSame(128 + self::SIGTERM, $client->waitForExit(self::EXIT_SECONDS), $client->process()->getErrorOutput());
+        $this->assertSame($exitCode, $client->waitForExit(self::EXIT_SECONDS), $client->process()->getErrorOutput());
         $this->assertCount(1, self::$collector->requests($scenario));
         $this->assertSame(1, substr_count($this->outFile($log), MockCollector::SENT_EVENT), 'the drain had the delivery\'s answer before PHP ended');
         $lines = $client->stdoutLines();

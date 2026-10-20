@@ -69,21 +69,58 @@ final class UnitTest extends RuntimeTestCase
         $this->assertNoPhpErrors($runtime);
     }
 
+    /** @return iterable<string, array{string}> the MCP endpoint that `Fixtures/unit.php` hands to a bridge's front controller */
+    public static function bridges(): iterable
+    {
+        yield 'symfony/mcp-bundle' => ['/mcp/conformance'];
+        yield 'laravel/mcp' => ['/mcp/e2e'];
+    }
+
+    /**
+     * The bridges under Unit: the answer carries no Content-Length (`fastcgi_finish_request()` ends it, so neither
+     * bridge adds one) and still reaches the client before the delayed delivery. An untimed first request compiles
+     * the Symfony container and fills Laravel's caches, and its delivery takes the collector's undelayed step; the
+     * timed request's delivery waits 2 s.
+     */
+    #[DataProvider('bridges')]
+    #[Group('ac-03-1')]
+    #[MaximumDuration(60000)]
+    public function testTheBridgesAnswerBeforeTheDelivery(string $path): void
+    {
+        $events = self::$collector->scenario([['status' => 202], ['status' => 202, 'delayMs' => 2000]]);
+        $diagnostics = self::$collector->scenario();
+        [$runtime, $base] = $this->unit($diagnostics, $events);
+        $client = new McpHttpClient($base . $path);
+        $this->warmUp($client, $events, self::COLLECTOR_DEADLINE_SECONDS);
+        $started = microtime(true);
+
+        $answer = $client->post(self::echoCall(2, 'hi'), self::echoHeaders($events));
+
+        $this->assertLessThan(self::ANSWER_SECONDS, $answer['receivedAt'] - $started, 'Unit held the answer for the delivery');
+        $this->assertEchoed('hi', $answer, 2);
+        $this->assertArrayNotHasKey('content-length', $answer['headers'], 'the bridge added a length that Unit does not need');
+        $this->assertSame('cli-server', $answer['headers']['x-e2e-sapi'] ?? null, 'Unit reports the SAPI of php -S');
+        $this->assertDeliveredAfter($answer, $events, self::COLLECTOR_DEADLINE_SECONDS, 2);
+        $this->waitForSentEventPosts($diagnostics, 2, self::COLLECTOR_DEADLINE_SECONDS);
+        $this->assertNoPhpErrors($runtime);
+    }
+
     /**
      * NGINX Unit on 127.0.0.1 only (checked: 127.0.0.2 is refused), running `Fixtures/unit.php` for every request in
      * two application processes. The configuration is `conf.json` in a state directory in `out()`, so Unit starts
      * with it once: the image's entrypoint configures an empty state directory with a Unit that it stops again, and
      * the port would accept connections before that restart. The application gets `RuntimeTestCase::env()` with
-     * diagnostics on and sent to `$diagnostics`, and logs PHP's errors to Unit's log, the container's output. `HOME` is
+     * diagnostics on and sent to `$diagnostics`, and `$events` as the AgentCat API when a bridge's fixture, which reads it from
+     * the environment, runs (otherwise a closed port; the echo fixtures read the request's `X-E2E-Collector`), and logs PHP's errors to Unit's log, the container's output. `HOME` is
      * `/out`, where AgentCat writes its log.
      *
      * @return array{DockerRuntime, string} the container, and its base URL
      */
-    private function unit(string $diagnostics): array
+    private function unit(string $diagnostics, ?string $events = null): array
     {
         $out = $this->out();
         $port = $this->freePort();
-        $env = [...$this->env(), ...$this->diagnosticsTo($diagnostics)];
+        $env = [...$this->env($events), ...$this->diagnosticsTo($diagnostics)];
         $state = $out . '/unit';
         $this->assertTrue(mkdir($state, 0o777) && chmod($state, 0o777), 'Cannot create ' . $state);
         $this->assertNotFalse(file_put_contents($state . '/conf.json', json_encode([
