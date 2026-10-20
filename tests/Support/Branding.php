@@ -105,17 +105,56 @@ final class Branding
         return $bodies;
     }
 
-    /** The README without its fenced code blocks: what renders as text, links and images. */
+    /** The README without its fenced code blocks, line for line: what renders as text, links and images. */
     public static function withoutCode(string $markdown): string
     {
         $texts = [];
         foreach (self::blocks($markdown) as $block) {
             if ($block['kind'] !== self::CODE) {
-                $texts[] = $block['text'];
+                $texts[] = $block['raw'];
             }
         }
 
         return implode("\n\n", $texts);
+    }
+
+    /**
+     * The order of the README's parts: the kind of each block before the first heading (`text`, `quote` or `code`),
+     * then every heading line.
+     *
+     * @return list<string>
+     */
+    public static function outline(string $markdown): array
+    {
+        $outline = [];
+        $preamble = true;
+        foreach (self::blocks($markdown) as $block) {
+            if ($block['kind'] === self::HEADING) {
+                $preamble = false;
+                $outline[] = $block['text'];
+            } elseif ($preamble) {
+                $outline[] = $block['kind'];
+            }
+        }
+
+        return $outline;
+    }
+
+    /**
+     * The heading lines of the shared sections, in the order of the README.
+     *
+     * @return list<string>
+     */
+    public static function sharedHeadings(string $markdown): array
+    {
+        $headings = [];
+        foreach (self::outline($markdown) as $line) {
+            if (str_starts_with($line, '#') && in_array(self::headingText($line), self::HEADED, true)) {
+                $headings[] = $line;
+            }
+        }
+
+        return $headings;
     }
 
     /**
@@ -144,8 +183,8 @@ final class Branding
     }
 
     /**
-     * What changed on the TypeScript main branch since the copy: one line per shared section or image that differs,
-     * by name.
+     * What changed on the TypeScript main branch since the copy: one line for a changed outline (a callout or a section
+     * added, removed or moved), then one line per shared section or image that differs, by name.
      *
      * @param array<string, string> $images         path => git blob SHA-1 of the copied image
      * @param array<string, string> $upstreamImages path => git blob SHA-1 on the main branch
@@ -155,6 +194,10 @@ final class Branding
     public static function drift(string $copy, string $upstream, array $images, array $upstreamImages): array
     {
         $changes = [];
+        $outline = self::firstDifference(implode("\n", self::outline($copy)), implode("\n", self::outline($upstream)));
+        if ($outline !== '') {
+            $changes[] = 'outline (the blocks before the first heading, then the headings): ' . $outline;
+        }
         $now = self::sections($upstream);
         foreach (self::sections($copy) as $name => $prose) {
             $current = $now[$name] ?? null;
@@ -225,7 +268,7 @@ final class Branding
     /**
      * The sections before the first heading.
      *
-     * @param list<array{kind: string, text: string, info: string}> $blocks
+     * @param list<array{kind: string, text: string, info: string, raw: string}> $blocks
      *
      * @return array<string, string|null>
      */
@@ -259,7 +302,7 @@ final class Branding
     /**
      * The section under the heading `$title`, its heading line first, up to the next heading.
      *
-     * @param list<array{kind: string, text: string, info: string}> $blocks
+     * @param list<array{kind: string, text: string, info: string, raw: string}> $blocks
      */
     private static function headed(array $blocks, string $title): ?string
     {
@@ -287,7 +330,7 @@ final class Branding
         return null;
     }
 
-    /** @param list<array{kind: string, text: string, info: string}> $blocks */
+    /** @param list<array{kind: string, text: string, info: string, raw: string}> $blocks */
     private static function prose(array $blocks): ?string
     {
         $texts = [];
@@ -308,7 +351,7 @@ final class Branding
     /**
      * The Markdown blocks: fenced code (its body and info string), headings, block quotes and other text.
      *
-     * @return list<array{kind: string, text: string, info: string}>
+     * @return list<array{kind: string, text: string, info: string, raw: string}>
      */
     private static function blocks(string $markdown): array
     {
@@ -320,7 +363,7 @@ final class Branding
         foreach (is_array($split) ? $split : [] as $line) {
             if ($fence !== null) {
                 if (preg_match('/\A {0,3}' . preg_quote($fence[0], '/') . '{' . strlen($fence) . ',}\s*\z/', $line) === 1) {
-                    $blocks[] = ['kind' => self::CODE, 'text' => implode("\n", $lines), 'info' => $info];
+                    $blocks[] = ['kind' => self::CODE, 'text' => implode("\n", $lines), 'info' => $info, 'raw' => implode("\n", $lines)];
                     $lines = [];
                     $fence = null;
                 } else {
@@ -340,13 +383,13 @@ final class Branding
                 self::endParagraph($blocks, $lines);
             } elseif (preg_match('/\A#{1,6}\s/', $line) === 1) {
                 self::endParagraph($blocks, $lines);
-                $blocks[] = ['kind' => self::HEADING, 'text' => rtrim($line), 'info' => ''];
+                $blocks[] = ['kind' => self::HEADING, 'text' => rtrim($line), 'info' => '', 'raw' => $line];
             } else {
                 $lines[] = $line;
             }
         }
         if ($fence !== null) {
-            $blocks[] = ['kind' => self::CODE, 'text' => implode("\n", $lines), 'info' => $info]; // an unclosed fence runs to the end
+            $blocks[] = ['kind' => self::CODE, 'text' => implode("\n", $lines), 'info' => $info, 'raw' => implode("\n", $lines)]; // an unclosed fence runs to the end
         } else {
             self::endParagraph($blocks, $lines);
         }
@@ -357,7 +400,7 @@ final class Branding
     /**
      * Adds the lines read so far as a block quote or a text block, and starts the next block.
      *
-     * @param list<array{kind: string, text: string, info: string}> $blocks
+     * @param list<array{kind: string, text: string, info: string, raw: string}> $blocks
      * @param list<string> $lines
      */
     private static function endParagraph(array &$blocks, array &$lines): void
@@ -365,7 +408,7 @@ final class Branding
         if ($lines === []) {
             return;
         }
-        $blocks[] = ['kind' => str_starts_with(ltrim($lines[0]), '>') ? self::QUOTE : self::TEXT, 'text' => self::unwrap($lines), 'info' => ''];
+        $blocks[] = ['kind' => str_starts_with(ltrim($lines[0]), '>') ? self::QUOTE : self::TEXT, 'text' => self::unwrap($lines), 'info' => '', 'raw' => implode("\n", $lines)];
         $lines = [];
     }
 

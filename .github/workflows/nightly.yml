@@ -364,7 +364,7 @@ jobs:
           REPORT: ${{ runner.temp }}/branding-drift.md
         run: |
           set -o pipefail
-          php tests/bin/branding-drift.php | tee "$REPORT"
+          php tests/bin/branding-drift.php 2>&1 | tee "$REPORT"
       - name: Fail on purpose (workflow_dispatch force_failure)
         if: github.event_name == 'workflow_dispatch' && inputs.force_failure == github.job
         run: exit 1

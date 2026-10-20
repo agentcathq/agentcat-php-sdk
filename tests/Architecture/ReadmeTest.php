@@ -35,8 +35,8 @@ final class ReadmeTest extends TestCase
     /** The badges of the header, the only images that are not files of this repository. */
     private const array BADGE_HOSTS = ['https://img.shields.io/', 'https://github.com/agentcathq/agentcat-php-sdk/actions/workflows/ci.yml/badge.svg'];
 
-    /** Every `src` and `href` value, and every Markdown link or image target. */
-    private const string TARGETS = '/(?:src|href)="([^"]*)"|\]\(([^)\s]*)/';
+    /** Every `src` and `href` value, every Markdown link or image target, and every reference definition (`[ref]: target`). */
+    private const string TARGETS = '/(?:src|href)="([^"]*)"|\]\(([^)\s]*)|^ {0,3}\[[^\]]+\]:[ \t]*<?([^\s>]+)/m';
 
     /** Every HTML or Markdown image URL. */
     private const string IMAGES = '/<img\b[^>]*\bsrc="([^"]*)"|!\[[^\]]*\]\(([^)\s]*)/';
@@ -62,6 +62,18 @@ final class ReadmeTest extends TestCase
             $this->assertNotNull($actual, sprintf('the README has the section "%s"', $name));
             $this->assertSame($expected, $actual, sprintf('section "%s" differs from the TypeScript README with exceptions.php, %s', $name, Branding::firstDifference($expected, $actual)));
         }
+    }
+
+    public function testTheOutlineIsTheTypeScriptOutline(): void
+    {
+        $typescript = $this->typescriptReadme();
+        $readme = $this->readme();
+
+        $this->assertSame(['text', 'quote', 'quote', 'text', 'text', 'code', 'text'], $this->preambleKinds($typescript), 'TypeScript: the header, the NOTE, the MCPcat box, the tagline, the install command, learn more');
+        // D33: no notice at the top. The NOTE is the README's only callout before the first heading.
+        $this->assertSame(['text', 'quote', 'text', 'text', 'code', 'text'], $this->preambleKinds($readme), 'the header, the NOTE, the tagline, the install command, learn more');
+        $this->assertCount(9, Branding::sharedHeadings($typescript), 'TypeScript has every shared heading once');
+        $this->assertSame(Branding::sharedHeadings($typescript), Branding::sharedHeadings($readme), 'the shared sections come once each, in the TypeScript order and at its heading levels');
     }
 
     public function testEveryExceptionQuotesTypeScriptAndStatesItsReason(): void
@@ -187,12 +199,16 @@ final class ReadmeTest extends TestCase
         unset($upstreamImages['docs/cats/bibi.png']);
         $changes = Branding::drift($copy, $upstream, $images, $upstreamImages);
 
-        $this->assertCount(4, $changes, implode("\n", $changes));
-        $this->assertStringStartsWith('section "How it works": line 3: "AgentCat works as a lightweight middleware', $changes[0]);
-        $this->assertStringContainsString('" became "AgentCat works as a lightweight middleware', $changes[0]);
-        $this->assertSame('section "Free for open source": not found on main', $changes[1]);
-        $this->assertSame('image docs/cats/bibi.png: not found on main', $changes[2]);
-        $this->assertSame('image docs/cats/void.jpg: blob ' . str_repeat('0', 40) . ' on main, 11486d1ffb74367d5a135272ee0468bb85cad40b here', $changes[3]);
+        $this->assertCount(5, $changes, implode("\n", $changes));
+        $this->assertSame('outline (the blocks before the first heading, then the headings): line 15: "## Free for open source" became "## Free for open-source projects"', $changes[0]);
+        $this->assertStringStartsWith('section "How it works": line 3: "AgentCat works as a lightweight middleware', $changes[1]);
+        $this->assertStringContainsString('" became "AgentCat works as a lightweight middleware', $changes[1]);
+        $this->assertSame('section "Free for open source": not found on main', $changes[2]);
+        $this->assertSame('image docs/cats/bibi.png: not found on main', $changes[3]);
+        $this->assertSame('image docs/cats/void.jpg: blob ' . str_repeat('0', 40) . ' on main, 11486d1ffb74367d5a135272ee0468bb85cad40b here', $changes[4]);
+
+        $callout = str_replace("\n\nAgentCat is an analytics platform", "\n\n> [!WARNING]\n> A new callout.\n\nAgentCat is an analytics platform", $copy);
+        $this->assertSame(['outline (the blocks before the first heading, then the headings): line 4: "text" became "quote"'], Branding::drift($copy, $callout, $images, $images), 'a callout that changes no shared section still shows');
     }
 
     public function testTheTreeHashesAreTheBlobsUnderTheImageDirectories(): void
@@ -272,7 +288,8 @@ final class ReadmeTest extends TestCase
         preg_match_all($pattern, $text, $matches, PREG_SET_ORDER);
         $found = [];
         foreach ($matches as $match) {
-            $found[] = ($match[1] ?? '') !== '' ? $match[1] : ($match[2] ?? '');
+            $groups = array_values(array_filter(array_slice($match, 1), static fn(string $group): bool => $group !== ''));
+            $found[] = $groups[0] ?? '';
         }
 
         return $found;
@@ -282,6 +299,20 @@ final class ReadmeTest extends TestCase
     private function docsLinks(string $markdown): array
     {
         return array_values(array_filter($this->captures(self::TARGETS, Branding::withoutCode($markdown)), static fn(string $target): bool => preg_match('#\Ahttps?://docs\.agentcat\.com(?:/|\z)#', $target) === 1));
+    }
+
+    /** @return list<string> the kind of each block before the first heading */
+    private function preambleKinds(string $markdown): array
+    {
+        $kinds = [];
+        foreach (Branding::outline($markdown) as $entry) {
+            if (str_starts_with($entry, '#')) {
+                break;
+            }
+            $kinds[] = $entry;
+        }
+
+        return $kinds;
     }
 
     private function isBadge(string $url): bool

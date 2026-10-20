@@ -69,7 +69,7 @@ Once you have your project ID, set up AgentCat for your MCP library below; the [
 
 ### Plain `mcp/sdk`
 
-Track the `Mcp\Server\Builder` with one call, before `build()`:
+Install AgentCat next to `mcp/sdk` (`composer require agentcat/sdk mcp/sdk`), then track the `Mcp\Server\Builder` with one call, before `build()`:
 
 ```php
 <?php
@@ -92,7 +92,7 @@ AgentCat::track($builder, 'proj_0000000');
 $builder->build()->run(new StdioTransport());
 ```
 
-With `null` instead of the ID, AgentCat reads it from `AGENTCAT_PROJECT_ID`. Under PHP-FPM every request runs your script, so every request builds and tracks a fresh server. Calling `track()` per instance is cheap — the event queue, telemetry exporters, and diagnostics are initialized once and shared across instances. The [`mcp/sdk` guide](https://docs.agentcat.com/sdk/php/mcp-sdk) has the details, HTTP servers included.
+With `null` instead of the ID, AgentCat reads it from `AGENTCAT_PROJECT_ID`. Under PHP-FPM every request runs your script, so every request builds and tracks a fresh server, and tracking it costs no more than tracking one long-lived server. Within one process, calling `track()` per instance is cheap — the event queue, telemetry exporters, and diagnostics are initialized once and shared across instances. The [`mcp/sdk` guide](https://docs.agentcat.com/sdk/php/mcp-sdk) has the details, HTTP servers included.
 
 ### Laravel
 
@@ -113,9 +113,7 @@ The [Laravel guide](https://docs.agentcat.com/sdk/php/laravel) has the details.
 
 ### Symfony
 
-With Symfony Flex, `composer require agentcat/sdk` runs the AgentCat recipe: it registers the bundle, writes `config/packages/agentcat.yaml` and adds `AGENTCAT_PROJECT_ID=` to `.env`. Set your project ID there (or in `.env.local`), and every `symfony/mcp-bundle` server of the application is tracked.
-
-Without Flex, register the bundle in `config/bundles.php`:
+Register the bundle in `config/bundles.php`:
 
 ```php
 return [
@@ -124,14 +122,13 @@ return [
 ];
 ```
 
-Then write `config/packages/agentcat.yaml`:
+Then set your project ID in `.env.local` (or in the environment of your server), and every `symfony/mcp-bundle` server of the application is tracked:
 
-```yaml
-agentcat:
-    project_id: '%env(default::AGENTCAT_PROJECT_ID)%'
+```dotenv
+AGENTCAT_PROJECT_ID=proj_0000000
 ```
 
-`php bin/console config:dump-reference agentcat` lists every option. The [Symfony guide](https://docs.agentcat.com/sdk/php/symfony) has the details.
+A `config/packages/agentcat.yaml` file is optional: `php bin/console config:dump-reference agentcat` lists the options it can hold. The [Symfony guide](https://docs.agentcat.com/sdk/php/symfony) has the details.
 
 ### Identifying users
 
@@ -248,9 +245,10 @@ Diagnostics are on by default and can be turned off completely with either:
 
 - **PHP-FPM**: AgentCat runs the hooks and delivers the events after `fastcgi_finish_request()`, when the client has its answer.
 - **FrankenPHP**: classic mode works like PHP-FPM; in worker mode, a plain `mcp/sdk` worker calls `AgentCat::flush(1.0)` after each request in its `frankenphp_handle_request()` loop, and Laravel Octane and Symfony need nothing.
-- **Apache mod_php and NGINX Unit**: the client gets its answer before AgentCat delivers; on mod_php the answer needs a `Content-Length`, which the Laravel and Symfony bridges set and a plain `mcp/sdk` script sets itself.
-- **The CLI**: a stdio server delivers between requests and when its input ends, and AgentCat writes nothing to STDOUT or STDERR, so stdout stays JSON-RPC; in a container, start it with `docker run --init`, so that a stop signal ends PHP and AgentCat (with ext-pcntl) first delivers the queued events.
-- **Swoole, RoadRunner and Workerman**: AgentCat delivers in the framework's terminate hooks (Laravel's `terminating()` callbacks, also under Octane, and Symfony's `kernel.terminate`), waiting at most 1 s after each request.
+- **Apache mod_php and NGINX Unit**: the client gets its answer before AgentCat delivers; on mod_php the answer needs a `Content-Length`, which the Laravel and Symfony bridges set for you and which a plain `mcp/sdk` script must set on the answer itself.
+- **The CLI**: a stdio server runs the hooks and delivers the events of a call when the next `tools/call` or `tools/list` arrives and when its input ends, so a slow hook delays that next request; AgentCat writes nothing to STDOUT or STDERR, so stdout stays JSON-RPC.
+- **Containers**: start a stdio server with `docker run --init`, so that a stop signal ends PHP and AgentCat (with ext-pcntl) first delivers the queued events.
+- **Swoole, RoadRunner and Workerman**: with Laravel or Symfony, AgentCat delivers in the framework's terminate hooks (Laravel's `terminating()` callbacks, also under Octane, and Symfony's `kernel.terminate`), waiting at most 1 s after each request; a plain `mcp/sdk` worker calls `AgentCat::flush(1.0)` after each request.
 
 AgentCat supports PHP 8.3, 8.4 and 8.5; `mcp/sdk` 0.8.1 or later (tested 0.8.1 and 0.9.0); `laravel/mcp` 1.x (tested 1.0.0 and 1.1.0) with Laravel 12.41.1 or later and 13; and `symfony/mcp-bundle` 0.13 and 0.14 with Symfony 7.3 and 8.x. The [runtimes guide](https://docs.agentcat.com/sdk/php/runtimes) covers each runtime, containers and hardened hosts, and the [limits page](https://docs.agentcat.com/sdk/php/limits) lists the differences from the TypeScript SDK and the known limits.
 
