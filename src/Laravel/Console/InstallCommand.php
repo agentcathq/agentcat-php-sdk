@@ -9,7 +9,7 @@ use Illuminate\Console\Command;
 use Illuminate\Foundation\Application;
 
 /**
- * `php artisan agentcat:install`: writes `AGENTCAT_PROJECT_ID` into `.env` and an empty key into `.env.example`, and
+ * `php artisan agentcat:install`: writes `AGENTCAT_PROJECT_ID` into `.env` (creating the file, with that key only, when it is missing) and an empty key into `.env.example`, and
  * publishes `config/agentcat.php` with `--config`. It sends nothing over the network.
  *
  * @internal
@@ -39,6 +39,7 @@ final class InstallCommand extends Command
             return self::FAILURE;
         }
         $env = $app->environmentFilePath();
+        $created = !file_exists($env);
         try {
             EnvFile::set($env, 'AGENTCAT_PROJECT_ID', $project);
             EnvFile::ensure($env . '.example', 'AGENTCAT_PROJECT_ID');
@@ -46,6 +47,9 @@ final class InstallCommand extends Command
             $this->error($e->getMessage());
 
             return self::FAILURE;
+        }
+        if ($created) {
+            $this->line(sprintf('Created %s with AGENTCAT_PROJECT_ID only.', $env));
         }
         if ($this->option('config') === true) {
             $this->call('vendor:publish', ['--tag' => 'agentcat-config']);

@@ -48,6 +48,7 @@ final class InstallCommandTest extends LaravelTestCase
     {
         $this->install('agentcat:install', ['project' => self::PROJECT])
             ->expectsOutputToContain('AgentCat is set up: AGENTCAT_PROJECT_ID is in ' . $this->dir . '/.env.')
+            ->doesntExpectOutputToContain('Created')
             ->assertExitCode(0);
 
         $this->assertSame("APP_NAME=Demo\nAGENTCAT_PROJECT_ID=" . self::PROJECT . "\n", file_get_contents($this->dir . '/.env'));
@@ -73,7 +74,9 @@ final class InstallCommandTest extends LaravelTestCase
         unlink($this->dir . '/.env');
         unlink($this->dir . '/.env.example');
 
-        $this->install('agentcat:install', ['project' => self::PROJECT])->assertExitCode(0);
+        $this->install('agentcat:install', ['project' => self::PROJECT])
+            ->expectsOutputToContain('Created ' . $this->dir . '/.env with AGENTCAT_PROJECT_ID only.')
+            ->assertExitCode(0);
 
         $this->assertSame('AGENTCAT_PROJECT_ID=' . self::PROJECT . "\n", file_get_contents($this->dir . '/.env'));
         $this->assertFileDoesNotExist($this->dir . '/.env.example');
