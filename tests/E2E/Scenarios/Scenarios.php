@@ -7,6 +7,7 @@ namespace AgentCat\Tests\E2E\Scenarios;
 use AgentCat\Internal\Constants;
 use AgentCat\Internal\Json\Json;
 use AgentCat\Internal\Tools\GetMoreTools;
+use AgentCat\Tests\Support\Golden;
 use AgentCat\Tests\Support\JsonAssert;
 use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
 use Mcp\Capability\Discovery\SchemaValidator;
@@ -68,6 +69,7 @@ trait Scenarios
         $echo = $this->tool($tools, 'echo');
         $this->assertSame(Constants::DEFAULT_CONTEXT_PARAMETER_DESCRIPTION, JsonAssert::at($this->properties($echo), 'context', 'description'));
         $this->assertContains(Constants::PARAM_SESSION_ID, $this->required($echo));
+        $this->assertContains(Constants::PARAM_CONTEXT, $this->required($echo));
         $this->assertSame(Constants::SESSION_ID_PARAM_PATTERN, JsonAssert::at($this->properties($echo), 'session_id', 'pattern'));
 
         // Requiredness is for schema-aware clients: a call without session_id still mints and announces it.
@@ -194,7 +196,11 @@ trait Scenarios
 
         $tools = $client->listTools();
         $this->assertSame(Scenario::CUSTOM_CONTEXT_DESCRIPTION, JsonAssert::at($this->properties($this->tool($tools, 'echo')), 'context', 'description'));
-        $this->assertNotSame(Scenario::CUSTOM_CONTEXT_DESCRIPTION, JsonAssert::at($this->properties($this->tool($tools, GetMoreTools::NAME)), 'context', 'description'));
+        $this->assertSame(
+            JsonAssert::at(Golden::json('handles/strings.json'), 'GET_MORE_TOOLS_DESCRIPTOR', 'inputSchema', 'properties', 'context', 'description'),
+            JsonAssert::at($this->properties($this->tool($tools, GetMoreTools::NAME)), 'context', 'description'),
+            'get_more_tools keeps its own context description',
+        );
 
         $client->call('echo', ['msg' => 'hi', 'context' => 'custom description intent']);
 
@@ -400,6 +406,7 @@ trait Scenarios
         $this->assertFalse(JsonAssert::at($result, 'isError'));
         $this->assertSame(['strict ok'], $this->texts($result));
         $this->assertSame($this->sid('strict1'), JsonAssert::at($this->event(), 'session_id'));
+        // The strip proof is the successful call: mcp/sdk validates it against the original strict schema.
         $this->assertSame(['{"msg":"strict ok"}'], $this->sink()->seen('strict'));
     }
 

@@ -11,7 +11,7 @@ use PHPUnit\Framework\Assert;
 /**
  * The MCP client of a scenario, over real HTTP. In the handshake era it opens with `initialize` and sends every request
  * in that session; in the 2026-07-28 era every request carries the envelope, with this client's info in its `_meta`.
- * Each list and call request carries the lane's headers.
+ * Every request carries the lane's headers.
  */
 final readonly class ScenarioClient
 {
@@ -24,13 +24,13 @@ final readonly class ScenarioClient
     /**
      * A client of the MCP endpoint `$url`, after the handshake unless `$modern`.
      *
-     * @param array<string, string> $headers the headers of every list and call request
+     * @param array<string, string> $headers the headers of every request
      */
     public static function connect(string $url, bool $modern, array $headers = []): self
     {
         $http = new McpHttpClient($url);
         if (!$modern) {
-            $http->initialize(self::CLIENT_INFO['name'], self::CLIENT_INFO['version']);
+            $http->initialize(self::CLIENT_INFO['name'], self::CLIENT_INFO['version'], $headers);
         }
 
         return new self($http, $modern, $headers);
