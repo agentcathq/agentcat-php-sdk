@@ -30,7 +30,7 @@
         "ext-json": "*",
         "ext-mbstring": "*",
         "composer-runtime-api": "^2.2",
-        "agentcat/api": "~0.0.3",
+        "agentcat/api": "~0.0.4",
         "psr/log": "^2.0 || ^3.0"
     },
     "require-dev": {

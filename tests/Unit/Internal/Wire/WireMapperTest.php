@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AgentCat\Tests\Unit\Internal\Wire;
 
+use AgentCat\Api\Model\PublishEventRequest;
 use AgentCat\Event;
 use AgentCat\Internal\Constants;
 use AgentCat\Internal\Events\EventFields;
@@ -361,5 +362,18 @@ final class WireMapperTest extends TestCase
         $body = json_encode(WireMapper::toRequest(new Event(projectId: 'p', properties: ['device' => new \stdClass()])), JSON_THROW_ON_ERROR);
 
         $this->assertStringContainsString('"properties":{"device":{}}', $body);
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function sentEventTypes(): iterable
+    {
+        yield 'tools/call' => [Constants::TOOLS_CALL_EVENT_TYPE];
+        yield 'custom' => [Constants::CUSTOM_EVENT_TYPE];
+    }
+
+    #[DataProvider('sentEventTypes')]
+    public function testEveryEventTypeTheSdkSendsIsKnownToTheApiModel(string $eventType): void
+    {
+        $this->assertContains($eventType, PublishEventRequest::EVENT_TYPE_KNOWN_VALUES);
     }
 }
