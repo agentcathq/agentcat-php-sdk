@@ -118,14 +118,14 @@ final class ExporterConfigs
         $value = $entry['headers'] ?? [];
         $headers = [];
         foreach (is_array($value) ? $value : throw self::invalid('headers', 'array<string, string>', $value) as $header => $text) {
-            $headers[(string) $header] = is_string($text) ? $text : throw new \InvalidArgumentException(sprintf('exporter option "headers.%s" must be a string, got %s; write a string or omit the entry', $header, get_debug_type($text)));
+            $headers[(string) $header] = is_string($text) ? $text : throw self::invalid('headers.' . $header, 'a string', $text, 'write a string or omit the entry');
         }
 
         return $headers;
     }
 
-    private static function invalid(string $key, string $expected, mixed $value): \InvalidArgumentException
+    private static function invalid(string $key, string $expected, mixed $value, string $fix = ''): \InvalidArgumentException
     {
-        return new \InvalidArgumentException(sprintf('exporter option "%s" must be %s, got %s', $key, $expected, get_debug_type($value)));
+        return new \InvalidArgumentException(sprintf('exporter option "%s" must be %s, got %s%s', $key, $expected, get_debug_type($value), $fix === '' ? '' : '; ' . $fix));
     }
 }
