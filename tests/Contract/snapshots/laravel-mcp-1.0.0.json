@@ -1,6 +1,8 @@
 {
     "classes": {
         "Laravel\\Mcp\\Server": {
+            "abstract": true,
+            "abstractMethods": [],
             "constants": {
                 "CACHEABLE_METHODS": {
                     "visibility": "public"
@@ -388,92 +390,109 @@
             },
             "properties": {
                 "attributeCache": {
+                    "hasDefault": true,
                     "readonly": false,
                     "static": true,
                     "type": "array",
                     "visibility": "protected"
                 },
                 "capabilities": {
+                    "hasDefault": true,
                     "readonly": false,
                     "static": false,
                     "type": "array",
                     "visibility": "protected"
                 },
                 "defaultPaginationLength": {
+                    "hasDefault": true,
                     "readonly": false,
                     "static": false,
                     "type": "int",
                     "visibility": "public"
                 },
                 "extensions": {
+                    "hasDefault": true,
                     "readonly": false,
                     "static": false,
                     "type": "array",
                     "visibility": "protected"
                 },
                 "instructions": {
+                    "hasDefault": true,
                     "readonly": false,
                     "static": false,
                     "type": "string",
                     "visibility": "protected"
                 },
                 "maxPaginationLength": {
+                    "hasDefault": true,
                     "readonly": false,
                     "static": false,
                     "type": "int",
                     "visibility": "public"
                 },
                 "methods": {
+                    "hasDefault": true,
                     "readonly": false,
                     "static": false,
                     "type": "array",
                     "visibility": "protected"
                 },
                 "name": {
+                    "hasDefault": true,
                     "readonly": false,
                     "static": false,
                     "type": "string",
                     "visibility": "protected"
                 },
                 "prompts": {
+                    "hasDefault": true,
                     "readonly": false,
                     "static": false,
                     "type": "array",
                     "visibility": "protected"
                 },
                 "resources": {
+                    "hasDefault": true,
                     "readonly": false,
                     "static": false,
                     "type": "array",
                     "visibility": "protected"
                 },
                 "supportedProtocolVersion": {
+                    "hasDefault": true,
                     "readonly": false,
                     "static": false,
                     "type": "array",
                     "visibility": "protected"
                 },
                 "tools": {
+                    "hasDefault": true,
                     "readonly": false,
                     "static": false,
                     "type": "array",
                     "visibility": "protected"
                 },
                 "transport": {
+                    "hasDefault": false,
                     "readonly": false,
                     "static": false,
                     "type": "Laravel\\Mcp\\Server\\Contracts\\Transport",
                     "visibility": "protected"
                 },
                 "version": {
+                    "hasDefault": true,
                     "readonly": false,
                     "static": false,
                     "type": "string",
                     "visibility": "protected"
                 }
-            }
+            },
+            "readonly": false
         },
         "Laravel\\Mcp\\Server\\Methods\\CallTool": {
+            "abstract": false,
+            "abstractMethods": [],
             "constants": [],
             "final": false,
             "methods": {
@@ -501,9 +520,12 @@
                     "visibility": "public"
                 }
             },
-            "properties": []
+            "properties": [],
+            "readonly": false
         },
         "Laravel\\Mcp\\Server\\ToolInvoker": {
+            "abstract": false,
+            "abstractMethods": [],
             "constants": [],
             "final": false,
             "methods": {
@@ -717,9 +739,12 @@
                     "visibility": "private"
                 }
             },
-            "properties": []
+            "properties": [],
+            "readonly": false
         },
         "Laravel\\Mcp\\Server\\Transport\\HttpTransport": {
+            "abstract": false,
+            "abstractMethods": [],
             "constants": [],
             "final": false,
             "methods": {
@@ -851,30 +876,35 @@
             },
             "properties": {
                 "handler": {
+                    "hasDefault": false,
                     "readonly": false,
                     "static": false,
                     "type": "?Closure",
                     "visibility": "protected"
                 },
                 "reply": {
+                    "hasDefault": false,
                     "readonly": false,
                     "static": false,
                     "type": "?string",
                     "visibility": "protected"
                 },
                 "request": {
+                    "hasDefault": false,
                     "readonly": false,
                     "static": false,
                     "type": "Illuminate\\Http\\Request",
                     "visibility": "protected"
                 },
                 "stream": {
+                    "hasDefault": false,
                     "readonly": false,
                     "static": false,
                     "type": "?Closure",
                     "visibility": "protected"
                 }
-            }
+            },
+            "readonly": false
         }
     },
     "library": "laravel/mcp",

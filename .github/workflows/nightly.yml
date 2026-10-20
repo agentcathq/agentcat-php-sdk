@@ -325,10 +325,12 @@ jobs:
         timeout-minutes: 5
         env:
           LIBRARY: ${{ matrix.library }}
+          REPORT: ${{ runner.temp }}/member-snapshot.md
         run: |
+          set -o pipefail
           prefix="tests/Contract/snapshots/${LIBRARY//\//-}-"
-          newest="$(ls "$prefix"*.json | sort -V | tail -n 1)"
-          php tests/bin/member-snapshot.php "$LIBRARY" --diff "$newest"
+          newest="$(printf '%s\n' "$prefix"*.json | sort -V | tail -n 1)"
+          php tests/bin/member-snapshot.php "$LIBRARY" --diff "$newest" | tee "$REPORT"
       - name: Fail on purpose (workflow_dispatch force_failure)
         if: github.event_name == 'workflow_dispatch' && inputs.force_failure == github.job
         run: exit 1
@@ -336,4 +338,6 @@ jobs:
         if: failure() && github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: .github/nightly-issue.sh "${{ github.job }}"
+          LIBRARY: ${{ matrix.library }}
+          REPORT: ${{ runner.temp }}/member-snapshot.md
+        run: .github/nightly-issue.sh "member-snapshot (${LIBRARY})" "$REPORT"

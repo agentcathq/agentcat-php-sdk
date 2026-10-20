@@ -13,10 +13,10 @@ use Composer\InstalledVersions;
  * file per library version can be compared with the installed one, and the nightly job can diff `dev-main` against it.
  *
  * @phpstan-type ParameterShape array{byReference: bool, hasDefault: bool, name: string, type: string, variadic: bool}
- * @phpstan-type PropertyShape array{readonly: bool, static: bool, type: string, visibility: string}
+ * @phpstan-type PropertyShape array{hasDefault: bool, readonly: bool, static: bool, type: string, visibility: string}
  * @phpstan-type MethodShape array{abstract: bool, final: bool, parameters: list<ParameterShape>, return: string, static: bool, visibility: string}
  * @phpstan-type ConstantShape array{visibility: string}
- * @phpstan-type ClassShape array{constants: array<string, ConstantShape>, final: bool, methods: array<string, MethodShape>, properties: array<string, PropertyShape>}
+ * @phpstan-type ClassShape array{abstract: bool, abstractMethods: list<string>, constants: array<string, ConstantShape>, final: bool, methods: array<string, MethodShape>, properties: array<string, PropertyShape>, readonly: bool}
  * @phpstan-type Snapshot array{classes: array<string, ClassShape>, library: string, version: string}
  */
 final class MemberSnapshot
@@ -133,6 +133,7 @@ final class MemberSnapshot
         foreach ($reflection->getProperties() as $property) {
             if ($property->getDeclaringClass()->getName() === $class) {
                 $properties[$property->getName()] = [
+                    'hasDefault' => $property->hasDefaultValue(),
                     'readonly' => $property->isReadOnly(),
                     'static' => $property->isStatic(),
                     'type' => self::type($property->getType(), $class),
@@ -142,7 +143,11 @@ final class MemberSnapshot
         }
 
         $methods = [];
+        $abstractMethods = [];
         foreach ($reflection->getMethods() as $method) {
+            if ($method->isAbstract()) {
+                $abstractMethods[] = $method->getName();
+            }
             if ($method->getDeclaringClass()->getName() === $class) {
                 $parameters = [];
                 foreach ($method->getParameters() as $parameter) {
@@ -168,17 +173,33 @@ final class MemberSnapshot
         ksort($constants, SORT_STRING);
         ksort($properties, SORT_STRING);
         ksort($methods, SORT_STRING);
+        sort($abstractMethods, SORT_STRING);
 
-        return ['constants' => $constants, 'final' => $reflection->isFinal(), 'methods' => $methods, 'properties' => $properties];
+        return [
+            'abstract' => $reflection->isAbstract(),
+            'abstractMethods' => $abstractMethods,
+            'constants' => $constants,
+            'final' => $reflection->isFinal(),
+            'methods' => $methods,
+            'properties' => $properties,
+            'readonly' => $reflection->isReadOnly(),
+        ];
     }
 
     /**
-     * The type as written, with `self` spelled as the class: PHP 8.5 reports `self` as the class name, earlier versions
-     * as `self`, and a snapshot must not depend on the PHP version that took it.
+     * The type as written, with `self` and `parent` spelled as the class names: PHP 8.5 reports the class names,
+     * earlier versions report the keywords, and a snapshot must not depend on the PHP version that took it.
+     *
+     * @param class-string $class
      */
     private static function type(?\ReflectionType $type, string $class): string
     {
-        return preg_replace('/(?<![\\\\\w])self(?![\\\\\w])/', addcslashes($class, '\\$'), (string) $type) ?? (string) $type;
+        $parent = get_parent_class($class);
+        return preg_replace_callback(
+            '/(?<![\\\\\w])(self|parent)(?![\\\\\w])/',
+            static fn(array $match): string => $match[1] === 'self' ? $class : ($parent === false ? 'parent' : $parent),
+            (string) $type,
+        ) ?? (string) $type;
     }
 
     private static function visibility(bool $public, bool $protected): string
@@ -186,7 +207,8 @@ final class MemberSnapshot
         return $public ? 'public' : ($protected ? 'protected' : 'private');
     }
 
-    private static function namespaceOf(string $library): string
+    /** The root namespace of the library's classes, with its trailing backslash. */
+    public static function namespaceOf(string $library): string
     {
         return self::NAMESPACES[$library] ?? throw new \InvalidArgumentException('unknown library ' . $library . ' (expected ' . implode(' or ', self::libraries()) . ')');
     }

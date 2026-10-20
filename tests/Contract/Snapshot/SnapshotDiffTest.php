@@ -134,6 +134,64 @@ final class SnapshotDiffTest extends TestCase
         );
     }
 
+    public function testAnExtendedClassTurningReadonlyIsBreaking(): void
+    {
+        $diff = SnapshotDiff::between(
+            $this->snapshot([self::RESULT => $this->shape()]),
+            $this->snapshot([self::RESULT => $this->shape(readonly: true)]),
+            [self::CONSTRUCTOR],
+        );
+
+        $this->assertSame(['Mcp\\Schema\\Result\\ListToolsResult: not readonly → readonly'], $diff->breaking());
+        $this->assertSame([], $diff->other());
+    }
+
+    public function testAClassNobodyExtendsTurningReadonlyIsNotBreaking(): void
+    {
+        $diff = SnapshotDiff::between(
+            $this->snapshot([self::BUILDER => $this->shape()]),
+            $this->snapshot([self::BUILDER => $this->shape(readonly: true)]),
+            [self::PARTS, self::CONSTRUCTOR],
+        );
+
+        $this->assertSame([], $diff->breaking());
+    }
+
+    public function testAnAddedAbstractMethodOfAnExtendedClassIsBreaking(): void
+    {
+        $old = $this->snapshot([self::RESULT => $this->shape(abstractMethods: ['first'])]);
+        $new = $this->snapshot([self::RESULT => $this->shape(abstractMethods: ['first', 'second'])]);
+
+        $this->assertSame(['Mcp\\Schema\\Result\\ListToolsResult::second(): added (abstract)'], SnapshotDiff::between($old, $new, [self::CONSTRUCTOR])->breaking());
+        $this->assertSame([], SnapshotDiff::between($old, $new, [self::PARTS])->breaking());
+        $this->assertSame(['Mcp\\Schema\\Result\\ListToolsResult::second(): added (abstract)'], SnapshotDiff::between($old, $new, [self::PARTS])->other());
+    }
+
+    public function testAReadPropertyThatLosesItsDefaultIsBreaking(): void
+    {
+        $old = $this->snapshot([self::BUILDER => $this->shape(properties: ['parts' => $this->property('array', hasDefault: true)])]);
+        $new = $this->snapshot([self::BUILDER => $this->shape(properties: ['parts' => $this->property('array')])]);
+
+        $this->assertSame(
+            ['Mcp\\Server\\Builder::$parts: private array $parts = … → private array $parts'],
+            SnapshotDiff::between($old, $new, [self::PARTS])->breaking(),
+        );
+        $this->assertSame([], SnapshotDiff::between($old, $new, [])->breaking());
+    }
+
+    public function testAReadPropertyMovedToAParentClassIsBreaking(): void
+    {
+        $parent = 'Mcp\\Server\\BaseBuilder';
+        $old = $this->snapshot([self::BUILDER => $this->shape(properties: ['parts' => $this->property('array')]), $parent => $this->shape()]);
+        $new = $this->snapshot([self::BUILDER => $this->shape(), $parent => $this->shape(properties: ['parts' => $this->property('array')])]);
+
+        $diff = SnapshotDiff::between($old, $new, [self::PARTS]);
+
+        // The accessor reads the property in the scope of the declaring class named in the manifest, so a move breaks it.
+        $this->assertSame(['Mcp\\Server\\Builder::$parts: private array $parts → removed'], $diff->breaking());
+        $this->assertSame(['Mcp\\Server\\BaseBuilder::$parts: added (private array $parts)'], $diff->other());
+    }
+
     public function testAChangedMethodNobodyDependsOnIsNotBreaking(): void
     {
         $old = $this->snapshot([self::RESULT => $this->shape(methods: ['jsonSerialize' => $this->method([], 'array')])]);
@@ -177,15 +235,19 @@ final class SnapshotDiffTest extends TestCase
     }
 
     /**
-     * @param array<string, array{readonly: bool, static: bool, type: string, visibility: string}> $properties
+     * @param array<string, array{hasDefault: bool, readonly: bool, static: bool, type: string, visibility: string}> $properties
      * @param array<string, array{abstract: bool, final: bool, parameters: list<array{byReference: bool, hasDefault: bool, name: string, type: string, variadic: bool}>, return: string, static: bool, visibility: string}> $methods
      * @param array<string, string> $constants constant name => visibility
+     * @param list<string> $abstractMethods
      *
      * @return ClassShape
      */
-    private function shape(bool $final = false, array $properties = [], array $methods = [], array $constants = []): array
+    private function shape(bool $final = false, array $properties = [], array $methods = [], array $constants = [], bool $readonly = false, array $abstractMethods = []): array
     {
         return [
+            'abstract' => $abstractMethods !== [],
+            'abstractMethods' => $abstractMethods,
+            'readonly' => $readonly,
             'constants' => array_map(static fn(string $visibility): array => ['visibility' => $visibility], $constants),
             'final' => $final,
             'methods' => $methods,
@@ -193,10 +255,10 @@ final class SnapshotDiffTest extends TestCase
         ];
     }
 
-    /** @return array{readonly: bool, static: bool, type: string, visibility: string} */
-    private function property(string $type): array
+    /** @return array{hasDefault: bool, readonly: bool, static: bool, type: string, visibility: string} */
+    private function property(string $type, bool $hasDefault = false): array
     {
-        return ['readonly' => false, 'static' => false, 'type' => $type, 'visibility' => 'private'];
+        return ['hasDefault' => $hasDefault, 'readonly' => false, 'static' => false, 'type' => $type, 'visibility' => 'private'];
     }
 
     /**

@@ -30,15 +30,7 @@ final readonly class SnapshotDiff
      */
     public static function between(array $old, array $new, array $readMembers): self
     {
-        $properties = [];
-        $methods = [];
-        foreach ($readMembers as $member) {
-            if (preg_match('/^([A-Za-z0-9_\\\\]+)::\$(\w+)$/', $member, $match) === 1) {
-                $properties[$match[1]][$match[2]] = true;
-            } elseif (preg_match('/^([A-Za-z0-9_\\\\]+)::(\w+)\(/', $member, $match) === 1) {
-                $methods[$match[1]][$match[2]] = true;
-            }
-        }
+        ['properties' => $properties, 'methods' => $methods] = self::readMembers($readMembers);
 
         $breaking = [];
         $other = [];
@@ -47,8 +39,8 @@ final readonly class SnapshotDiff
         foreach ($classes as $class) {
             $oldClass = $old['classes'][$class] ?? null;
             $newClass = $new['classes'][$class] ?? null;
-            $readProperties = array_keys($properties[$class] ?? []);
-            $readMethods = array_keys($methods[$class] ?? []);
+            $readProperties = $properties[$class] ?? [];
+            $readMethods = $methods[$class] ?? [];
 
             if ($newClass === null) {
                 $other[] = $class . ': class removed';
@@ -80,6 +72,20 @@ final readonly class SnapshotDiff
                 }
             }
 
+            if ($newClass['readonly'] && !$oldClass['readonly'] && $readMethods !== []) {
+                // A class that extends a readonly class must be readonly itself: AgentCat's subclass is a fatal error.
+                $breaking[] = $class . ': not readonly → readonly';
+            }
+            foreach (array_diff($newClass['abstractMethods'], $oldClass['abstractMethods']) as $name) {
+                $line = $class . '::' . $name . '(): added (abstract)';
+                if ($readMethods !== []) {
+                    // AgentCat's subclass does not implement it: a fatal error at load.
+                    $breaking[] = $line;
+                } else {
+                    $other[] = $line;
+                }
+            }
+
             self::compareProperties($class, $oldClass, $newClass, $readProperties, $breaking, $other);
             self::compareMethods($class, $oldClass, $newClass, $readMethods, $breaking, $other);
             self::compareConstants($class, $oldClass, $newClass, $other);
@@ -89,6 +95,29 @@ final readonly class SnapshotDiff
         sort($other, SORT_STRING);
 
         return new self($breaking, $other);
+    }
+
+    /**
+     * The members AgentCat reads, by class: `Class::$property` entries and `Class::method(...)` entries. Any other
+     * string (the bundle's service definitions) is ignored.
+     *
+     * @param list<string> $readMembers
+     *
+     * @return array{properties: array<string, list<string>>, methods: array<string, list<string>>}
+     */
+    public static function readMembers(array $readMembers): array
+    {
+        $properties = [];
+        $methods = [];
+        foreach ($readMembers as $member) {
+            if (preg_match('/^([A-Za-z0-9_\\\\]+)::\$(\w+)$/', $member, $match) === 1) {
+                $properties[$match[1]][] = $match[2];
+            } elseif (preg_match('/^([A-Za-z0-9_\\\\]+)::(\w+)\(/', $member, $match) === 1) {
+                $methods[$match[1]][] = $match[2];
+            }
+        }
+
+        return ['properties' => $properties, 'methods' => $methods];
     }
 
     /** @return list<string> the changes that break AgentCat, each naming `Class::member` and old → new */
@@ -186,10 +215,10 @@ final readonly class SnapshotDiff
         }
     }
 
-    /** @param array{readonly: bool, static: bool, type: string, visibility: string} $shape */
+    /** @param array{hasDefault: bool, readonly: bool, static: bool, type: string, visibility: string} $shape */
     private static function property(string $name, array $shape): string
     {
-        return self::words([$shape['visibility'], $shape['static'] ? 'static' : '', $shape['readonly'] ? 'readonly' : '', $shape['type'], '$' . $name]);
+        return self::words([$shape['visibility'], $shape['static'] ? 'static' : '', $shape['readonly'] ? 'readonly' : '', $shape['type'], '$' . $name . ($shape['hasDefault'] ? ' = …' : '')]);
     }
 
     /** @param array{abstract: bool, final: bool, parameters: list<array{byReference: bool, hasDefault: bool, name: string, type: string, variadic: bool}>, return: string, static: bool, visibility: string} $shape */
