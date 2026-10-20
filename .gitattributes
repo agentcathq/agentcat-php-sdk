@@ -12,3 +12,5 @@
 /docs export-ignore
 /recipe export-ignore
 /composer-dependency-analyser.php export-ignore
+/phpstan.php85.neon export-ignore
+/CONTRIBUTING.md export-ignore

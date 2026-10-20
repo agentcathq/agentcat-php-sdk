@@ -3,6 +3,9 @@ includes:
 parameters:
     level: max
     paths: [src, tests]
+    excludePaths:
+        # Runs in a fresh project with its own vendor/ (tests/bin/package-probe.sh), not in this repository.
+        - tests/Fixtures/package-probe
     tmpDir: .cache/phpstan
     checkMissingCallableSignature: true
     checkUninitializedProperties: true
