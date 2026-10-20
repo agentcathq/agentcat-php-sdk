@@ -18,8 +18,8 @@ return (new Configuration())
     ->ignoreErrorsOnPackageAndPath('psr/container', __DIR__ . '/src/McpSdk', [ErrorType::SHADOW_DEPENDENCY])
     // Psr\EventDispatcher\EventDispatcherInterface arrives with mcp/sdk; the test double stands in for a customer's dispatcher.
     ->ignoreErrorsOnPackageAndPath('psr/event-dispatcher', __DIR__ . '/tests/Support/McpSdk/RecordingDispatcher.php', [ErrorType::SHADOW_DEPENDENCY])
-    // Http\Discovery\Psr17Factory arrives with mcp/sdk; the HTTP fixture builds its request from the globals with it, like a customer.
-    ->ignoreErrorsOnPackageAndPath('php-http/discovery', __DIR__ . '/tests/E2E/Fixtures', [ErrorType::SHADOW_DEPENDENCY])
+    // Http\Discovery\Psr17Factory arrives with mcp/sdk; the HTTP fixtures build their request from the globals with it, like a customer.
+    ->ignoreErrorsOnPackageAndPaths('php-http/discovery', [__DIR__ . '/tests/E2E/Fixtures', __DIR__ . '/tests/Runtime/Fixtures'], [ErrorType::SHADOW_DEPENDENCY])
     // laravel/mcp and Laravel are optional (01 AC-90): dev dependencies used only by the Laravel adapter and bridge.
     ->ignoreErrorsOnPackageAndPath('laravel/mcp', __DIR__ . '/src/LaravelMcp', [ErrorType::DEV_DEPENDENCY_IN_PROD])
     ->ignoreErrorsOnPackageAndPath('laravel/mcp', __DIR__ . '/src/Laravel', [ErrorType::DEV_DEPENDENCY_IN_PROD])
