@@ -6,7 +6,6 @@ namespace AgentCat\Internal\Engine;
 
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Support\ErrorText;
-use AgentCat\Internal\Tools\GetMoreTools;
 
 /** @internal */
 final class ToolListing
@@ -68,10 +67,12 @@ final class ToolListing
      * TS ensureRegistries (D17: no cache), reading the pages from the first (D66, B10 fixed). It runs on a call whose
      * tool no listing of this server named, until one rebuild has read every page; under PHP-FPM that is every call,
      * as before. It stops at the first page that names the tool (Plan F spec conflict 3), so a tool of page 1 costs one
-     * page, as before; a tool that no page names reads every page. AgentCat answers get_more_tools itself, so a call
-     * for it needs no rebuild. A page that cannot be read ends the rebuild: the pages before it are kept, the other
-     * tools keep the heuristic strip, and the next call for one of them tries again. A cursor already followed ends
-     * the listing. Synchronous PHP cannot stop a page that hangs: the budget only stops the next page.
+     * page, as before; a tool that no page names reads every page. A get_more_tools call rebuilds too: a customer's
+     * tool of that name is found on its page, so its own parameters stay its own; AgentCat's own is on no page, and the
+     * read to the last page gives it its exact entry. A page that cannot be read ends the rebuild: the pages before it
+     * are kept, the other tools keep the heuristic strip, and the next call for one of them tries again. A cursor
+     * already followed ends the listing. Synchronous PHP cannot stop a page that hangs: the budget only stops the next
+     * page.
      *
      * @param \Closure(?string): (array{list<mixed>, ?string}|null) $listPage the library's own page at a cursor (null
      *                                                                       for the first): its tools and its next
@@ -81,11 +82,7 @@ final class ToolListing
      */
     public static function ensureRegistries(TrackedServer $server, string $toolName, \Closure $listPage, ?\Closure $clock = null): void
     {
-        if (
-            $server->everyPageRead
-            || ($server->options->enableReportMissing && $toolName === GetMoreTools::NAME)
-            || ($server->registry !== null && array_key_exists($toolName, $server->registry))
-        ) {
+        if ($server->everyPageRead || ($server->registry !== null && array_key_exists($toolName, $server->registry))) {
             return;
         }
         try {

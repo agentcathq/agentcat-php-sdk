@@ -526,21 +526,37 @@ final class ToolListingTest extends TestCase
         $this->assertSame(['stripped', self::INJECTED], $read->calls[0] ?? null);
     }
 
-    /** AgentCat answers get_more_tools itself, whatever page lists it; with report-missing off it is the customer's. */
+    /**
+     * A get_more_tools call rebuilds like any other tool (coordinator ruling, Task 2 fix round 0). AgentCat's own is on
+     * no page, so the read goes to the last page, which appends it: its entry holds the parameters AgentCat injected.
+     */
     #[Group('ac-02-40')]
-    #[Group('ac-02-41')]
-    public function testGetMoreToolsNeedsNoRebuild(): void
+    public function testAGetMoreToolsCallReadsToTheLastPageForAgentCatsOwn(): void
+    {
+        $server = $this->server(new Options(enableAgentTracking: true));
+        $asked = new \ArrayObject();
+
+        ToolListing::ensureRegistries($server, GetMoreTools::NAME, $this->pages(['' => [[$this->tool(self::ECHO_TOOL)], 'p2'], 'p2' => [[$this->tool('{"name":"b"}')], null]], $asked));
+
+        $this->assertSame([null, 'p2'], $asked->getArrayCopy());
+        $this->assertSame(['session_id', 'agent_id'], ArgumentStripper::names(GetMoreTools::NAME, $server->registry));
+        $this->assertFalse($server->injection->hasDeclaredSessionParam(GetMoreTools::NAME));
+        $this->assertTrue($server->everyPageRead);
+    }
+
+    /** A customer's get_more_tools is found on its page, like any tool: its own `session_id` stays its own. */
+    #[Group('ac-02-19')]
+    #[Group('ac-04-24')]
+    public function testACustomerGetMoreToolsIsFoundOnItsPage(): void
     {
         $server = $this->server();
-        $customer = $this->server(new Options(enableReportMissing: false));
         $asked = new \ArrayObject();
-        $list = $this->pages(['' => [[$this->tool(self::ECHO_TOOL)], null]], $asked);
+        $customer = $this->tool('{"name":"get_more_tools","inputSchema":{"type":"object","properties":{"session_id":{"type":"string"}},"required":["session_id"]}}');
 
-        ToolListing::ensureRegistries($server, GetMoreTools::NAME, $list);
-        $this->assertSame([], $asked->getArrayCopy());
-        $this->assertNull($server->registry);
+        ToolListing::ensureRegistries($server, GetMoreTools::NAME, $this->pages(['' => [[$customer], 'p2'], 'p2' => [[$this->tool('{"name":"b"}')], null]], $asked));
 
-        ToolListing::ensureRegistries($customer, GetMoreTools::NAME, $list);
         $this->assertSame([null], $asked->getArrayCopy());
+        $this->assertTrue($server->injection->hasDeclaredSessionParam(GetMoreTools::NAME));
+        $this->assertSame([], ArgumentStripper::names(GetMoreTools::NAME, $server->registry));
     }
 }

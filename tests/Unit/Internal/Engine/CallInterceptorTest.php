@@ -13,6 +13,7 @@ use AgentCat\Internal\Engine\CallInterceptor;
 use AgentCat\Internal\Engine\Observed;
 use AgentCat\Internal\Engine\Publisher;
 use AgentCat\Internal\Engine\TrackedServer;
+use AgentCat\Internal\Handles\ArgumentStripper;
 use AgentCat\Internal\Id\SessionId;
 use AgentCat\Internal\Json\Json;
 use AgentCat\Internal\Logging\Log;
@@ -599,6 +600,30 @@ final class CallInterceptorTest extends TestCase
         $this->assertNull($event->isError);
         $this->assertEquals((object) ['content' => [(object) ['type' => 'text', 'text' => self::CANNED]]], $event->response);
         $this->assertContains('Missing tool reported (context length: 6)', $this->logger->messages());
+    }
+
+    /**
+     * A get_more_tools call rebuilds like any other tool (Task 2 fix round 0): AgentCat's own is on no page, so the
+     * read goes to the last page. Its entry then names the handles AgentCat injected, and they are AgentCat's.
+     */
+    #[Group('ac-02-40')]
+    public function testAGetMoreToolsCallRebuildsAndItsHandlesAreAgentCats(): void
+    {
+        $server = $this->server(new Options(enableAgentTracking: true));
+        $seam = $this->seam('get_more_tools', ['context' => 'need X', 'session_id' => $this->supplied(), 'agent_id' => 'a1']);
+        $seam->listing = [$this->tree(self::ECHO_TOOL)];
+        $seam->nextCursor = 'p2';
+        $seam->pages = ['p2' => [[$this->tree(self::STRUCTURED_TOOL)], null]];
+
+        $this->interceptor->intercept($server, $seam);
+
+        $this->assertSame([null, 'p2'], $seam->cursors);
+        $this->assertSame(['session_id', 'agent_id'], ArgumentStripper::names('get_more_tools', $server->registry));
+        $this->assertSame([['answer']], $seam->calls); // AgentCat answers; a supplied session gets no block
+        $event = $this->onlyEvent();
+        $this->assertSame($this->supplied(), $event->sessionId);
+        $this->assertSame('supplied', $event->tags[Constants::TAG_SESSION_SOURCE] ?? null);
+        $this->assertSame('a1', $event->tags[Constants::TAG_AGENT_ID] ?? null);
     }
 
     #[Group('ac-02-41')]

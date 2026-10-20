@@ -17,6 +17,7 @@ use AgentCat\Tests\Support\McpSdk\GreetingTool;
 use AgentCat\Tests\Support\McpSdk\HttpHarness;
 use AgentCat\Tests\Support\McpSdk\McpSdkVersion;
 use AgentCat\Tests\Support\McpSdk\NameService;
+use AgentCat\Tests\Support\McpSdk\RecordingTool;
 use AgentCat\Tests\Support\McpSdk\Tools;
 use AgentCat\Tests\Support\McpSdk\TrackingFixture;
 use AgentCat\ToolCall;
@@ -274,6 +275,37 @@ final class CallToolTest extends TestCase
 
         $this->assertSame(1, $list->calls);
         $this->assertSame([['msg' => 'hi']], $echo->calls);
+        $this->assertContains(self::REBUILT, $this->fixture->lines());
+    }
+
+    /**
+     * Task 2 fix round 0: a get_more_tools call rebuilds like any other tool. A server that never listed (PHP-FPM): the
+     * rebuild finds the customer's own get_more_tools on page 2. AgentCat answers the call (report-missing shadows the
+     * customer's tool), and the `session_id` that tool declares stays the customer's: no session is read from it.
+     */
+    #[DataProvider('eras')]
+    #[Group('ac-02-19')]
+    #[Group('ac-02-14')]
+    public function testAShadowedCustomerGetMoreToolsKeepsItsOwnSessionId(bool $modern): void
+    {
+        $builder = TrackingFixture::builder();
+        foreach (range(1, 50) as $i) {
+            Tools::named($builder, sprintf('t%02d', $i));
+        }
+        $customer = new RecordingTool();
+        $schema = ['type' => 'object', 'properties' => ['session_id' => ['type' => 'string']], 'required' => ['session_id']];
+        $builder->add(new Tool(name: GetMoreTools::NAME, title: null, inputSchema: $schema, description: 'Mine', annotations: null), $customer);
+        $this->fixture->track($builder);
+        $harness = $this->fixture->harness($builder);
+        $arguments = ['session_id' => 'theirs', 'context' => 'need X'];
+
+        $answer = $modern ? $harness->callToolModern(GetMoreTools::NAME, $arguments) : $harness->callTool(GetMoreTools::NAME, $arguments);
+
+        $this->assertSame([$this->cannedText()], $this->texts(HttpHarness::result($answer)));
+        $this->assertSame([], $customer->calls, 'AgentCat answers its calls');
+        $event = $this->fixture->event();
+        $this->assertSame('', $event->sessionId);
+        $this->assertSame('foreign', $this->tag($event, Constants::TAG_SESSION_SOURCE));
         $this->assertContains(self::REBUILT, $this->fixture->lines());
     }
 

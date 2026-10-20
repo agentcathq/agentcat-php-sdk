@@ -21,6 +21,7 @@ use AgentCat\Tests\Support\LaravelMcp\LaravelTestCase;
 use AgentCat\Tests\Support\LaravelMcp\LaravelTrackingFixture;
 use AgentCat\Tests\Support\LaravelMcp\LineTransport;
 use AgentCat\Tests\Support\LaravelMcp\ListingServer;
+use AgentCat\Tests\Support\LaravelMcp\PagedGetMoreToolsServer;
 use AgentCat\Tests\Support\LaravelMcp\PagedOwnServer;
 use AgentCat\Tests\Support\LaravelMcp\RecordingCallServer;
 use AgentCat\Tests\Support\LaravelMcp\RecordingMethod;
@@ -48,6 +49,8 @@ final class CallToolTest extends LaravelTestCase
     private const string SESSION = 'ses_bbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
     private const string REBUILT = 'Rebuilt injection registries on demand (tools/call before tools/list on this instance)';
+
+    private const string CANNED = 'Unfortunately, we have shown you the full tool list. We have noted your feedback and will work to improve the tool list in the future.';
 
     #[Group('ac-02-16')]
     #[Group('ac-02-47')]
@@ -195,6 +198,45 @@ final class CallToolTest extends LaravelTestCase
         $this->assertSame([null, 'p2'], array_map(static fn(JsonRpcRequest $request): mixed => $request->params['cursor'] ?? null, $list->requests));
         $this->assertSame('minted', $fixture->event()->tags[Constants::TAG_SESSION_SOURCE] ?? null);
         $this->assertSame(['Warning: registry rebuild-on-demand stopped after page 1 - RuntimeException: page down'], $fixture->lines());
+    }
+
+    /**
+     * Task 2 fix round 0: a get_more_tools call rebuilds like any other tool. A new server per request (PHP-FPM), no
+     * listing: the rebuild finds the customer's own get_more_tools on page 2. AgentCat answers the call (report-missing
+     * shadows the customer's tool), and the `session_id` that tool declares stays the customer's: no session is read
+     * from it and no "unrecognized" block is added.
+     */
+    #[Group('ac-02-19')]
+    #[Group('ac-02-14')]
+    public function testAShadowedCustomerGetMoreToolsKeepsItsOwnSessionId(): void
+    {
+        $fixture = new LaravelTrackingFixture();
+        $harness = new LaravelHarness(PagedGetMoreToolsServer::class, $fixture->tracker());
+
+        $answer = $harness->callTool(GetMoreTools::NAME, ['session_id' => 'theirs', 'context' => 'need X']);
+
+        $this->assertEquals([(object) ['type' => 'text', 'text' => self::CANNED]], JsonAssert::at($answer, 'result', 'content'));
+        $this->assertSame([], ToolCalls::of(GetMoreTools::NAME), 'AgentCat answers its calls');
+        $event = $fixture->event();
+        $this->assertSame('', $event->sessionId);
+        $this->assertSame('foreign', $event->tags[Constants::TAG_SESSION_SOURCE] ?? null);
+        $this->assertSame('need X', $event->userIntent);
+        $this->assertContains(self::REBUILT, $fixture->lines());
+    }
+
+    /** Task 2 fix round 0: with report-missing off, the customer's own get_more_tools on page 2 gets its `session_id`. */
+    #[Group('ac-02-19')]
+    #[Group('ac-02-41')]
+    public function testWithReportMissingOffACustomerGetMoreToolsOnPageTwoGetsItsOwnSessionId(): void
+    {
+        $fixture = new LaravelTrackingFixture();
+        $harness = new LaravelHarness(PagedGetMoreToolsServer::class, $fixture->tracker(new Options(enableReportMissing: false)));
+
+        $answer = $harness->callTool(GetMoreTools::NAME, ['session_id' => 'theirs']);
+
+        $this->assertSame('mine', JsonAssert::at($answer, 'result', 'content', 0, 'text'));
+        $this->assertSame([['session_id' => 'theirs']], ToolCalls::of(GetMoreTools::NAME));
+        $this->assertSame('foreign', $fixture->event()->tags[Constants::TAG_SESSION_SOURCE] ?? null);
     }
 
     #[Group('ac-02-24')]
