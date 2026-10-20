@@ -105,7 +105,7 @@ final class ApacheTest extends RuntimeTestCase
         foreach ($files as $name => $contents) {
             $this->assertNotFalse(file_put_contents($out . '/' . $name, $contents . "\n"));
         }
-        $runtime = DockerRuntime::start(Images::APACHE, ['apache2-foreground'], $env, [
+        $runtime = DockerRuntime::start(Images::apache(), ['apache2-foreground'], $env, [
             $out . '/ports.conf' => '/etc/apache2/ports.conf',
             $out . '/site.conf' => '/etc/apache2/sites-enabled/000-default.conf',
             $out . '/php.ini' => '/usr/local/etc/php/conf.d/zz-agentcat.ini',

@@ -59,7 +59,7 @@ final class CliTest extends RuntimeTestCase
     {
         $scenario = self::$collector->scenario();
         $out = $this->out();
-        $client = StdioMcpClient::command(DockerRuntime::command(Images::CLI, $server, $this->env($scenario), [$out => '/out']), timeout: self::CLIENT_SECONDS);
+        $client = StdioMcpClient::command(DockerRuntime::command(Images::cli(), $server, $this->env($scenario), [$out => '/out']), timeout: self::CLIENT_SECONDS);
         // The handshake era: mcp/sdk 0.8.1 serves 2026-07-28 over stdio only on main; laravel/mcp serves both.
         $client->send(['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => new \stdClass(), 'clientInfo' => ['name' => 'cli', 'version' => '1']]]);
         $this->assertSame('2025-06-18', JsonAssert::at(HttpHarness::result($client->receive(1, self::ANSWER_SECONDS)), 'protocolVersion'));
@@ -91,8 +91,8 @@ final class CliTest extends RuntimeTestCase
         $script = ['php', self::repo() . '/tests/Runtime/Fixtures/swoole-guard.php'];
         $out = $this->out();
 
-        $swoole = DockerRuntime::run(Images::SWOOLE, $script, $this->env(), [$out => '/out']);
-        $plain = DockerRuntime::run(Images::CLI, $script, $this->env(), [$out => '/out']);
+        $swoole = DockerRuntime::run(Images::swoole(), $script, $this->env(), [$out => '/out']);
+        $plain = DockerRuntime::run(Images::cli(), $script, $this->env(), [$out => '/out']);
 
         $this->assertSame(0, $swoole['exitCode'], $swoole['stderr']);
         $this->assertEquals((object) ['swoole' => true, 'pcntl' => true, 'agentcatHandler' => false], Json::decode($swoole['stdout']), $swoole['stderr']);

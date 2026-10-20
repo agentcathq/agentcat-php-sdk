@@ -263,7 +263,7 @@ final class FpmTest extends RuntimeTestCase
             ...($disableFunctions === null ? [] : ['php_admin_value[disable_functions] = ' . $disableFunctions]),
             '',
         ]));
-        $this->runtime = DockerRuntime::start(Images::FPM, ['php-fpm', '-F'], $this->env($collector), [$pool => '/usr/local/etc/php-fpm.d/zzz-agentcat.conf', $out => '/out'], port: $port);
+        $this->runtime = DockerRuntime::start(Images::fpm(), ['php-fpm', '-F'], $this->env($collector), [$pool => '/usr/local/etc/php-fpm.d/zzz-agentcat.conf', $out => '/out'], port: $port);
 
         return new FastCgiClient('127.0.0.1', $port);
     }

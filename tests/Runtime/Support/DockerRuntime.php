@@ -43,9 +43,6 @@ final class DockerRuntime
 
     private const string NAME_PREFIX = 'agentcat-rt-';
 
-    /** The images whose main process is PHP CLI: PHP must not be PID 1 there (header conflict 11). */
-    private const array INIT_IMAGES = [Images::CLI, Images::SWOOLE];
-
     /** The test's output directory is `<test HOME>/runtime-<hex>` (`RuntimeTestCase::out()`). */
     public const string OUTPUT_DIRECTORY_PREFIX = 'runtime-';
 
@@ -108,7 +105,7 @@ final class DockerRuntime
      * @param non-empty-list<string> $command  the command, after the image's entrypoint
      * @param array<string, string>  $env      the container's environment: `RuntimeTestCase::env()` plus the test's own
      * @param array<string, string>  $mounts   host path (in the output directory) => container path
-     * @param bool                   $init     `--init`; `Images::CLI` and `Images::SWOOLE` always get it
+     * @param bool                   $init     `--init`; `Images::cli()` and `Images::swoole()` always get it
      * @param float                  $timeout  how long the port may take to accept a connection
      * @param bool                   $remove   false keeps a stopped container for `logs()` until `stop()` (ruling P16)
      * @param float                  $lifetime how long the container may run at most: longer than any runtime test
@@ -162,7 +159,7 @@ final class DockerRuntime
      * @param list<string>          $command
      * @param array<string, string> $env
      * @param array<string, string> $mounts host path (in the output directory) => container path
-     * @param bool                  $init   `--init`; `Images::CLI` and `Images::SWOOLE` always get it
+     * @param bool                  $init   `--init`; `Images::cli()` and `Images::swoole()` always get it
      *
      * @return list<string>
      */
@@ -206,9 +203,9 @@ final class DockerRuntime
     public static function makeRemovable(string $dir): void
     {
         $name = self::newName();
-        $run = self::docker(['run', '--rm', '--pull', 'never', '--name', $name, '--network', 'none', '--mount', self::bind(self::inOutputDirectory($dir), '/out'), Images::CLI, 'chmod', '-R', 'a+rwX', '/out']);
+        $run = self::docker(['run', '--rm', '--pull', 'never', '--name', $name, '--network', 'none', '--mount', self::bind(self::inOutputDirectory($dir), '/out'), Images::cli(), 'chmod', '-R', 'a+rwX', '/out']);
         if (!$run->isSuccessful()) {
-            throw new \RuntimeException(sprintf('chmod of %s in %s failed: %s', $dir, Images::CLI, $run->getErrorOutput()));
+            throw new \RuntimeException(sprintf('chmod of %s in %s failed: %s', $dir, Images::cli(), $run->getErrorOutput()));
         }
     }
 
@@ -380,7 +377,7 @@ final class DockerRuntime
         if ($remove) {
             $options[] = '--rm';
         }
-        if ($init || in_array($image, self::INIT_IMAGES, true)) {
+        if ($init || in_array($image, Images::initImages(), true)) {
             $options[] = '--init';
         }
         foreach ($mounts as $host => $container) {

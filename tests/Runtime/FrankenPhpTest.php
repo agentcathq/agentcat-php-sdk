@@ -238,7 +238,7 @@ final class FrankenPhpTest extends RuntimeTestCase
             '',
         ]));
         $this->runtime = DockerRuntime::start(
-            Images::FRANKENPHP,
+            Images::frankenphp(),
             ['frankenphp', 'run', '--config', self::CADDYFILE],
             [...$this->env($collector), ...$env],
             [$caddyfile => self::CADDYFILE, $out => '/out'],

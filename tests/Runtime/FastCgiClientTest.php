@@ -66,7 +66,7 @@ final class FastCgiClientTest extends RuntimeTestCase
         $out = $this->out();
         $port = $this->freePort();
         file_put_contents($out . '/pool.conf', "[www]\nlisten = 127.0.0.1:{$port}\npm = static\npm.max_children = 1\n");
-        DockerRuntime::start(Images::FPM, ['php-fpm', '-F'], $this->env(), [$out . '/pool.conf' => '/usr/local/etc/php-fpm.d/zzz-agentcat.conf'], port: $port);
+        DockerRuntime::start(Images::fpm(), ['php-fpm', '-F'], $this->env(), [$out . '/pool.conf' => '/usr/local/etc/php-fpm.d/zzz-agentcat.conf'], port: $port);
 
         return $port;
     }

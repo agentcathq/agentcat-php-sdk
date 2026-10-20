@@ -18,12 +18,12 @@ final class SmokeTest extends RuntimeTestCase
     /** @return iterable<string, array{string}> */
     public static function images(): iterable
     {
-        yield 'fpm' => [Images::FPM];
-        yield 'apache' => [Images::APACHE];
-        yield 'cli' => [Images::CLI];
-        yield 'frankenphp' => [Images::FRANKENPHP];
-        yield 'swoole' => [Images::SWOOLE];
-        yield 'unit' => [Images::UNIT];
+        yield 'fpm' => [Images::fpm()];
+        yield 'apache' => [Images::apache()];
+        yield 'cli' => [Images::cli()];
+        yield 'frankenphp' => [Images::frankenphp()];
+        yield 'swoole' => [Images::swoole()];
+        yield 'unit' => [Images::unit()];
     }
 
     #[DataProvider('images')]
@@ -32,17 +32,17 @@ final class SmokeTest extends RuntimeTestCase
     {
         $run = DockerRuntime::run($image, ['php', self::repo() . '/tests/Runtime/Fixtures/smoke.php'], $this->env(), []);
 
-        $this->assertSame(0, $run['exitCode'], $run['stderr']);
-        $this->assertMatchesRegularExpression('/\A8\.3\.\d+ curl mbstring\z/', $run['stdout']);
+        $this->assertSame(0, $run['exitCode'], $image . ': ' . $run['stderr']);
+        $this->assertMatchesRegularExpression('/\A8\.3\.\d+ curl mbstring\z/', $run['stdout'], $image);
     }
 
     /** The Swoole guard test needs ext-pcntl next to ext-swoole: `docker/swoole/Dockerfile` adds it to the image. */
     #[MaximumDuration(60000)]
     public function testTheSwooleImageLoadsSwooleAndPcntl(): void
     {
-        $run = DockerRuntime::run(Images::SWOOLE, ['php', '-m'], $this->env(), []);
+        $run = DockerRuntime::run(Images::swoole(), ['php', '-m'], $this->env(), []);
 
-        $this->assertSame(0, $run['exitCode'], $run['stderr']);
+        $this->assertSame(0, $run['exitCode'], Images::swoole() . ': ' . $run['stderr']);
         $modules = preg_split('/\R/', $run['stdout']);
         $this->assertIsArray($modules);
         $this->assertContains('swoole', $modules);

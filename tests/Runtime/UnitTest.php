@@ -97,7 +97,7 @@ final class UnitTest extends RuntimeTestCase
                 'options' => ['admin' => ['log_errors' => '1']],
             ]],
         ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)));
-        $runtime = DockerRuntime::start(Images::UNIT, ['unitd', '--no-daemon', '--control', 'unix:/var/run/control.unit.sock'], $env, [$state => self::STATE_DIRECTORY, $out => '/out'], port: $port);
+        $runtime = DockerRuntime::start(Images::unit(), ['unitd', '--no-daemon', '--control', 'unix:/var/run/control.unit.sock'], $env, [$state => self::STATE_DIRECTORY, $out => '/out'], port: $port);
         $this->assertFalse(DockerRuntime::accepts($port, '127.0.0.2'), 'Unit listens beyond 127.0.0.1');
 
         return [$runtime, 'http://127.0.0.1:' . $port];
