@@ -33,6 +33,12 @@ final class AgentCatBundle extends AbstractBundle
 
     private const array BOOLS = ['enable_report_missing' => true, 'enable_tracing' => true, 'enable_tool_call_context' => true];
 
+    private const array BOOL_INFO = [
+        'enable_report_missing' => 'Adds the get_more_tools tool, so agents can report tools they miss. Default: true. Takes true, false, 1, 0, yes, no, on, off or an %env()% value.',
+        'enable_tracing' => 'Publishes one event for every tool call. Default: true. Takes true, false, 1, 0, yes, no, on, off or an %env()% value.',
+        'enable_tool_call_context' => 'Adds a context parameter to your tools, so agents explain each call. Default: true. Takes true, false, 1, 0, yes, no, on, off or an %env()% value.',
+    ];
+
     /** The configuration's root key is `agentcat` (D55), not the `agent_cat` that Symfony derives from the class name. */
     public function __construct()
     {
@@ -51,10 +57,10 @@ final class AgentCatBundle extends AbstractBundle
         $children->scalarNode('logger')->defaultNull()->info('The service ID of a PSR-3 logger for AgentCat\'s own lines, for example monolog.logger.mcp, written here, not in an environment variable. Unset: their own file, agentcat.log in the log directory.')->end();
         $children->scalarNode('api_url')->defaultValue('%env(default::AGENTCAT_API_URL)%')->info('The AgentCat API. Unset: AgentCat\'s. MCPCAT_API_URL, the TypeScript SDK\'s name, is read too.')->end();
         foreach (self::BOOLS as $key => $default) {
-            $children->scalarNode($key)->defaultValue($default)->end();
+            $children->scalarNode($key)->defaultValue($default)->info(self::BOOL_INFO[$key])->end();
         }
-        $children->scalarNode('custom_context_description')->defaultNull()->end();
-        $children->scalarNode('enable_agent_tracking')->defaultFalse()->end();
+        $children->scalarNode('custom_context_description')->defaultNull()->info('Replaces the default description of the context parameter. Unset: the default description.')->end();
+        $children->scalarNode('enable_agent_tracking')->defaultFalse()->info('Adds an agent_id parameter to your tools, to tell agents apart. Default: false. Takes true, false, 1, 0, yes, no, on, off or an %env()% value.')->end();
         foreach (self::HOOKS as $hook) {
             $children->scalarNode($hook)->defaultNull()->info('The service ID of an invokable service, written here, not in an environment variable. The service is resolved when the hook runs.')->end();
         }
@@ -62,7 +68,7 @@ final class AgentCatBundle extends AbstractBundle
         $children->variableNode('disable_diagnostics')->defaultValue(['%env(default::AGENTCAT_DISABLE_DIAGNOSTICS)%', '%env(default::DISABLE_DIAGNOSTICS)%'])->info('Diagnostics: AgentCat\'s own log lines, sent to AgentCat so that it can find broken installs. true turns them off; in a list, one true value is enough. DISABLE_DIAGNOSTICS, the TypeScript SDK\'s name, is read too.')->end();
         $children->scalarNode('diagnostics_endpoint')->defaultValue('%env(default::AGENTCAT_DIAGNOSTICS_ENDPOINT)%')->info('Where diagnostics go: an OpenTelemetry collector (OTLP/HTTP logs). Unset: AgentCat\'s.')->end();
         $children->scalarNode('diagnostics_token')->defaultValue('%env(default::AGENTCAT_DIAGNOSTICS_TOKEN)%')->info('The bearer token of diagnostics_endpoint. Unset: AgentCat\'s.')->end();
-        $children->scalarNode('disable_signal_handlers')->defaultFalse()->end();
+        $children->scalarNode('disable_signal_handlers')->defaultFalse()->info('Keeps AgentCat from installing its SIGTERM and SIGINT handlers in CLI servers. Default: false. Takes true, false, 1, 0, yes, no, on, off or an %env()% value.')->end();
     }
 
     /** @param array<array-key, mixed> $config */

@@ -110,6 +110,27 @@ final class BundleTest extends SymfonyTestCase
         $this->assertSame($handlers, $this->signalHandlers());
     }
 
+    /** Every key of the `agentcat` configuration explains itself in `config:dump-reference`. */
+    #[MaximumDuration(1000)]
+    public function testEveryKeyOfTheReferenceHasAnInfoText(): void
+    {
+        $console = new Application($this->kernel(agentcat: self::ON));
+        $console->setAutoExit(false);
+        $output = new BufferedOutput();
+
+        $exit = $console->run(new ArrayInput(['command' => 'config:dump-reference', 'name' => 'agentcat']), $output);
+        $lines = explode("\n", $output->fetch());
+
+        $this->assertSame(0, $exit);
+        $bare = [];
+        foreach ($lines as $index => $line) {
+            if (1 === preg_match('/^    ([a-z_]+):/', $line, $key) && !str_starts_with($lines[$index - 1] ?? '', '    #')) {
+                $bare[] = $key[1];
+            }
+        }
+        $this->assertSame([], $bare);
+    }
+
     /** The container builds the server once, so its Builder is tracked once, for every request of the container. */
     #[MaximumDuration(1000)]
     public function testTheServerIsTrackedOncePerContainer(): void
