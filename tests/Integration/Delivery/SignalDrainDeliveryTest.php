@@ -282,13 +282,23 @@ final class SignalDrainDeliveryTest extends TestCase
         return [$socket, 'http://' . $name];
     }
 
-    /** Waits (within the process timeout) until the fixture prints `$line`; false when it ended first. */
+    /**
+     * Waits (within the process timeout) until the fixture prints `$line`; false when it ended first. `start()` reads
+     * the pipes once, into the output buffer and not to a later `waitUntil()` callback, so a fixture that printed the
+     * line before then (the test process lost the CPU inside `start()` on a loaded host) printed it there: the buffer
+     * comes first.
+     */
     private function waitForLine(Process $process, string $line): bool
     {
-        $output = '';
+        $output = $process->getOutput();
+        if (str_contains($output, $line . "\n")) {
+            return true;
+        }
 
         return $process->waitUntil(static function (string $type, string $chunk) use (&$output, $line): bool {
-            $output .= $chunk;
+            if ($type === Process::OUT) {
+                $output .= $chunk;
+            }
 
             return str_contains($output, $line . "\n");
         });
