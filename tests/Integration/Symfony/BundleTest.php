@@ -129,6 +129,8 @@ final class BundleTest extends SymfonyTestCase
             }
         }
         $this->assertSame([], $bare);
+        $this->assertSame(5, substr_count(implode("
+", $lines), 'Takes true, false, 1, 0, yes, no, on, off or an %env()% value.'), 'every bool key states the accepted words');
     }
 
     /** The container builds the server once, so its Builder is tracked once, for every request of the container. */
