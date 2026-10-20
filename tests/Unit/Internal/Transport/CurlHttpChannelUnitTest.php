@@ -6,6 +6,7 @@ namespace AgentCat\Tests\Unit\Internal\Transport;
 
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Transport\CurlHttpChannel;
+use AgentCat\Internal\Transport\CurlSupport;
 use AgentCat\Internal\Transport\HttpRequest;
 use AgentCat\Internal\Transport\HttpResponse;
 use AgentCat\Internal\Transport\HttpTransfer;
@@ -20,7 +21,7 @@ final class CurlHttpChannelUnitTest extends TestCase
     /** A5: at most one line per pass, with the count of that pass. */
     private const string FULL = 'WARN: AgentCat telemetry export queue full, dropped the oldest %d request(s)';
 
-    private const string NO_CURL = 'WARN: AgentCat cannot send telemetry exports or diagnostics: ext-curl functions are missing or disabled (';
+    private const string NO_CURL = 'WARN: AgentCat cannot send events, telemetry exports or diagnostics: ext-curl functions are missing or disabled (';
 
     private MemoryLogger $logger;
 
@@ -29,12 +30,14 @@ final class CurlHttpChannelUnitTest extends TestCase
     {
         $this->logger = new MemoryLogger();
         Log::setLogger($this->logger);
+        CurlSupport::reset();
     }
 
     #[\Override]
     protected function tearDown(): void
     {
         Log::reset();
+        CurlSupport::reset();
     }
 
     public function testAFullQueueDropsTheOldestRequestsWithOneLinePerPass(): void

@@ -4,15 +4,69 @@ declare(strict_types=1);
 
 namespace AgentCat\Tests\Unit\Internal\Transport;
 
+use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\SdkVersion;
 use AgentCat\Internal\Transport\CurlSupport;
 use AgentCat\Internal\Transport\CurlTransport;
+use AgentCat\Tests\Support\MemoryLogger;
 use AgentCat\Tests\Support\Thrown;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class CurlSupportTest extends TestCase
 {
+    private const string MISSING = 'WARN: AgentCat cannot send events, telemetry exports or diagnostics: ext-curl functions are missing or disabled (%s)';
+
+    private MemoryLogger $logger;
+
+    #[\Override]
+    protected function setUp(): void
+    {
+        $this->logger = new MemoryLogger();
+        Log::setLogger($this->logger);
+        CurlSupport::reset();
+    }
+
+    #[\Override]
+    protected function tearDown(): void
+    {
+        Log::reset();
+        CurlSupport::reset();
+    }
+
+    /** The event transport and the side channel each check; one line per process names what is missing. */
+    public function testOneLinePerProcessNamesTheMissingFunctions(): void
+    {
+        $missing = static fn(string $function): bool => !in_array($function, ['curl_multi_exec', 'curl_multi_select'], true);
+        $transport = new CurlSupport($missing);
+        $channel = new CurlSupport($missing);
+
+        $this->assertFalse($transport->usable());
+        $this->assertFalse($transport->usable());
+        $this->assertFalse($channel->usable());
+        $this->assertFalse($channel->confirmed());
+
+        $this->assertSame([sprintf(self::MISSING, 'curl_multi_exec, curl_multi_select')], $this->logger->messages());
+    }
+
+    public function testAfterAResetTheNextMissingFunctionIsLoggedAgain(): void
+    {
+        $this->assertFalse((new CurlSupport(static fn(string $function): bool => $function !== 'curl_init'))->usable());
+        CurlSupport::reset();
+        $this->assertFalse((new CurlSupport(static fn(string $function): bool => $function !== 'curl_error'))->usable());
+
+        $this->assertSame([sprintf(self::MISSING, 'curl_init'), sprintf(self::MISSING, 'curl_error')], $this->logger->messages());
+    }
+
+    public function testEveryFunctionThereLogsNothing(): void
+    {
+        $support = new CurlSupport();
+
+        $this->assertTrue($support->usable());
+        $this->assertTrue($support->confirmed());
+        $this->assertSame([], $this->logger->messages());
+    }
+
     /** @return iterable<string, array{float, float}> */
     public static function waits(): iterable
     {

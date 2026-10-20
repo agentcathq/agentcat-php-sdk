@@ -115,6 +115,28 @@ final class SignalDrainDeliveryTest extends TestCase
         $this->assertSame([], $this->resourceNames($base));
     }
 
+    /** A host can disable `posix_getpid()`: the drain then ends the process with the shell's status for SIGTERM. */
+    #[MaximumDuration(10000)]
+    public function testWithoutPosixGetpidTheDrainEndsTheProcessWithTheExitStatusOfTheSignal(): void
+    {
+        $base = $this->collector()->scenario();
+        $process = $this->fixture($base, 'outside', '', ['-d', 'disable_functions=posix_getpid']);
+
+        $process->start();
+        $ready = microtime(true) + self::SIGNAL_DEADLINE;
+        while ($process->isRunning() && $process->getOutput() === '' && microtime(true) < $ready) {
+            usleep(10_000);
+        }
+        $this->assertSame("ready\n", $process->getOutput(), $process->getErrorOutput());
+        $process->signal(15);
+        $process->wait();
+
+        $this->assertFalse($process->hasBeenSignaled());
+        $this->assertSame(128 + 15, $process->getExitCode(), $process->getErrorOutput());
+        $this->assertSame('', $process->getErrorOutput());
+        $this->assertSame(['signal-drain'], $this->resourceNames($base));
+    }
+
     #[MaximumDuration(10000)]
     public function testWithTheHandlersDisabledANormalExitStillDeliversThroughTheShutdownFunction(): void
     {
@@ -222,10 +244,11 @@ final class SignalDrainDeliveryTest extends TestCase
         fclose($hole);
     }
 
-    private function fixture(string $base, string $mode, string $marker = ''): Process
+    /** @param list<string> $php options of the PHP binary, before the script */
+    private function fixture(string $base, string $mode, string $marker = '', array $php = []): Process
     {
         $process = new Process(
-            [PHP_BINARY, __DIR__ . '/../Fixtures/signal-drain.php', $base, $mode, $marker],
+            [PHP_BINARY, ...$php, __DIR__ . '/../Fixtures/signal-drain.php', $base, $mode, $marker],
             null,
             ['HOME' => $this->dir],
         );

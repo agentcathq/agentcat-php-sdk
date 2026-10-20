@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace AgentCat\Internal\Delivery;
 
+use AgentCat\Internal\Logging\Log;
+
 /**
  * Delivers the global queue when a long-running CLI server (an MCP stdio server) gets SIGTERM or SIGINT. Without
  * a handler, these signals end PHP at once: no shutdown function runs, and the waiting events are lost.
  *
  * The global queue calls `install()` when it gets an event, so nothing happens at autoload. It installs once, only
- * under the CLI SAPI with ext-pcntl, and keeps the handler each signal had before. It installs nothing when ext-swoole
+ * under the CLI SAPI with ext-pcntl, and keeps the handler each signal had before. When a host disables a pcntl function
+ * the drain needs (`disable_functions`), it logs one line instead (`DISABLED`). It installs nothing when ext-swoole
  * or ext-openswoole is loaded. A signal that the application ignores in PHP (`pcntl_signal(…, SIG_IGN)`) stays
  * ignored; an ignore inherited from the parent process is not visible to PHP, so AgentCat installs its drain for that
  * signal. When it installs a handler, `install()` also turns on `pcntl_async_signals(true)`, which is process wide:
@@ -26,6 +29,12 @@ namespace AgentCat\Internal\Delivery;
  */
 final class SignalDrain
 {
+    /** The line of a host whose ext-pcntl lacks a function the drain needs; `%s` lists them. */
+    private const string DISABLED = 'WARN: AgentCat cannot send waiting events at SIGTERM or SIGINT: ext-pcntl functions are disabled (%s)';
+
+    /** The pcntl functions the drain calls. */
+    private const array FUNCTIONS = ['pcntl_signal', 'pcntl_signal_get_handler', 'pcntl_async_signals'];
+
     /** @var \Closure(int): void */
     private readonly \Closure $raise;
 
@@ -43,7 +52,8 @@ final class SignalDrain
      * @param \Closure(): EventQueue        $queue          the queue to deliver, looked up at the signal
      * @param (\Closure(int): void)|null    $raise          raises the signal with the default disposition: default
      *                                                      `pcntl_signal($signal, SIG_DFL)`, then `posix_kill()` to this
-     *                                                      process, or `exit(128 + $signal)` without ext-posix
+     *                                                      process, or `exit(128 + $signal)` without `posix_kill()` or
+     *                                                      `posix_getpid()`
      * @param (\Closure(string): bool)|null $functionExists  default `function_exists(...)`
      * @param (\Closure(string): bool)|null $extensionLoaded default `extension_loaded(...)`
      */
@@ -70,7 +80,10 @@ final class SignalDrain
         return true;
     }
 
-    /** Installs the handlers once. Does nothing outside the CLI SAPI, under Swoole or OpenSwoole, or without ext-pcntl. */
+    /**
+     * Installs the handlers once. Does nothing outside the CLI SAPI, under Swoole or OpenSwoole, or without ext-pcntl;
+     * with ext-pcntl but without a function of FUNCTIONS, it logs `DISABLED` once.
+     */
     public function install(): void
     {
         if ($this->installed || $this->disabled || $this->sapi !== 'cli') {
@@ -81,10 +94,14 @@ final class SignalDrain
                 return; // a coroutine server stops its workers with C-level handlers PHP cannot see or chain
             }
         }
-        foreach (['pcntl_signal', 'pcntl_signal_get_handler', 'pcntl_async_signals'] as $function) {
-            if (!($this->functionExists)($function)) {
-                return;
+        $missing = array_filter(self::FUNCTIONS, fn(string $function): bool => !($this->functionExists)($function));
+        if ($missing !== []) {
+            $this->disabled = true; // checked once
+            if (($this->extensionLoaded)('pcntl')) {
+                Log::write(sprintf(self::DISABLED, implode(', ', $missing))); // the extension is there: a host disabled them
             }
+
+            return;
         }
         $this->installed = true;
         $installedAny = false;
@@ -129,7 +146,7 @@ final class SignalDrain
     private function raiseWithDefaultDisposition(int $signal): void
     {
         pcntl_signal($signal, \SIG_DFL);
-        if (($this->functionExists)('posix_kill')) {
+        if (($this->functionExists)('posix_kill') && ($this->functionExists)('posix_getpid')) {
             posix_kill(posix_getpid(), $signal); // the default disposition of SIGTERM and SIGINT ends the process here
 
             return;

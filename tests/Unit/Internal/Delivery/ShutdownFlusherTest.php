@@ -49,6 +49,38 @@ final class ShutdownFlusherTest extends TestCase
         Log::reset();
     }
 
+    /** A host can disable register_shutdown_function(): nothing is registered, and one line says so. */
+    public function testWithoutRegisterShutdownFunctionOneLineIsLoggedAndNothingRegisters(): void
+    {
+        $asked = new \ArrayObject();
+        $flusher = new ShutdownFlusher(fn(): EventQueue => $this->queue, functionExists: static function (string $function) use ($asked): bool {
+            $asked[] = $function;
+
+            return false;
+        });
+
+        $flusher->ensureRegistered();
+        $flusher->ensureRegistered();
+        $this->queue->add(new QueuedEvent($this->event()));
+        $flusher->onShutdown();
+
+        $this->assertSame(['register_shutdown_function'], $asked->getArrayCopy());
+        $this->assertSame(['WARN: AgentCat cannot send waiting events when the script ends: register_shutdown_function is disabled'], $this->logger->messages());
+        $this->assertCount(1, $this->transport->deliveries, 'a pass that runs anyway flushes at once');
+    }
+
+    public function testTheDefaultRegistrarNeedsNoCheckWhenOneIsGiven(): void
+    {
+        $asked = new \ArrayObject();
+        new ShutdownFlusher(fn(): EventQueue => $this->queue, $this->recorder(), functionExists: static function (string $function) use ($asked): bool {
+            $asked[] = $function;
+
+            return true;
+        });
+
+        $this->assertSame([], $asked->getArrayCopy());
+    }
+
     #[Group('ac-03-12')]
     public function testRegistersTheShutdownFunctionOnce(): void
     {

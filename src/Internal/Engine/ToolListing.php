@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AgentCat\Internal\Engine;
 
 use AgentCat\Internal\Logging\Log;
+use AgentCat\Internal\Support\Clock;
 use AgentCat\Internal\Support\ErrorText;
 
 /** @internal */
@@ -77,7 +78,7 @@ final class ToolListing
      *                                                                       for the first): its tools and its next
      *                                                                       cursor, or null when the answer has no
      *                                                                       tool list; may throw
-     * @param (\Closure(): float)|null $clock seconds on a monotonic clock; null reads `hrtime()`
+     * @param (\Closure(): float)|null $clock seconds on a monotonic clock; null reads `Clock::monotonic()`
      */
     public static function ensureRegistries(TrackedServer $server, string $toolName, \Closure $listPage, ?\Closure $clock = null): void
     {
@@ -85,7 +86,7 @@ final class ToolListing
             return;
         }
         try {
-            $read = self::readPages($toolName, $listPage, $clock ?? static fn(): float => hrtime(true) / 1e9);
+            $read = self::readPages($toolName, $listPage, $clock ?? Clock::monotonic());
             if ($read === null) {
                 return;
             }

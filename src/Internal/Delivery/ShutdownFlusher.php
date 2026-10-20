@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace AgentCat\Internal\Delivery;
 
+use AgentCat\Internal\Logging\Log;
+
 /**
  * Delivers the global queue when the request or script ends.
  *
@@ -12,14 +14,18 @@ namespace AgentCat\Internal\Delivery;
  * `ShutdownHandler` pattern). When the queue has work (events, exporter requests or diagnostics lines), the final
  * pass first ends the request (`RequestEnd`: the session, the time limit and, without a finish call, the output
  * buffers) and sends the HTTP response to the client when the SAPI can (`fastcgi_finish_request()` and friends), then
- * shuts the queue down within its drain budget.
+ * shuts the queue down within its drain budget. Where a host disables `register_shutdown_function()`
+ * (`disable_functions`), nothing is registered and one line says so: the events still waiting when the script ends are
+ * lost.
  *
  * @internal
  */
 final class ShutdownFlusher
 {
-    /** @var \Closure(\Closure(): void): void */
-    private readonly \Closure $register;
+    private const string NO_SHUTDOWN = 'WARN: AgentCat cannot send waiting events when the script ends: register_shutdown_function is disabled';
+
+    /** @var (\Closure(\Closure(): void): void)|null null where a host disabled `register_shutdown_function()` */
+    private readonly ?\Closure $register;
 
     private bool $registered = false;
 
@@ -28,20 +34,31 @@ final class ShutdownFlusher
      * @param (\Closure(\Closure(): void): void)|null $register      default `register_shutdown_function(...)`
      * @param (\Closure(): void)|null                 $finishRequest sends the response to the client (`FinishRequest::detect()`)
      * @param RequestEnd|null                         $requestEnd    runs before the finish call when the queue has work
+     * @param (\Closure(string): bool)|null           $functionExists tests only: tells whether `register_shutdown_function()` exists; default `function_exists()`
      */
     public function __construct(
         private readonly \Closure $queue,
         ?\Closure $register = null,
         private readonly ?\Closure $finishRequest = null,
         private readonly ?RequestEnd $requestEnd = null,
+        ?\Closure $functionExists = null,
     ) {
-        $this->register = $register ?? register_shutdown_function(...);
+        $this->register = $register ?? (($functionExists ?? function_exists(...))('register_shutdown_function') ? register_shutdown_function(...) : null);
     }
 
-    /** Registers the shutdown function once. A registrar error reaches the caller (the queue logs it). */
+    /**
+     * Registers the shutdown function once; without `register_shutdown_function()`, logs NO_SHUTDOWN once instead. A
+     * registrar error reaches the caller (the queue logs it).
+     */
     public function ensureRegistered(): void
     {
         if ($this->registered) {
+            return;
+        }
+        if (!$this->register instanceof \Closure) {
+            $this->registered = true;
+            Log::write(self::NO_SHUTDOWN);
+
             return;
         }
         ($this->register)($this->onShutdown(...));
@@ -52,7 +69,9 @@ final class ShutdownFlusher
     public function onShutdown(): void
     {
         try {
-            ($this->register)($this->onFinalShutdown(...));
+            ($this->register ?? static function (\Closure $pass): void {
+                $pass(); // no registrar: the final pass runs now
+            })($this->onFinalShutdown(...));
         } catch (\Throwable) {
             $this->onFinalShutdown(); // cannot move to the end of the list: flush now
         }

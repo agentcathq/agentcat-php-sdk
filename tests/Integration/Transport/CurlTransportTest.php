@@ -9,6 +9,7 @@ use AgentCat\Internal\Constants;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\SdkVersion;
 use AgentCat\Internal\Transport\ApiBaseUrl;
+use AgentCat\Internal\Transport\CurlSupport;
 use AgentCat\Internal\Transport\CurlTransport;
 use AgentCat\Internal\Transport\Delivery;
 use AgentCat\Internal\Transport\RetryPolicy;
@@ -31,7 +32,7 @@ final class CurlTransportTest extends TestCase
 
     private const string GAVE_UP = 'Failed to deliver AgentCat event after retries: ';
 
-    private const string NO_CURL = 'WARN: AgentCat cannot send events: ext-curl functions are missing or disabled (';
+    private const string NO_CURL = 'WARN: AgentCat cannot send events, telemetry exports or diagnostics: ext-curl functions are missing or disabled (';
 
     /** Seconds; every blocking call in these tests has a deadline. */
     private const float DEADLINE = 5.0;
@@ -58,12 +59,14 @@ final class CurlTransportTest extends TestCase
     {
         $this->logger = new MemoryLogger();
         Log::setLogger($this->logger);
+        CurlSupport::reset();
     }
 
     #[\Override]
     protected function tearDown(): void
     {
         Log::reset();
+        CurlSupport::reset();
     }
 
     #[Group('ac-03-1')]

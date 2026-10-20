@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace AgentCat\Internal\Delivery;
 
+use AgentCat\Internal\Support\Env;
+
 /**
  * The SAPI function that sends the HTTP response to the client before the script ends, so that delivery at
  * shutdown does not delay the response.
@@ -20,7 +22,7 @@ final class FinishRequest
      *
      * @param array<array-key, mixed>               $server         `$_SERVER`
      * @param \Closure(string): bool                $functionExists
-     * @param (\Closure(string): (string|false))|null $getenv         default `getenv()`
+     * @param (\Closure(string): (string|false))|null $getenv         default `Env::lookup()`
      */
     public static function functionFor(string $sapi, array $server, \Closure $functionExists, ?\Closure $getenv = null): ?string
     {
@@ -39,11 +41,11 @@ final class FinishRequest
      * FrankenPHP worker mode: `$_SERVER['FRANKENPHP_WORKER']` is set, or the `FRANKENPHP_WORKER` environment variable.
      *
      * @param array<array-key, mixed>               $server `$_SERVER`
-     * @param (\Closure(string): (string|false))|null $getenv default `getenv()`
+     * @param (\Closure(string): (string|false))|null $getenv default `Env::lookup()`
      */
     public static function isFrankenPhpWorker(array $server, ?\Closure $getenv = null): bool
     {
-        return isset($server['FRANKENPHP_WORKER']) || ($getenv ?? getenv(...))('FRANKENPHP_WORKER') !== false;
+        return isset($server['FRANKENPHP_WORKER']) || ($getenv ?? Env::lookup(...))('FRANKENPHP_WORKER') !== false;
     }
 
     /**
@@ -64,7 +66,7 @@ final class FinishRequest
      * stdio server) or FrankenPHP worker mode.
      *
      * @param array<array-key, mixed>               $server `$_SERVER`
-     * @param (\Closure(string): (string|false))|null $getenv default `getenv()`
+     * @param (\Closure(string): (string|false))|null $getenv default `Env::lookup()`
      */
     public static function outlivesRequest(string $sapi, array $server, ?\Closure $getenv = null): bool
     {
@@ -77,7 +79,7 @@ final class FinishRequest
      *
      * @param array<array-key, mixed>               $server         `$_SERVER`
      * @param \Closure(string): bool                $functionExists
-     * @param (\Closure(string): (string|false))|null $getenv         default `getenv()`
+     * @param (\Closure(string): (string|false))|null $getenv         default `Env::lookup()`
      */
     public static function responseEndsWithTheScript(string $sapi, array $server, \Closure $functionExists, ?\Closure $getenv = null): bool
     {
@@ -92,18 +94,24 @@ final class FinishRequest
 
     /**
      * Calls `$function` after `ignore_user_abort(true)`, which keeps the script alive when the client
-     * disconnects after its response.
+     * disconnects after its response. A host can disable `ignore_user_abort()` (`disable_functions`): the call then
+     * runs alone.
+     *
+     * @param (\Closure(string): bool)|null $functionExists tests only: tells whether `ignore_user_abort()` exists; default `function_exists()`
      *
      * @return (\Closure(): void)|null null when `$function` is not callable
      */
-    public static function closureFor(?string $function): ?\Closure
+    public static function closureFor(?string $function, ?\Closure $functionExists = null): ?\Closure
     {
         if ($function === null || !is_callable($function)) {
             return null;
         }
+        $ignoreAbort = ($functionExists ?? function_exists(...))('ignore_user_abort');
 
-        return static function () use ($function): void {
-            ignore_user_abort(true);
+        return static function () use ($function, $ignoreAbort): void {
+            if ($ignoreAbort) {
+                ignore_user_abort(true);
+            }
             $function();
         };
     }

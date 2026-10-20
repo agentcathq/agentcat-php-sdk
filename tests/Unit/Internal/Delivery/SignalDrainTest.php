@@ -28,6 +28,8 @@ final class SignalDrainTest extends TestCase
 
     private const int SIG_DFL = 0;
 
+    private const string DISABLED = 'WARN: AgentCat cannot send waiting events at SIGTERM or SIGINT: ext-pcntl functions are disabled (%s)';
+
     private MemoryLogger $logger;
 
     private RecordingTransport $transport;
@@ -144,11 +146,41 @@ final class SignalDrainTest extends TestCase
     {
         $this->resetHandlers();
 
-        $this->drain(static fn(string $function): bool => $function !== $missing)->install();
+        $drain = $this->drain(static fn(string $function): bool => $function !== $missing);
+        $drain->install();
+        $drain->install();
 
         $this->assertSame(\SIG_DFL, pcntl_signal_get_handler(\SIGTERM));
         $this->assertSame(\SIG_DFL, pcntl_signal_get_handler(\SIGINT));
         $this->assertFalse(pcntl_async_signals());
+        $this->assertSame([sprintf(self::DISABLED, $missing)], $this->logger->messages(), 'ext-pcntl is loaded: a host disabled the function');
+    }
+
+    public function testTheLineNamesEveryDisabledPcntlFunction(): void
+    {
+        $drain = new SignalDrain(fn(): EventQueue => $this->queue, $this->raise(...), static fn(string $function): bool => $function === 'pcntl_signal_get_handler', 'cli', static fn(string $extension): bool => $extension === 'pcntl');
+
+        $drain->install();
+
+        $this->assertSame([sprintf(self::DISABLED, 'pcntl_signal, pcntl_async_signals')], $this->logger->messages());
+        $this->assertTrue($drain->disable(), 'nothing was installed');
+    }
+
+    /** A PHP built without ext-pcntl has no drain, as documented: that is no hardened host, so nothing is logged. */
+    public function testWithoutExtPcntlNothingIsLogged(): void
+    {
+        $asked = new \ArrayObject();
+        $drain = new SignalDrain(fn(): EventQueue => $this->queue, $this->raise(...), static function (string $function) use ($asked): bool {
+            $asked[] = $function;
+
+            return false;
+        }, 'cli', static fn(string $extension): bool => false);
+
+        $drain->install();
+        $drain->install();
+
+        $this->assertSame([], $this->logger->messages());
+        $this->assertSame(['pcntl_signal', 'pcntl_signal_get_handler', 'pcntl_async_signals'], $asked->getArrayCopy(), 'checked once');
     }
 
     /** @return iterable<string, array{string}> */

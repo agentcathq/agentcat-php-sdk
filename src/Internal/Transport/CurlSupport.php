@@ -9,8 +9,8 @@ use AgentCat\Internal\SdkVersion;
 
 /**
  * What `CurlTransport` and `CurlHttpChannel` share about ext-curl: the check that every curl function they call
- * exists (a PHP without ext-curl, or with some of its functions in `disable_functions`), made once and logged once
- * (D32), the User-Agent, the timeouts and the options of a `POST`, the bound of one wait, and the texts of a failed
+ * exists (a PHP without ext-curl, or with some of its functions in `disable_functions`), made once by each and logged
+ * once per process (D32), the User-Agent, the timeouts and the options of a `POST`, the bound of one wait, and the texts of a failed
  * transfer and of a failed multi handle. `CurlMulti` runs the transfers.
  *
  * @internal
@@ -19,6 +19,9 @@ final class CurlSupport
 {
     /** The longest curl timeout: 2^31 - 1 ms, what a 32-bit C `long` (curl's option type on Windows) carries. */
     public const float MAX_TIMEOUT_SECONDS = 2_147_483.647;
+
+    /** The line of a PHP that lacks a function of FUNCTIONS; `%s` lists them. Both users need every one of them. */
+    private const string MISSING = 'WARN: AgentCat cannot send events, telemetry exports or diagnostics: ext-curl functions are missing or disabled (%s)';
 
     /** Every curl function `CurlTransport` and `CurlHttpChannel` call. */
     private const array FUNCTIONS = [
@@ -30,30 +33,37 @@ final class CurlSupport
     /** Whether every function in FUNCTIONS exists; null until `usable()` checked it. */
     private ?bool $usable = null;
 
+    /** Whether a check of this process logged MISSING: the event transport and the side channel share one line. */
+    private static bool $reported = false;
+
     /** @var \Closure(string): bool */
     private readonly \Closure $functionExists;
 
-    /**
-     * @param string                        $missingLine    the line logged when a function is missing; `%s` is the comma-separated list
-     * @param (\Closure(string): bool)|null $functionExists tests only: tells whether a curl function exists. Default `function_exists()`.
-     */
-    public function __construct(private readonly string $missingLine, ?\Closure $functionExists = null)
+    /** @param (\Closure(string): bool)|null $functionExists tests only: tells whether a curl function exists. Default `function_exists()`. */
+    public function __construct(?\Closure $functionExists = null)
     {
         $this->functionExists = $functionExists ?? function_exists(...);
     }
 
-    /** Whether every curl function exists. The first call checks them; a false answer logs one line. */
+    /** Whether every curl function exists. The first call checks them; the first false answer of the process logs MISSING. */
     public function usable(): bool
     {
         if ($this->usable === null) {
             $missing = array_filter(self::FUNCTIONS, fn(string $function): bool => !($this->functionExists)($function));
             $this->usable = $missing === [];
-            if (!$this->usable) {
-                Log::write(sprintf($this->missingLine, implode(', ', $missing)));
+            if (!$this->usable && !self::$reported) {
+                self::$reported = true;
+                Log::write(sprintf(self::MISSING, implode(', ', $missing)));
             }
         }
 
         return $this->usable;
+    }
+
+    /** Tests only: the next check that finds a missing function logs MISSING again. */
+    public static function reset(): void
+    {
+        self::$reported = false;
     }
 
     /** True once `usable()` answered true. Checks nothing. */

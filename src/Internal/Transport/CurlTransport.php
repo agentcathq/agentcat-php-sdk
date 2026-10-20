@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace AgentCat\Internal\Transport;
 
 use AgentCat\Internal\Logging\Log;
+use AgentCat\Internal\Support\Clock;
 use AgentCat\Internal\Support\ErrorText;
 
 /**
  * One `POST` per event over ext-curl: `curl_multi` transfers, at most five at once, with TypeScript's retry
  * policy scheduled by time (`pump()` never sleeps) and connect/total timeouts. Nothing reaches STDOUT/STDERR.
  * The multi handle starts with the first delivery. When a curl function it calls is missing or disabled, every
- * delivery is dropped and one line is logged (D32).
+ * delivery is dropped, and one line per process says so (`CurlSupport`, D32).
  *
  * @internal
  */
@@ -27,8 +28,6 @@ final class CurlTransport implements Transport
 
     /** Upper bound of one wait, so a waiting caller re-checks its state at least once a second. */
     private const float MAX_WAIT_SECONDS = 1.0;
-
-    private const string NO_CURL = 'WARN: AgentCat cannot send events: ext-curl functions are missing or disabled (%s)';
 
     /** The ext-curl check, made at the first delivery. */
     private readonly CurlSupport $curl;
@@ -50,7 +49,7 @@ final class CurlTransport implements Transport
     private array $scheduled = [];
 
     /**
-     * @param (\Closure(): float)|null          $clock          monotonic seconds (tests); must not throw. Default `hrtime(true) / 1e9`.
+     * @param (\Closure(): float)|null          $clock          monotonic seconds (tests); must not throw. Default `Clock::monotonic()`.
      * @param (\Closure(string, int): int)|null $multiStatus    tests only: receives the function name and the CURLM code of each
      *                                                          `curl_multi_add_handle()` and `curl_multi_exec()` call, returns the code to act on
      * @param (\Closure(string): bool)|null     $functionExists tests only: tells whether a curl function exists. Default `function_exists()`.
@@ -67,8 +66,8 @@ final class CurlTransport implements Transport
     ) {
         $this->connectTimeoutMs = CurlSupport::timeoutMilliseconds($connectTimeoutSeconds);
         $this->totalTimeoutMs = CurlSupport::timeoutMilliseconds($totalTimeoutSeconds);
-        $this->clock = $clock ?? static fn(): float => hrtime(true) / 1e9;
-        $this->curl = new CurlSupport(self::NO_CURL, $functionExists);
+        $this->clock = $clock ?? Clock::monotonic();
+        $this->curl = new CurlSupport($functionExists);
         $this->multi = new CurlMulti($multiStatus);
     }
 

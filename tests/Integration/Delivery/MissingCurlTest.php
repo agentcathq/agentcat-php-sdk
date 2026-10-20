@@ -14,7 +14,7 @@ use Symfony\Component\Process\Process;
 /** D32: a PHP without ext-curl's functions keeps the facade silent and harmless; events are dropped with one line. */
 final class MissingCurlTest extends TestCase
 {
-    private const string NO_CURL = 'WARN: AgentCat cannot send events: ext-curl functions are missing or disabled (';
+    private const string NO_CURL = 'WARN: AgentCat cannot send events, telemetry exports or diagnostics: ext-curl functions are missing or disabled (';
 
     /** HOME of the script (its agentcat.log) and its result file. */
     private string $dir = '';

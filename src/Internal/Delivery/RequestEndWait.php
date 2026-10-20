@@ -31,7 +31,7 @@ final class RequestEndWait
      * @param bool                                    $console true for a console command (Laravel `runningInConsole()`;
      *                                                         Octane workers report false); Symfony's kernel.terminate passes false
      * @param array<array-key, mixed>|null            $server  `$_SERVER`; null reads it
-     * @param (\Closure(string): (string|false))|null $getenv  default `getenv(...)`
+     * @param (\Closure(string): (string|false))|null $getenv  default `Env::lookup()`
      */
     public static function seconds(bool $console, string $sapi = PHP_SAPI, ?array $server = null, ?\Closure $getenv = null): float
     {

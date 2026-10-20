@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AgentCat\Testing\Internal;
 
+use AgentCat\Internal\Support\Clock;
 use AgentCat\Internal\Transport\Delivery;
 use AgentCat\Internal\Transport\Transport;
 
@@ -12,8 +13,16 @@ use AgentCat\Internal\Transport\Transport;
  *
  * @internal
  */
-final class InstantTransport implements Transport
+final readonly class InstantTransport implements Transport
 {
+    /** @var \Closure(): float */
+    private \Closure $clock;
+
+    public function __construct()
+    {
+        $this->clock = Clock::monotonic();
+    }
+
     #[\Override]
     public function start(Delivery $delivery): void
     {
@@ -51,6 +60,6 @@ final class InstantTransport implements Transport
     #[\Override]
     public function now(): float
     {
-        return hrtime(true) / 1e9;
+        return ($this->clock)();
     }
 }
