@@ -155,14 +155,20 @@ final class EventQueueDeliveryTest extends TestCase
 
     /**
      * Review Focus 1: an exporter endpoint that hangs, on a server whose AgentCat API works. `pump()` returns at once,
-     * the event is delivered, and `shutdown()` waits for the export only until its budget, then abandons it.
+     * the event is delivered, and `shutdown()` waits for the export only until its budget, then abandons it. The export
+     * goes to a local server that never answers, not to the mock collector: a collector worker that took both
+     * connections would serve the event after the slow export.
      */
     #[Group('ac-06-63')]
     #[MaximumDuration(5000)]
     public function testASlowExportEndpointNeverHoldsTheEventsBack(): void
     {
         $events = $this->collector()->scenario();
-        $slow = $this->collector()->scenario([], ['status' => 200, 'delayMs' => 3000]);
+        $silent = stream_socket_server('tcp://127.0.0.1:0', $errorCode, $errorMessage); // the kernel accepts; nothing reads
+        $this->assertNotFalse($silent, 'no local server: ' . $errorMessage);
+        $address = stream_socket_get_name($silent, false);
+        $this->assertIsString($address);
+        $slow = 'http://' . $address;
         $channel = new CurlHttpChannel();
         $exporter = new readonly class ($channel, $slow) implements ExporterSink {
             public function __construct(private HttpChannel $channel, private string $url) {}
@@ -189,6 +195,7 @@ final class EventQueueDeliveryTest extends TestCase
         $this->assertLessThan(1.5, $elapsed, 'the shutdown budget (0.3 s here) bounds the slow export');
         $this->assertCount(1, $this->collector()->requests($events), 'the event is delivered');
         $this->assertSame(1, $channel->pending(), 'the slow export is abandoned');
+        fclose($silent);
     }
 
     /**

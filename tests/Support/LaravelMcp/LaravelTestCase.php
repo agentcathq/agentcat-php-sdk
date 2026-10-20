@@ -18,8 +18,10 @@ use AgentCat\Tests\Support\SrcErrorGuard;
 use AgentCat\Tests\Support\ToolCalls;
 use AgentCat\Tests\Support\WarmUp;
 use Illuminate\Foundation\Application;
+use Illuminate\Foundation\Bootstrap\RegisterProviders;
 use Laravel\Mcp\Server\McpServiceProvider;
 use Orchestra\Testbench\TestCase;
+use PHPUnit\Framework\Attributes\After;
 
 /**
  * A Laravel application with laravel/mcp, for the adapter and bridge tests. `app.debug` is false, like production.
@@ -85,6 +87,7 @@ abstract class LaravelTestCase extends TestCase
                 $warmUp->testWarmUp();
             } finally {
                 $warmUp->tearDown();
+                $warmUp->assertNoSrcIssueWasHidden();
                 $warmUp::tearDownAfterClass();
             }
         });
@@ -93,6 +96,7 @@ abstract class LaravelTestCase extends TestCase
     #[\Override]
     protected function setUp(): void
     {
+        SrcErrorGuard::forget();
         $this->handlers = GlobalHandlers::save();
         $home = getenv('HOME');
         if (!is_string($home) || $home === '') {
@@ -113,7 +117,23 @@ abstract class LaravelTestCase extends TestCase
         parent::setUp();
     }
 
-    /** Each new application (`setUp()`, or a test's own refresh) installs its error handler: the guard goes in front. */
+    /**
+     * Each new application (`setUp()`, or a test's own refresh) installs Laravel's error handler, then registers and
+     * boots the providers, AgentCat's among them. The guard goes in front of that handler before the providers register
+     * (Testbench resolves `RegisterProviders` right after `HandleExceptions`), and again after the application if a
+     * handler came in front of it since.
+     *
+     * @param Application $app
+     */
+    #[\Override]
+    protected function resolveApplicationResolvingCallback(mixed $app): void
+    {
+        parent::resolveApplicationResolvingCallback($app);
+        $app->afterResolving(RegisterProviders::class, static function (): void {
+            SrcErrorGuard::install();
+        });
+    }
+
     #[\Override]
     protected function refreshApplication(): void
     {
@@ -160,10 +180,22 @@ abstract class LaravelTestCase extends TestCase
         TrackedServers::resetIncomplete();
         TrackedServers::resetSkipped();
 
-        parent::tearDown();
-        $this->environment?->restore();
-        FileTree::remove($this->laravelDirectory);
-        $this->handlers?->restore(); // Laravel's flushState() emptied both stacks and put PHPUnit's handler back
+        parent::tearDown(); // Laravel's flushState() empties both stacks and puts PHPUnit's handler back, also before a throw
+        try {
+            $this->environment?->restore();
+            FileTree::remove($this->laravelDirectory);
+        } finally {
+            $this->handlers?->restore();
+        }
+    }
+
+    /**
+     * Fails with each `src/` issue that a guard recorded. It runs after every `tearDown()` of the test, the subclasses'
+     * too, so its failure skips none of their cleanup; `setUp()` forgets what a test that threw earlier left.
+     */
+    #[After(-100)]
+    public function assertNoSrcIssueWasHidden(): void
+    {
         SrcErrorGuard::assertNone($this);
     }
 }

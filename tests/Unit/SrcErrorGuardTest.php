@@ -84,6 +84,40 @@ final class SrcErrorGuardTest extends TestCase
         $this->assertSame(['not ours'], $this->framework->getArrayCopy());
     }
 
+    /** A handler in place that declines the issue (returns false) gives it to PHP's own handling, as without the guard. */
+    public function testAnIssueThatTheHandlerInPlaceDeclinesGoesOnToPhp(): void
+    {
+        $declined = new \ArrayObject();
+        set_error_handler(static function (int $level, string $message) use ($declined): bool {
+            $declined->append($message);
+
+            return false;
+        });
+        SrcErrorGuard::install(__DIR__ . '/');
+        $this->triggerQuietly('declined');
+        $this->handlers->restore();
+
+        $this->assertSame(['declined'], $declined->getArrayCopy());
+        $this->assertSame([], $this->framework->getArrayCopy(), 'a handler does not hand on to the one below it');
+        $this->assertSame('declined', error_get_last()['message'] ?? null, "PHP's own handling ran");
+        $this->assertStringContainsString("\nE_USER_DEPRECATED: declined at " . __FILE__ . ':', $this->failureOfAssertNone());
+    }
+
+    /** With no handler in place, the guard records the issue and gives it to PHP's own handling. */
+    public function testWithoutAHandlerInPlaceTheIssueGoesOnToPhp(): void
+    {
+        while (SrcErrorGuard::inPlace() !== null) {
+            restore_error_handler(); // also PHPUnit's: tearDown() puts the stack back
+        }
+        SrcErrorGuard::install(__DIR__ . '/');
+        $this->triggerQuietly('unhandled');
+        $this->handlers->restore();
+
+        $this->assertSame([], $this->framework->getArrayCopy());
+        $this->assertSame('unhandled', error_get_last()['message'] ?? null, "PHP's own handling ran");
+        $this->assertStringContainsString("\nE_USER_DEPRECATED: unhandled at " . __FILE__ . ':', $this->failureOfAssertNone());
+    }
+
     /** A second kernel of a test installs nothing while the guard is in front: each issue is recorded once. */
     public function testAGuardInFrontIsNotInstalledAgain(): void
     {
@@ -107,6 +141,21 @@ final class SrcErrorGuardTest extends TestCase
         SrcErrorGuard::assertNone($this);
 
         $this->assertSame($before + 1, Assert::getCount());
+    }
+
+    /** A deprecation that PHP's own handling records (`error_get_last()`) but neither prints nor logs. */
+    private function triggerQuietly(string $message): void
+    {
+        $display = ini_set('display_errors', '0');
+        $log = ini_set('log_errors', '0');
+        error_clear_last();
+
+        try {
+            trigger_error($message, E_USER_DEPRECATED);
+        } finally {
+            ini_set('display_errors', (string) $display);
+            ini_set('log_errors', (string) $log);
+        }
     }
 
     /** The message of the assertion failure that `assertNone()` throws. */

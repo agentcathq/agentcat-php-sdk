@@ -623,7 +623,8 @@ final class CurlHttpChannelTest extends TestCase
             }
             $this->assertLessThan(1.0, (hrtime(true) - $begin) / 1e9, 'ten waits return at once, not after a second each');
         }
-        // A positive bound does block: pump() and a wait of 0.2 s, for 0.6 s, run about three times, not thousands.
+        // A positive bound does block: pump() and a wait of 0.2 s, for 0.6 s, run about three times. Each libcurl timer
+        // can end one wait early (one on libcurl 7.88); fewer than 8 passes means waits of more than about 80 ms.
         $passes = 0;
         $until = hrtime(true) + 600_000_000;
         while (hrtime(true) < $until) {
@@ -631,7 +632,7 @@ final class CurlHttpChannelTest extends TestCase
             $channel->waitForActivity(0.2);
             ++$passes;
         }
-        $this->assertLessThan(20, $passes, 'a positive bound does block');
+        $this->assertLessThan(8, $passes, 'a positive bound does block');
 
         fclose($connection);
         fclose($server);

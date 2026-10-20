@@ -13,7 +13,7 @@ use PHPUnit\Framework\TestCase;
  * way, PHPUnit never sees it. After each application or kernel of a bridge test case boots, `install()` puts a handler
  * in front of the framework's: it records an issue from a file under the source directory, then hands every issue to
  * the framework's handler, as without the guard. The test case's `tearDown()` puts the handler stack back
- * (`GlobalHandlers`) and calls `assertNone()`.
+ * (`GlobalHandlers`), and an `#[After]` method calls `assertNone()` once every `tearDown()` of the test has run.
  */
 final class SrcErrorGuard
 {
@@ -46,10 +46,10 @@ final class SrcErrorGuard
      */
     public static function install(?string $source = null): void
     {
-        $inPlace = self::inPlace();
-        if ($inPlace !== null && in_array($inPlace, self::$guards, true)) {
-            return; // a second kernel of the same test: no framework handler came in front of the guard
+        if (self::inFront()) {
+            return; // a second kernel of the same test, or after the boot: no handler came in front of the guard
         }
+        $inPlace = self::inPlace();
         $source ??= self::source();
         $guard = static function (int $level, string $message, string $file, int $line) use ($source, $inPlace): bool {
             if (self::fromSource($level, $file, $source)) {
@@ -69,6 +69,28 @@ final class SrcErrorGuard
         self::$recorded = [];
         self::$guards = [];
         $test::assertCount(0, $recorded, sprintf("A file of src/ raised %d issue(s) that a framework's error handler took:\n%s", count($recorded), implode("\n", $recorded)));
+    }
+
+    /**
+     * Forgets the issues and the guards of a test that ended before its `assertNone()`: its `tearDown()` threw, so it
+     * failed already. A bridge test case calls it first in `setUp()`, so no other test reports them.
+     */
+    public static function forget(): void
+    {
+        self::$recorded = [];
+        self::$guards = [];
+    }
+
+    /** The guards installed since the last `assertNone()`: one for each application or kernel handler they front. */
+    public static function installed(): int
+    {
+        return count(self::$guards);
+    }
+
+    /** Whether a guard is the error handler in place. */
+    public static function inFront(): bool
+    {
+        return in_array(self::inPlace(), self::$guards, true);
     }
 
     /** The repository's `src/`, with a trailing slash. */
@@ -107,7 +129,8 @@ final class SrcErrorGuard
 
     /**
      * Hands an issue to the handler that was in place, as PHP would have: true when it took the issue, false (PHP's own
-     * handling) when it declined it or there was none.
+     * handling) when it declined it or there was none. Every level goes to it: PHP does not tell which levels a handler
+     * was registered for (`set_error_handler()`'s second argument), and no framework in use registers one.
      *
      * @param (callable(int, string, string, int): bool)|null $inPlace
      */

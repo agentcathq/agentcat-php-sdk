@@ -6,7 +6,6 @@ namespace AgentCat\Tests\Support;
 
 use AgentCat\Internal\Transport\CurlMulti;
 use AgentCat\Internal\Transport\CurlTransport;
-use PHPUnit\Framework\Assert;
 
 /**
  * The transfers that libcurl finished and the transport has not read yet, off the transport's multi handle. No time
@@ -14,14 +13,21 @@ use PHPUnit\Framework\Assert;
  */
 final class UnreadTransfers
 {
-    /** Reads them off the multi handle, so a test that sees one fails at once. Zero before the first delivery made the handle. */
+    /**
+     * Reads them off the multi handle, so a test that sees one fails at once. Call it after the first delivery started,
+     * which makes the handle.
+     *
+     * @throws \LogicException when a member is not what the transport keeps there: the check would pass for nothing
+     */
     public static function of(CurlTransport $transport): int
     {
         $multi = (new \ReflectionProperty(CurlTransport::class, 'multi'))->getValue($transport);
-        Assert::assertInstanceOf(CurlMulti::class, $multi);
+        if (!$multi instanceof CurlMulti) {
+            throw new \LogicException('CurlTransport::$multi is ' . get_debug_type($multi) . ', not a CurlMulti');
+        }
         $handle = (new \ReflectionProperty(CurlMulti::class, 'multi'))->getValue($multi);
         if (!$handle instanceof \CurlMultiHandle) {
-            return 0;
+            throw new \LogicException('CurlMulti::$multi is ' . get_debug_type($handle) . ', not a CurlMultiHandle: no delivery started, or the member changed');
         }
         $unread = 0;
         while (curl_multi_info_read($handle) !== false) {

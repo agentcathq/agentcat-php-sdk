@@ -21,6 +21,7 @@ use AgentCat\Tests\Support\SrcErrorGuard;
 use AgentCat\Tests\Support\Symfony\Streaming\ProgressTool;
 use AgentCat\Tests\Support\ToolCalls;
 use AgentCat\Tests\Support\WarmUp;
+use PHPUnit\Framework\Attributes\After;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\McpBundle\McpBundle;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
@@ -90,6 +91,7 @@ abstract class SymfonyTestCase extends TestCase
                 $warmUp->testWarmUp();
             } finally {
                 $warmUp->tearDown();
+                $warmUp->assertNoSrcIssueWasHidden();
                 $warmUp::tearDownAfterClass();
             }
         });
@@ -98,6 +100,7 @@ abstract class SymfonyTestCase extends TestCase
     #[\Override]
     protected function setUp(): void
     {
+        SrcErrorGuard::forget();
         $this->handlers = GlobalHandlers::save();
         if ($this->needsTheMcpBundle() && !class_exists(McpBundle::class)) {
             self::markTestSkipped('symfony/mcp-bundle is not installed');
@@ -124,23 +127,35 @@ abstract class SymfonyTestCase extends TestCase
     #[\Override]
     protected function tearDown(): void
     {
-        foreach ($this->kernels as $kernel) {
-            $kernel->shutdown();
-        }
-        $this->kernels = [];
-        ToolCalls::reset();
-        TestMode::reset();
-        BridgeConfig::reset();
-        Log::reset();
-        Diagnostics::reset();
-        EventQueue::setGlobal(null);
-        AgentCat::setClient(null);
-        TrackedServers::resetIncomplete();
-        TrackedServers::resetSkipped();
+        try {
+            foreach ($this->kernels as $kernel) {
+                $kernel->shutdown();
+            }
+            $this->kernels = [];
+            ToolCalls::reset();
+            TestMode::reset();
+            BridgeConfig::reset();
+            Log::reset();
+            Diagnostics::reset();
+            EventQueue::setGlobal(null);
+            AgentCat::setClient(null);
+            TrackedServers::resetIncomplete();
+            TrackedServers::resetSkipped();
 
-        $this->environment?->restore();
-        FileTree::remove($this->directory);
-        $this->handlers?->restore(); // the guard goes, and any handler that a kernel left
+            $this->environment?->restore();
+            FileTree::remove($this->directory);
+        } finally { // a throw above leaves no guard to the next test
+            $this->handlers?->restore(); // the guard goes, and any handler that a kernel left
+        }
+    }
+
+    /**
+     * Fails with each `src/` issue that a guard recorded. It runs after every `tearDown()` of the test, the subclasses'
+     * too, so its failure skips none of their cleanup; `setUp()` forgets what a test that threw earlier left.
+     */
+    #[After(-100)]
+    public function assertNoSrcIssueWasHidden(): void
+    {
         SrcErrorGuard::assertNone($this);
     }
 
@@ -164,11 +179,15 @@ abstract class SymfonyTestCase extends TestCase
         return $kernel;
     }
 
-    /** Boots a kernel of this test, which shuts it down after the test. The guard goes in front of its error handler. */
+    /**
+     * Boots a kernel of this test, which shuts it down after the test. The guard is in front while the bundles build the
+     * container and boot (AgentCat's among them), and again after the boot if a handler came in front of it.
+     */
     protected function boot(KernelInterface $kernel): void
     {
         $this->kernels[] = $kernel;
         $handler = $this->exceptionHandler();
+        SrcErrorGuard::install();
         $kernel->boot();
         if ($this->exceptionHandler() !== $handler) {
             restore_exception_handler(); // FrameworkBundle::boot() leaves Symfony's handler with symfony/error-handler 7.3
