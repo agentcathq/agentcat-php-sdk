@@ -39,12 +39,8 @@ final class RecipeTest extends TestCase
         $this->assertIsArray($yaml['agentcat']);
         $this->assertArrayHasKey('project_id', $yaml['agentcat']);
         $this->assertSame('%env(default::AGENTCAT_PROJECT_ID)%', $yaml['agentcat']['project_id']);
-        $extension = (new AgentCatBundle())->getContainerExtension();
-        $this->assertInstanceOf(ConfigurationExtensionInterface::class, $extension);
-        $configuration = $extension->getConfiguration([], new ContainerBuilder());
-        $this->assertInstanceOf(ConfigurationInterface::class, $configuration);
 
-        $config = (new Processor())->processConfiguration($configuration, [$yaml['agentcat']]);
+        $config = $this->process($yaml['agentcat']);
 
         $this->assertArrayHasKey('project_id', $config);
         $this->assertArrayHasKey('exclude_servers', $config);
@@ -52,10 +48,56 @@ final class RecipeTest extends TestCase
         $this->assertSame([], $config['exclude_servers']);
     }
 
+    /**
+     * A bare `%env()%` throws when its variable is not set, which makes the whole agentcat configuration unreadable:
+     * every server then answers untracked. So every variable of the recipe has a default, in the examples too.
+     */
+    public function testEveryVariableOfTheRecipeHasADefault(): void
+    {
+        $yaml = (string) file_get_contents(self::RECIPE . '/config/packages/agentcat.yaml');
+
+        $this->assertSame(2, preg_match_all('/%env\(([^)]*)\)%/', $yaml, $variables));
+        foreach ($variables[1] as $variable) {
+            $this->assertStringStartsWith('default::', $variable);
+        }
+    }
+
+    /** The examples, once uncommented, are valid for the bundle; an unset variable makes the project of the server `project_id`. */
+    public function testTheExamplesAreValidForTheBundle(): void
+    {
+        $lines = file(self::RECIPE . '/config/packages/agentcat.yaml', FILE_IGNORE_NEW_LINES);
+        $this->assertIsArray($lines);
+        $yaml = Yaml::parse(implode("\n", array_map(static fn(string $line): string => (string) preg_replace('/^    # /', '    ', $line), $lines)));
+        $this->assertIsArray($yaml);
+        $this->assertIsArray($yaml['agentcat'] ?? null);
+
+        $config = $this->process($yaml['agentcat']);
+
+        $this->assertSame(['internal'], $config['exclude_servers'] ?? null);
+        $this->assertSame(['billing' => '%env(default::AGENTCAT_BILLING_PROJECT_ID)%'], $config['projects'] ?? null);
+    }
+
     public function testTheRecipeIsNotShipped(): void
     {
         $lines = file(__DIR__ . '/../../../.gitattributes', FILE_IGNORE_NEW_LINES);
         $this->assertIsArray($lines);
         $this->assertContains('/recipe export-ignore', array_map(trim(...), $lines));
+    }
+
+    /**
+     * The agentcat configuration as the bundle's tree processes it.
+     *
+     * @param array<array-key, mixed> $agentcat
+     *
+     * @return array<array-key, mixed>
+     */
+    private function process(array $agentcat): array
+    {
+        $extension = (new AgentCatBundle())->getContainerExtension();
+        $this->assertInstanceOf(ConfigurationExtensionInterface::class, $extension);
+        $configuration = $extension->getConfiguration([], new ContainerBuilder());
+        $this->assertInstanceOf(ConfigurationInterface::class, $configuration);
+
+        return (new Processor())->processConfiguration($configuration, [$agentcat]);
     }
 }

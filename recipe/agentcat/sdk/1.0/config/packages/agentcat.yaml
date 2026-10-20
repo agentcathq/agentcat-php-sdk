@@ -4,4 +4,4 @@ agentcat:
     project_id: '%env(default::AGENTCAT_PROJECT_ID)%'
     # exclude_servers: [internal]
     # projects:
-    #     billing: '%env(AGENTCAT_BILLING_PROJECT_ID)%'
+    #     billing: '%env(default::AGENTCAT_BILLING_PROJECT_ID)%'
