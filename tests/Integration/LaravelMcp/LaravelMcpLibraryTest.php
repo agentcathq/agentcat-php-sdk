@@ -31,7 +31,7 @@ final class LaravelMcpLibraryTest extends LaravelTestCase
 
         $this->assertTrue($library->supports($server));
         $this->assertFalse($library->supports(new \stdClass()));
-        $this->assertSame('laravel-mcp/server', $library->sdk());
+        $this->assertSame('laravel-mcp/server', $library->sdk($server));
         $this->assertSame(LaravelMcpAdapter::SUPPORT_MATRIX, $library->supportMatrix());
         $this->assertSame(['laravelMcpServer'], $library->signals($server));
         $this->assertSame([], $library->signals(new \stdClass()));

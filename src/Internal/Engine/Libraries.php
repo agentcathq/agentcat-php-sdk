@@ -54,6 +54,21 @@ final class Libraries
         return McpSdkLibrary::untrackedAdvice($server);
     }
 
+    /**
+     * The library that tracks the object through the object it was made from, as mcp/sdk tracks the Server that a
+     * tracked Builder built; null when no library does. Never throws.
+     */
+    public static function trackerOf(object $server): ?Library
+    {
+        foreach (self::all() as $library) {
+            if ($library->trackedServer($server) instanceof TrackedServer) {
+                return $library;
+            }
+        }
+
+        return null;
+    }
+
     public static function trackedServer(object $server): ?TrackedServer
     {
         foreach (self::all() as $library) {

@@ -8,6 +8,7 @@ use AgentCat\Internal\Engine\CallInterceptor;
 use AgentCat\Internal\Engine\Library;
 use AgentCat\Internal\Engine\Publisher;
 use AgentCat\Internal\Engine\TrackedServer;
+use Mcp\Server;
 use Mcp\Server\Builder;
 use Mcp\Server\Stateless\StatelessProtocol;
 use Psr\Log\LoggerInterface;
@@ -34,9 +35,9 @@ final readonly class McpSdkLibrary implements Library
     }
 
     #[\Override]
-    public function sdk(): string
+    public function sdk(object $server): string
     {
-        return 'mcp-sdk/builder';
+        return $server instanceof Server ? 'mcp-sdk/server' : 'mcp-sdk/builder';
     }
 
     #[\Override]

@@ -18,8 +18,8 @@ interface Library
     /** Whether this library instruments the object. Takes any object; never throws. */
     public function supports(object $server): bool;
 
-    /** The `sdk` field of the setup line, for example `mcp-sdk/builder`. Never throws. */
-    public function sdk(): string;
+    /** The `sdk` field of the setup line for the object, for example `mcp-sdk/builder`. Takes any object; never throws. */
+    public function sdk(object $server): string;
 
     /** The sentence that says which versions and objects of this library AgentCat supports. Never throws. */
     public function supportMatrix(): string;
