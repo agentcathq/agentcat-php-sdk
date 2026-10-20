@@ -14,7 +14,9 @@ use AgentCat\Tests\Contract\Snapshot\SnapshotDiff;
 
 require __DIR__ . '/../../vendor/autoload.php';
 
-$arguments = array_slice($argv, 1);
+// $_SERVER, not $argv: PHPStan on PHP 8.5 cannot prove that the global $argv exists.
+$serverArgv = $_SERVER['argv'] ?? [];
+$arguments = array_values(array_filter(array_slice(is_array($serverArgv) ? $serverArgv : [], 1), is_string(...)));
 $library = $arguments[0] ?? '';
 $committedPath = ($arguments[1] ?? '') === '--diff' ? ($arguments[2] ?? '') : null;
 if (count($arguments) !== ($committedPath === null ? 1 : 3) || $library === '' || $committedPath === '') {
