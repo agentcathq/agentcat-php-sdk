@@ -20,10 +20,10 @@ final class Images
     public const string CLI_BASE_LATEST = 'php:8.3-cli-bookworm';
 
     /**
-     * The `--build-arg BASE` of `tests/Runtime/docker/swoole/Dockerfile` in latest mode. The image has no `6-php8.3`
-     * tag: `php8.3` is the newest Swoole on PHP 8.3 (6.3.0RC1 on 2026-10-20), so the nightly sees a Swoole 6.3 release early.
+     * The `--build-arg BASE` of `tests/Runtime/docker/swoole/Dockerfile` in latest mode: the line of the pinned tag.
+     * The image has no `6-php8.3` tag, and `php8.3` is the newest Swoole, release candidates included.
      */
-    public const string SWOOLE_BASE_LATEST = 'phpswoole/swoole:php8.3';
+    public const string SWOOLE_BASE_LATEST = 'phpswoole/swoole:6.2-php8.3';
 
     /** Its stop signal is SIGQUIT: a graceful stop. */
     public static function fpm(): string

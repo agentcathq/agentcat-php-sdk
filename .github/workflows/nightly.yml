@@ -19,6 +19,11 @@ permissions:
   contents: read
   issues: write
 
+# A new push cancels an older run of the same pull request; scheduled and dispatched runs are never cancelled.
+concurrency:
+  group: nightly-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   mcp-sdk-dev-main:
     name: mcp/sdk dev-main (PHP 8.5)
@@ -38,9 +43,12 @@ jobs:
       - name: Remove symfony/mcp-bundle, which requires mcp/sdk ^0.8.1
         run: composer remove --dev --no-update symfony/mcp-bundle
       - name: Install mcp/sdk dev-main
+        timeout-minutes: 8
         run: composer require --dev --no-interaction -W "mcp/sdk:dev-main as 0.9.99"
       - run: vendor/bin/phpstan analyse --no-progress --error-format=github --memory-limit=1G --configuration=phpstan.no-bundle.neon
+        timeout-minutes: 6
       - run: vendor/bin/phpunit --testsuite Contract,Integration,E2E
+        timeout-minutes: 12
       - name: Fail on purpose (workflow_dispatch force_failure)
         if: github.event_name == 'workflow_dispatch' && inputs.force_failure == github.job
         run: exit 1
@@ -66,9 +74,12 @@ jobs:
         with:
           dependency-versions: highest
       - name: Install laravel/mcp dev-main
+        timeout-minutes: 8
         run: composer require --dev --no-interaction -W "laravel/mcp:dev-main as 1.0.99"
       - run: vendor/bin/phpstan analyse --no-progress --error-format=github --memory-limit=1G
+        timeout-minutes: 6
       - run: vendor/bin/phpunit --testsuite Contract,Integration,E2E
+        timeout-minutes: 12
       - name: Fail on purpose (workflow_dispatch force_failure)
         if: github.event_name == 'workflow_dispatch' && inputs.force_failure == github.job
         run: exit 1
@@ -94,9 +105,12 @@ jobs:
         with:
           dependency-versions: highest
       - name: Install symfony/mcp-bundle dev-main with mcp/sdk 0.9
+        timeout-minutes: 8
         run: composer require --dev --no-interaction -W "symfony/mcp-bundle:dev-main as 0.14.99" "mcp/sdk:^0.9"
       - run: vendor/bin/phpstan analyse --no-progress --error-format=github --memory-limit=1G
+        timeout-minutes: 6
       - run: vendor/bin/phpunit --testsuite Contract,Integration,E2E
+        timeout-minutes: 12
       - name: Fail on purpose (workflow_dispatch force_failure)
         if: github.event_name == 'workflow_dispatch' && inputs.force_failure == github.job
         run: exit 1
@@ -124,6 +138,7 @@ jobs:
           # ergebnis/composer-normalize caps PHP below the nightly.
           composer-options: --ignore-platform-req=php+
       - run: vendor/bin/phpunit
+        timeout-minutes: 20
       - name: Fail on purpose (workflow_dispatch force_failure)
         if: github.event_name == 'workflow_dispatch' && inputs.force_failure == github.job
         run: exit 1
@@ -149,6 +164,7 @@ jobs:
         with:
           dependency-versions: highest
       - run: vendor/bin/infection --threads=max --logger-github
+        timeout-minutes: 50
       - name: Fail on purpose (workflow_dispatch force_failure)
         if: github.event_name == 'workflow_dispatch' && inputs.force_failure == github.job
         run: exit 1
@@ -174,6 +190,7 @@ jobs:
         with:
           dependency-versions: highest
       - run: composer audit
+        timeout-minutes: 5
       - name: Fail on purpose (workflow_dispatch force_failure)
         if: github.event_name == 'workflow_dispatch' && inputs.force_failure == github.job
         run: exit 1
@@ -199,6 +216,7 @@ jobs:
         with:
           dependency-versions: highest
       - run: vendor/bin/phpunit --group network
+        timeout-minutes: 5
       - name: Fail on purpose (workflow_dispatch force_failure)
         if: github.event_name == 'workflow_dispatch' && inputs.force_failure == github.job
         run: exit 1
@@ -224,17 +242,20 @@ jobs:
         with:
           dependency-versions: highest
       - name: Build the CLI and Swoole images on the latest bases and pull the others
+        timeout-minutes: 8
         run: |
           docker build --pull --build-arg BASE=php:8.3-cli-bookworm --tag agentcat-runtime-cli:latest tests/Runtime/docker
-          docker build --pull --build-arg BASE=phpswoole/swoole:php8.3 --tag agentcat-runtime-swoole:latest tests/Runtime/docker/swoole
+          docker build --pull --build-arg BASE=phpswoole/swoole:6.2-php8.3 --tag agentcat-runtime-swoole:latest tests/Runtime/docker/swoole
           for image in php:8.3-fpm-bookworm php:8.3-apache-bookworm dunglas/frankenphp:1-php8.3-bookworm unit:php8.3; do docker pull "$image"; done
       - name: Record the resolved PHP version of each image
+        timeout-minutes: 2
         run: |
           for image in php:8.3-fpm-bookworm php:8.3-apache-bookworm agentcat-runtime-cli:latest dunglas/frankenphp:1-php8.3-bookworm agentcat-runtime-swoole:latest unit:php8.3; do
             printf '%s: ' "$image"
             docker run --rm --pull never --network none --entrypoint php "$image" -r 'echo PHP_VERSION, "\n";'
           done
       - run: vendor/bin/phpunit --testsuite Runtime --group runtime
+        timeout-minutes: 15
         env:
           AGENTCAT_RUNTIME_TESTS: '1'
           AGENTCAT_RUNTIME_IMAGES: latest
@@ -260,6 +281,7 @@ jobs:
           php-version: '8.3'
           coverage: none
       - name: Install the dist in a fresh project and track an mcp/sdk server
+        timeout-minutes: 8
         run: tests/bin/package-probe.sh "dev-main as 0.9.99"
       - name: Fail on purpose (workflow_dispatch force_failure)
         if: github.event_name == 'workflow_dispatch' && inputs.force_failure == github.job
