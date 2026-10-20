@@ -11,6 +11,9 @@ use PHPUnit\Framework\TestCase;
 
 final class FinishRequestTest extends TestCase
 {
+    /** `$_SERVER['SERVER_SOFTWARE']` of `php -S` (recorded from PHP 8.3.6). */
+    private const string BUILT_IN_SERVER = 'PHP/8.3.6 (Development Server)';
+
     /** @var list<int> `ignore_user_abort()` as seen by each probe call */
     private static array $probeCalls = [];
 
@@ -35,7 +38,7 @@ final class FinishRequestTest extends TestCase
         yield 'FrankenPHP worker mode' => ['frankenphp', ['FRANKENPHP_WORKER' => '1'], ['frankenphp_finish_request', 'fastcgi_finish_request'], null];
         yield 'CLI' => ['cli', [], ['fastcgi_finish_request', 'litespeed_finish_request', 'frankenphp_finish_request'], null];
         yield 'built-in web server' => ['cli-server', [], ['fastcgi_finish_request'], null];
-        yield 'built-in web server with a fastcgi_finish_request() of its own' => ['cli-server', ['SERVER_SOFTWARE' => 'PHP 8.3.26 Development Server'], ['fastcgi_finish_request'], null];
+        yield 'built-in web server with a fastcgi_finish_request() of its own' => ['cli-server', ['SERVER_SOFTWARE' => self::BUILT_IN_SERVER], ['fastcgi_finish_request'], null];
         yield 'NGINX Unit' => ['cli-server', ['SERVER_SOFTWARE' => 'Unit/1.34.2'], ['fastcgi_finish_request'], 'fastcgi_finish_request'];
         yield 'NGINX Unit without the function' => ['cli-server', ['SERVER_SOFTWARE' => 'Unit/1.34.2'], [], null];
         yield 'a server software that only contains Unit/' => ['cli-server', ['SERVER_SOFTWARE' => 'NotUnit/1.0'], ['fastcgi_finish_request'], null];
@@ -115,6 +118,7 @@ final class FinishRequestTest extends TestCase
         yield 'Apache mod_php' => ['apache2handler', [], [], true];
         yield 'php-cgi' => ['cgi-fcgi', [], [], true];
         yield 'built-in web server' => ['cli-server', [], ['fastcgi_finish_request'], true];
+        yield 'built-in web server with its server software' => ['cli-server', ['SERVER_SOFTWARE' => self::BUILT_IN_SERVER], ['fastcgi_finish_request'], true];
         yield 'NGINX Unit' => ['cli-server', ['SERVER_SOFTWARE' => 'Unit/1.34.2'], ['fastcgi_finish_request'], false];
         yield 'NGINX Unit without the function' => ['cli-server', ['SERVER_SOFTWARE' => 'Unit/1.34.2'], [], true];
         yield 'PHP-FPM' => ['fpm-fcgi', [], ['fastcgi_finish_request'], false];
