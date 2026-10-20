@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace AgentCat\Tests\Runtime;
 
 use AgentCat\Tests\E2E\Support\McpHttpClient;
-use AgentCat\Tests\Integration\Support\MockCollector;
 use AgentCat\Tests\Runtime\Support\DockerRuntime;
 use AgentCat\Tests\Runtime\Support\Images;
 use AgentCat\Tests\Runtime\Support\RuntimeTestCase;
@@ -26,6 +25,12 @@ final class ApacheTest extends RuntimeTestCase
 {
     /** PHP's errors go to Apache's error log, the container's stderr: the image has no php.ini, and without it a warning would reach only the answer. */
     private const string INI = "output_buffering=4096\nlog_errors=1";
+
+    /** The directories under `tests/`, Apache's document root, that it serves; it forbids the rest. */
+    private const array FIXTURE_DIRECTORIES = ['/E2E/Fixtures', '/Runtime/Fixtures'];
+
+    /** Files under `tests/` outside the fixture directories. */
+    private const array FORBIDDEN = ['/bootstrap.php', '/Support/FileTree.php'];
 
     /** How long the timed request may take when nothing of AgentCat's runs before the answer. */
     private const float ANSWER_SECONDS = 1.0;
@@ -55,8 +60,7 @@ final class ApacheTest extends RuntimeTestCase
         $diagnostics = self::$collector->scenario();
         [$runtime, $base] = $this->apache($events, $diagnostics);
         $client = new McpHttpClient($base . $path);
-        $this->assertEchoed('warm', $client->post(self::echoCall(1, 'warm'), self::echoHeaders($events)), 1);
-        $this->waitForRequests($events, 1, self::COLLECTOR_DEADLINE_SECONDS);
+        $this->warmUp($client, $events, self::COLLECTOR_DEADLINE_SECONDS);
         $started = microtime(true);
 
         $answer = $client->post(self::echoCall(2, 'hi'), self::echoHeaders($events));
@@ -64,18 +68,17 @@ final class ApacheTest extends RuntimeTestCase
         $this->assertLessThan(self::ANSWER_SECONDS, $answer['receivedAt'] - $started, 'mod_php held the answer for the delivery: its buffers were not sent (D57), or it had no Content-Length (D59, D62)');
         $this->assertEchoed('hi', $answer, 2);
         $this->assertSame((string) strlen($answer['body']), $answer['headers']['content-length'] ?? null, 'the answer carries its length');
-        $deliveries = $this->waitForRequests($events, 2, self::COLLECTOR_DEADLINE_SECONDS);
-        $this->assertCount(2, $deliveries);
-        $this->assertGreaterThan($answer['receivedAt'] + 1.0, $this->time($deliveries[1], 'end'), 'the collector answered the delivery after the client had its answer');
-        $this->waitUntil($diagnostics, static fn(array $posts): bool => count(MockCollector::withASentEvent($posts)) >= 2, self::COLLECTOR_DEADLINE_SECONDS, 'each request logged its delivery and posted its diagnostics');
-        $this->assertDoesNotMatchRegularExpression('/PHP (Fatal error|Warning)/', $runtime->logs());
+        $this->assertDeliveredAfter($answer, $events, self::COLLECTOR_DEADLINE_SECONDS, 2);
+        $this->waitForSentEventPosts($diagnostics, 2, self::COLLECTOR_DEADLINE_SECONDS);
+        $this->assertNoPhpErrors($runtime);
     }
 
     /**
-     * Apache on 127.0.0.1 only (checked: 127.0.0.2 is refused), serving `tests/` with mod_php, from three files in
-     * `out()`: `ports.conf`, the default site and a php.ini snippet. The container gets `RuntimeTestCase::env()` with
-     * `$events` as the AgentCat API, and diagnostics on and sent to `$diagnostics`; `PassEnv` hands every one of these
-     * names to PHP. `HOME` is `/out`, where AgentCat writes its log.
+     * Apache on 127.0.0.1 only (checked: 127.0.0.2 is refused), serving the two fixture directories under `tests/` with
+     * mod_php (checked: other files of `tests/` are forbidden), from three files in `out()`: `ports.conf`, the default
+     * site and a php.ini snippet. The container gets `RuntimeTestCase::env()` with `$events` as the AgentCat API, and
+     * diagnostics on and sent to `$diagnostics`; `PassEnv` hands every one of these names to PHP. `HOME` is `/out`,
+     * where AgentCat writes its log.
      *
      * @return array{DockerRuntime, string} the container, and its base URL
      */
@@ -85,15 +88,16 @@ final class ApacheTest extends RuntimeTestCase
         $port = $this->freePort();
         $root = self::repo() . '/tests';
         $env = [...$this->env($events), ...$this->diagnosticsTo($diagnostics)];
+        $directory = static fn(string $path, string $access): string => implode("\n", ["\t<Directory " . $path . '>', "\t\tRequire all " . $access, "\t</Directory>"]);
         $files = [
             'ports.conf' => 'Listen 127.0.0.1:' . $port,
             'site.conf' => implode("\n", [
                 '<VirtualHost 127.0.0.1:' . $port . '>',
                 "\tDocumentRoot " . $root,
-                "\t<Directory " . $root . '>',
-                "\t\tRequire all granted",
-                "\t</Directory>",
+                $directory($root, 'denied'),
+                ...array_map(static fn(string $fixtures): string => $directory($root . $fixtures, 'granted'), self::FIXTURE_DIRECTORIES),
                 "\tPassEnv " . implode(' ', array_keys($env)),
+                "\tLogLevel warn php:info", // mod_php logs PHP's deprecations at the info level
                 '</VirtualHost>',
             ]),
             'php.ini' => self::INI,
@@ -107,8 +111,12 @@ final class ApacheTest extends RuntimeTestCase
             $out . '/php.ini' => '/usr/local/etc/php/conf.d/zz-agentcat.ini',
             $out => '/out',
         ], port: $port);
+        $base = 'http://127.0.0.1:' . $port;
         $this->assertFalse(DockerRuntime::accepts($port, '127.0.0.2'), 'Apache listens beyond 127.0.0.1');
+        foreach (self::FORBIDDEN as $path) {
+            $this->assertSame(403, (new McpHttpClient($base . $path))->post(self::echoCall(1, 'forbidden'))['status'], 'Apache serves ' . $path);
+        }
 
-        return [$runtime, 'http://127.0.0.1:' . $port];
+        return [$runtime, $base];
     }
 }

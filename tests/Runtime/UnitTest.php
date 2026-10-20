@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace AgentCat\Tests\Runtime;
 
 use AgentCat\Tests\E2E\Support\McpHttpClient;
-use AgentCat\Tests\Integration\Support\MockCollector;
 use AgentCat\Tests\Runtime\Support\DockerRuntime;
 use AgentCat\Tests\Runtime\Support\Images;
 use AgentCat\Tests\Runtime\Support\RuntimeTestCase;
@@ -40,7 +39,8 @@ final class UnitTest extends RuntimeTestCase
 
     /**
      * An untimed first request warms up the application processes, with a scenario of its own whose delivery the
-     * collector has received. The diagnostics posts prove that each request's drain logged its delivery.
+     * collector has received. The diagnostics posts prove that each request's drain logged its delivery, and Unit's log
+     * shows that PHP logged no error, warning, notice or deprecation.
      *
      * @param array<string, string> $headers
      */
@@ -49,12 +49,11 @@ final class UnitTest extends RuntimeTestCase
     #[MaximumDuration(60000)]
     public function testTheAnswerReachesTheClientBeforeTheDelivery(array $headers, bool $sized): void
     {
-        $warmUp = self::$collector->scenario();
         $events = self::$collector->scenario([['status' => 202, 'delayMs' => 2000]]);
         $diagnostics = self::$collector->scenario();
-        $client = new McpHttpClient($this->unit($diagnostics) . '/mcp');
-        $this->assertEchoed('warm', $client->post(self::echoCall(1, 'warm'), [...self::echoHeaders($warmUp), ...$headers]), 1);
-        $this->waitForRequests($warmUp, 1, self::COLLECTOR_DEADLINE_SECONDS);
+        [$runtime, $base] = $this->unit($diagnostics);
+        $client = new McpHttpClient($base . '/mcp');
+        $this->warmUp($client, self::$collector->scenario(), self::COLLECTOR_DEADLINE_SECONDS, $headers);
         $started = microtime(true);
 
         $answer = $client->post(self::echoCall(2, 'hi'), [...self::echoHeaders($events), ...$headers]);
@@ -65,10 +64,9 @@ final class UnitTest extends RuntimeTestCase
         $this->assertSame('cli-server', $answer['headers']['x-e2e-sapi'] ?? null, 'Unit reports the SAPI of php -S');
         $this->assertSame('fastcgi_finish_request', $answer['headers']['x-agentcat-finish'] ?? null);
         $this->assertSame('0', $answer['headers']['x-agentcat-wait'] ?? null, 'a per-request SAPI leaves the delivery to the shutdown function');
-        $deliveries = $this->waitForRequests($events, 1, self::COLLECTOR_DEADLINE_SECONDS);
-        $this->assertCount(1, $deliveries);
-        $this->assertGreaterThan($answer['receivedAt'] + 1.0, $this->time($deliveries[0], 'end'), 'the collector answered the delivery after the client had its answer');
-        $this->waitUntil($diagnostics, static fn(array $posts): bool => count(MockCollector::withASentEvent($posts)) >= 2, self::COLLECTOR_DEADLINE_SECONDS, 'each request logged its delivery and posted its diagnostics');
+        $this->assertDeliveredAfter($answer, $events, self::COLLECTOR_DEADLINE_SECONDS);
+        $this->waitForSentEventPosts($diagnostics, 2, self::COLLECTOR_DEADLINE_SECONDS);
+        $this->assertNoPhpErrors($runtime);
     }
 
     /**
@@ -76,12 +74,12 @@ final class UnitTest extends RuntimeTestCase
      * two application processes. The configuration is `conf.json` in a state directory in `out()`, so Unit starts
      * with it once: the image's entrypoint configures an empty state directory with a Unit that it stops again, and
      * the port would accept connections before that restart. The application gets `RuntimeTestCase::env()` with
-     * diagnostics on and sent to `$diagnostics`, and logs PHP's errors to Unit's log. `HOME` is `/out`, where AgentCat
-     * writes its log.
+     * diagnostics on and sent to `$diagnostics`, and logs PHP's errors to Unit's log, the container's output. `HOME` is
+     * `/out`, where AgentCat writes its log.
      *
-     * @return string the base URL
+     * @return array{DockerRuntime, string} the container, and its base URL
      */
-    private function unit(string $diagnostics): string
+    private function unit(string $diagnostics): array
     {
         $out = $this->out();
         $port = $this->freePort();
@@ -99,9 +97,9 @@ final class UnitTest extends RuntimeTestCase
                 'options' => ['admin' => ['log_errors' => '1']],
             ]],
         ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)));
-        DockerRuntime::start(Images::UNIT, ['unitd', '--no-daemon', '--control', 'unix:/var/run/control.unit.sock'], $env, [$state => self::STATE_DIRECTORY, $out => '/out'], port: $port);
+        $runtime = DockerRuntime::start(Images::UNIT, ['unitd', '--no-daemon', '--control', 'unix:/var/run/control.unit.sock'], $env, [$state => self::STATE_DIRECTORY, $out => '/out'], port: $port);
         $this->assertFalse(DockerRuntime::accepts($port, '127.0.0.2'), 'Unit listens beyond 127.0.0.1');
 
-        return 'http://127.0.0.1:' . $port;
+        return [$runtime, 'http://127.0.0.1:' . $port];
     }
 }

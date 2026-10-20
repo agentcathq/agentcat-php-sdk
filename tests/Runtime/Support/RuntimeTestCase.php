@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AgentCat\Tests\Runtime\Support;
 
+use AgentCat\Tests\E2E\Support\McpHttpClient;
 use AgentCat\Tests\Integration\Support\MockCollector;
 use AgentCat\Tests\Support\FileTree;
 use AgentCat\Tests\Support\JsonAssert;
@@ -232,6 +233,47 @@ abstract class RuntimeTestCase extends TestCase
         $this->assertSame(200, $answer['status'], $answer['body']);
         $result = HttpHarness::result(HttpHarness::decode($answer['body'], $answer['headers']['content-type'] ?? '', $id));
         $this->assertSame('echo: ' . $msg, JsonAssert::at($result, 'content', 1, 'text'));
+    }
+
+    /**
+     * Sends the untimed warm-up call (`echoCall(1, 'warm')` with `echoHeaders($scenario)` and `$headers`) and waits until
+     * `$scenario` has its delivery, so the timed request meets a warm runtime and no drain of the warm-up (ruling P16).
+     *
+     * @param array<string, string> $headers
+     */
+    final protected function warmUp(McpHttpClient $client, string $scenario, float $timeout, array $headers = []): void
+    {
+        $this->assertEchoed('warm', $client->post(self::echoCall(1, 'warm'), [...self::echoHeaders($scenario), ...$headers]), 1);
+        $this->waitForRequests($scenario, 1, $timeout);
+    }
+
+    /**
+     * `$scenario` received `$count` deliveries, and answered the last one more than 1 s after the client had its answer.
+     *
+     * @param array{status: int, headers: array<string, string>, body: string, receivedAt: float} $answer
+     */
+    final protected function assertDeliveredAfter(array $answer, string $scenario, float $timeout, int $count = 1): void
+    {
+        $deliveries = $this->waitForRequests($scenario, $count, $timeout);
+        $this->assertCount($count, $deliveries);
+        $last = $deliveries[$count - 1] ?? null;
+        $this->assertInstanceOf(\stdClass::class, $last);
+        $this->assertGreaterThan($answer['receivedAt'] + 1.0, $this->time($last, 'end'), 'the collector answered the delivery after the client had its answer');
+    }
+
+    /**
+     * Waits until `$diagnostics` has at least `$count` posts with a `Successfully sent event` line: that many drains
+     * logged their delivery. The collector records an event also when the drain dies, so only this proves the drain.
+     */
+    final protected function waitForSentEventPosts(string $diagnostics, int $count, float $timeout): void
+    {
+        $this->waitUntil($diagnostics, static fn(array $posts): bool => count(MockCollector::withASentEvent($posts)) >= $count, $timeout, sprintf('%d diagnostics posts with a sent event, one per drain that logged its delivery', $count));
+    }
+
+    /** PHP logged no error, warning, notice or deprecation to the container's output (`log_errors` on, no `error_log`). */
+    final protected function assertNoPhpErrors(DockerRuntime $runtime): void
+    {
+        $this->assertDoesNotMatchRegularExpression('/PHP (Warning|Notice|Deprecated)|Fatal error/', $runtime->logs());
     }
 
     /** When the collector received (`start`) or answered (`end`, after its delay) a request. */

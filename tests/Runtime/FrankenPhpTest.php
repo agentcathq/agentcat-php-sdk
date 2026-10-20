@@ -68,7 +68,7 @@ final class FrankenPhpTest extends RuntimeTestCase
         $this->assertEchoed('hi', $answer, 2);
         $this->assertSame('frankenphp_finish_request', $answer['headers']['x-agentcat-finish'] ?? null);
         $this->assertSame('0', $answer['headers']['x-agentcat-wait'] ?? null, 'a per-request SAPI leaves the delivery to the shutdown function');
-        $this->assertDeliveredAfter($answer, $scenario);
+        $this->assertDeliveredAfter($answer, $scenario, self::COLLECTOR_DEADLINE_SECONDS);
     }
 
     /**
@@ -89,7 +89,7 @@ final class FrankenPhpTest extends RuntimeTestCase
         $this->assertLessThan(self::ANSWER_SECONDS, $answer['receivedAt'] - $started, 'the shutdown function did not end the answer with frankenphp_finish_request() before the delivery');
         $this->assertSame('removed', $answer['headers']['x-e2e-content-length'] ?? null, 'PHP sent the answer without its Content-Length');
         $this->assertEchoed('hi', $answer, 2);
-        $this->assertDeliveredAfter($answer, $scenario);
+        $this->assertDeliveredAfter($answer, $scenario, self::COLLECTOR_DEADLINE_SECONDS);
     }
 
     /**
@@ -114,7 +114,7 @@ final class FrankenPhpTest extends RuntimeTestCase
         $deliveries = $this->waitForRequests($events, 1, self::COLLECTOR_DEADLINE_SECONDS);
         $this->assertCount(1, $deliveries);
         $this->assertGreaterThan($started + self::TIME_LIMIT_SECONDS, $this->time($deliveries[0], 'end'), 'the collector answered after the 2 s limit');
-        $this->waitUntil($diagnostics, static fn(array $posts): bool => MockCollector::withASentEvent($posts) !== [], self::COLLECTOR_DEADLINE_SECONDS, 'the drain logged the delivery and posted its diagnostics');
+        $this->waitForSentEventPosts($diagnostics, 1, self::COLLECTOR_DEADLINE_SECONDS);
         $this->assertStringNotContainsString('Maximum execution time', $this->runtime()->logs());
     }
 
@@ -256,24 +256,10 @@ final class FrankenPhpTest extends RuntimeTestCase
      */
     private function warmClassicClient(string $script): McpHttpClient
     {
-        $warmUp = self::$collector->scenario();
         $client = new McpHttpClient($this->frankenphp(worker: false) . $script);
-        $this->assertEchoed('warm', $client->post(self::echoCall(1, 'warm'), self::echoHeaders($warmUp)), 1);
-        $this->waitForRequests($warmUp, 1, self::COLLECTOR_DEADLINE_SECONDS);
+        $this->warmUp($client, self::$collector->scenario(), self::COLLECTOR_DEADLINE_SECONDS);
 
         return $client;
-    }
-
-    /**
-     * The scenario received one delivery, and answered it more than 1 s after the client had its answer.
-     *
-     * @param array{status: int, headers: array<string, string>, body: string, receivedAt: float} $answer
-     */
-    private function assertDeliveredAfter(array $answer, string $scenario): void
-    {
-        $deliveries = $this->waitForRequests($scenario, 1, self::COLLECTOR_DEADLINE_SECONDS);
-        $this->assertCount(1, $deliveries);
-        $this->assertGreaterThan($answer['receivedAt'] + 1.0, $this->time($deliveries[0], 'end'), 'the collector answered the delivery after the client had its answer');
     }
 
     private function runtime(): DockerRuntime
