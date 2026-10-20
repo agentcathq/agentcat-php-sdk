@@ -330,7 +330,7 @@ jobs:
           set -o pipefail
           prefix="tests/Contract/snapshots/${LIBRARY//\//-}-"
           newest="$(printf '%s\n' "$prefix"*.json | sort -V | tail -n 1)"
-          php tests/bin/member-snapshot.php "$LIBRARY" --diff "$newest" | tee "$REPORT"
+          php tests/bin/member-snapshot.php "$LIBRARY" --diff "$newest" 2>&1 | tee "$REPORT"
       - name: Fail on purpose (workflow_dispatch force_failure)
         if: github.event_name == 'workflow_dispatch' && inputs.force_failure == github.job
         run: exit 1
