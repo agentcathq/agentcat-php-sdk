@@ -19,7 +19,8 @@ use PHPUnit\Framework\TestCase;
  * Hosts that disable process, signal, curl multi and clock functions (`disable_functions`: on PHP 8 a disabled
  * function does not exist). A tracked stdio server answers as it would without AgentCat and ends cleanly at stdin EOF;
  * AgentCat logs at most one line for each function it misses, a function whose absence turns a feature off is named in
- * exactly one line, and diagnostics, on as outside tests, still reach their collector while ext-curl is whole.
+ * exactly one line (a pcntl function only where ext-pcntl is loaded), and diagnostics, on as outside tests, still reach
+ * their collector while ext-curl is whole.
  */
 final class HardenedHostTest extends TestCase
 {
@@ -31,11 +32,13 @@ final class HardenedHostTest extends TestCase
      */
     private const float EOF_EXIT_SECONDS = 6.5;
 
-    /** The functions whose absence turns a feature off: the signal drain, or event delivery. */
-    private const array REPORTED = [
-        'pcntl_signal', 'pcntl_signal_get_handler', 'pcntl_async_signals',
-        'curl_multi_init', 'curl_multi_exec', 'curl_multi_add_handle', 'curl_multi_select',
-    ];
+    /** The pcntl functions of the signal drain: a host that disables one gets one line naming it, with ext-pcntl. */
+    private const array DRAIN = ['pcntl_signal', 'pcntl_signal_get_handler', 'pcntl_async_signals'];
+
+    /** The curl functions of event delivery: one line names each missing one. */
+    private const array DELIVERY = ['curl_multi_init', 'curl_multi_exec', 'curl_multi_add_handle', 'curl_multi_select'];
+
+    private const string SIGNAL_LINE = 'AgentCat cannot send waiting events at SIGTERM or SIGINT';
 
     private static ?MockCollector $collector = null;
 
@@ -106,8 +109,7 @@ final class HardenedHostTest extends TestCase
         $code = $client->waitForExit(self::EOF_EXIT_SECONDS);
         $stderr = $client->process()->getErrorOutput();
         $this->assertSame(0, $code, 'exit code at stdin EOF; stderr: ' . $stderr);
-        $this->assertStringNotContainsString('Fatal error', $stderr);
-        $this->assertStringNotContainsString('Uncaught', $stderr);
+        $this->assertSame('', $stderr, 'no error, warning or deprecation');
         foreach ($client->stdoutLines() as $line) {
             $this->assertSame('2.0', JsonAssert::at(Json::decode($line), 'jsonrpc'), 'stdout carries JSON-RPC only: ' . $line);
         }
@@ -123,11 +125,19 @@ final class HardenedHostTest extends TestCase
         $entries = $this->logEntries();
         $this->assertNotSame([], preg_grep('/AgentCat setup complete/', $entries), 'the log works: ' . implode('', $entries));
         $this->assertSame([], preg_grep('/Call to undefined function/', $entries), 'AgentCat calls no disabled function');
-        foreach (explode(',', $functions) as $function) {
+        // Without ext-pcntl no pcntl function exists to name: one line says to install the extension instead.
+        $pcntl = extension_loaded('pcntl');
+        $listed = explode(',', $functions);
+        $signalLines = preg_grep('/' . self::SIGNAL_LINE . '/', $entries);
+        $this->assertIsArray($signalLines);
+        $this->assertCount($pcntl ? (array_intersect(self::DRAIN, $listed) === [] ? 0 : 1) : 1, $signalLines, 'the signal drain line: ' . implode('', $entries));
+        foreach ($listed as $function) {
             $naming = preg_grep('/\b' . preg_quote($function, '/') . '\b/', $entries);
             $this->assertIsArray($naming);
-            if (in_array($function, self::REPORTED, true)) {
+            if (in_array($function, self::DELIVERY, true) || (in_array($function, self::DRAIN, true) && $pcntl)) {
                 $this->assertCount(1, $naming, $function . ' is named in one line: ' . implode('', $entries));
+            } elseif (in_array($function, self::DRAIN, true)) {
+                $this->assertCount(0, $naming, $function . ' does not exist without ext-pcntl: ' . implode('', $entries));
             } else {
                 $this->assertLessThanOrEqual(1, count($naming), $function . ' is named in one line at most: ' . implode('', $entries));
             }
