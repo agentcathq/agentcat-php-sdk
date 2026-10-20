@@ -341,3 +341,36 @@ jobs:
           LIBRARY: ${{ matrix.library }}
           REPORT: ${{ runner.temp }}/member-snapshot.md
         run: .github/nightly-issue.sh "member-snapshot (${LIBRARY})" "$REPORT"
+
+  branding-drift:
+    name: README branding drift (TypeScript SDK main)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.5'
+          coverage: none
+      - uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
+        with:
+          dependency-versions: highest
+      - name: Compare the shared README sections and images with the TypeScript SDK's main branch
+        timeout-minutes: 3
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPORT: ${{ runner.temp }}/branding-drift.md
+        run: |
+          set -o pipefail
+          php tests/bin/branding-drift.php | tee "$REPORT"
+      - name: Fail on purpose (workflow_dispatch force_failure)
+        if: github.event_name == 'workflow_dispatch' && inputs.force_failure == github.job
+        run: exit 1
+      - name: Open or update the nightly issue
+        if: failure() && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPORT: ${{ runner.temp }}/branding-drift.md
+        run: .github/nightly-issue.sh "${{ github.job }}" "$REPORT"
