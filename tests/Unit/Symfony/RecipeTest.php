@@ -12,7 +12,7 @@ use Symfony\Component\Config\Definition\ConfigurationInterface;
 use Symfony\Component\Config\Definition\Processor;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Extension\ConfigurationExtensionInterface;
-use Symfony\Component\HttpKernel\Bundle\BundleInterface;
+use Symfony\Component\HttpKernel\Bundle\Bundle;
 use Symfony\Component\Yaml\Yaml;
 
 final class RecipeTest extends TestCase
@@ -24,9 +24,9 @@ final class RecipeTest extends TestCase
         $manifest = Json::decode((string) file_get_contents(self::RECIPE . '/manifest.json'));
 
         $this->assertEquals((object) [AgentCatBundle::class => ['all']], JsonAssert::at($manifest, 'bundles'));
-        $implements = class_implements(AgentCatBundle::class);
-        $this->assertIsArray($implements);
-        $this->assertContains(BundleInterface::class, $implements);
+        $parents = class_parents(AgentCatBundle::class); // Bundle: Symfony 8.1 deprecates HttpKernel's BundleInterface
+        $this->assertIsArray($parents);
+        $this->assertContains(Bundle::class, $parents);
         $this->assertEquals((object) ['config/' => '%CONFIG_DIR%/'], JsonAssert::at($manifest, 'copy-from-recipe'));
         $this->assertEquals((object) ['AGENTCAT_PROJECT_ID' => ''], JsonAssert::at($manifest, 'env'));
     }
