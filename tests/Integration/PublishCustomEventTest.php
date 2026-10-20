@@ -118,7 +118,6 @@ final class PublishCustomEventTest extends TestCase
         $this->client->publishCustomEvent($bad, 'p'); // @phpstan-ignore argument.type (proves PHP's own type check)
     }
 
-    /** @return iterable<string, array{\Closure(): object}> */
     /** What `Builder::buildStateless()` returns cannot be mapped to its Builder, so the message says what to pass. */
     public function testAStatelessProtocolIsRejectedWithTheObjectToPass(): void
     {
@@ -131,6 +130,7 @@ final class PublishCustomEventTest extends TestCase
         $this->assertSame([], $this->logger->messages());
     }
 
+    /** @return iterable<string, array{\Closure(): object}> */
     public static function untracked(): iterable
     {
         yield 'a Builder' => [TrackingFixture::builder(...)];
