@@ -11,6 +11,7 @@ use AgentCat\Internal\Delivery\EventQueue;
 use AgentCat\Internal\Json\Json;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Tools\GetMoreTools;
+use AgentCat\Internal\Transport\Delivery;
 use AgentCat\Laravel\AgentCatServiceProvider;
 use AgentCat\Laravel\Internal\ServerTracker;
 use AgentCat\LaravelMcp\Internal\Access\ServerAccess;
@@ -524,6 +525,17 @@ final class ServiceProviderTest extends BridgeTestCase
         $this->assertStringEndsWith(' Warning: Failed to track server - RuntimeException: no log manager', $lines[0]);
         $this->assertStringEndsWith(' Warning: Failed to publish custom event - the server is not tracked (see the earlier AgentCat log line)', $lines[1]);
         $this->assertFalse(EventQueue::global()->hasWork());
+    }
+
+    /** A test whose configuration names no `api_url` sends to a closed local port, never to the AgentCat API. */
+    public function testWithoutAnApiUrlTheEventGoesToAClosedLocalPort(): void
+    {
+        (new LaravelHarness(ConformanceServer::class))->callTool('echo', ['msg' => 'hi', 'session_id' => 'start']);
+
+        $this->assertTrue(EventQueue::global()->flush(1.0));
+        $urls = array_map(static fn(Delivery $delivery): string => $delivery->url, $this->transport->deliveries);
+        $this->assertCount(1, $urls);
+        $this->assertStringStartsWith('http://127.0.0.1:', $urls[0]);
     }
 
     public function testTheConfigurationIsPublishedUnderItsTag(): void

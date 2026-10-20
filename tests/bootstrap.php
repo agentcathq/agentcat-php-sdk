@@ -23,6 +23,9 @@ $_SERVER['AGENTCAT_DISABLE_DIAGNOSTICS'] = $_ENV['AGENTCAT_DISABLE_DIAGNOSTICS']
 $agentcatClosedPort = AgentCat\Tests\Integration\Support\MockCollector::closedPortUrl();
 putenv('AGENTCAT_DIAGNOSTICS_ENDPOINT=' . $agentcatClosedPort);
 $_SERVER['AGENTCAT_DIAGNOSTICS_ENDPOINT'] = $_ENV['AGENTCAT_DIAGNOSTICS_ENDPOINT'] = $agentcatClosedPort;
+// The event API fails closed too: MCPCAT_API_URL, the last name the SDK reads, is a closed local port, so an event of a
+// test that names no collector of its own goes nowhere but 127.0.0.1. A test's own option or variable comes first.
+AgentCat\Tests\Support\EventApiGuard::set();
 
 register_shutdown_function(static function () use ($agentcatTestHome): void {
     $names = scandir($agentcatTestHome);

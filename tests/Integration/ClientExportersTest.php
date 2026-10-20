@@ -19,6 +19,7 @@ use AgentCat\Internal\Transport\RetryPolicy;
 use AgentCat\Options;
 use AgentCat\Tests\Integration\Support\MockCollector;
 use AgentCat\Tests\Support\Environment;
+use AgentCat\Tests\Support\EventApiGuard;
 use AgentCat\Tests\Support\JsonAssert;
 use AgentCat\Tests\Support\McpSdk\HttpHarness;
 use AgentCat\Tests\Support\McpSdk\Tools;
@@ -54,6 +55,7 @@ final class ClientExportersTest extends TestCase
     protected function setUp(): void
     {
         $this->environment = Environment::clear('AGENTCAT_PROJECT_ID', 'AGENTCAT_API_URL', 'MCPCAT_API_URL', 'AGENTCAT_ENABLED', 'APP_ENV');
+        EventApiGuard::set(); // tests/bootstrap.php's closed event API again, after the clear
         TrackedServers::resetIncomplete();
         TrackedServers::resetSkipped();
         $this->logger = new MemoryLogger();

@@ -13,6 +13,7 @@ use AgentCat\Internal\Transport\Delivery;
 use AgentCat\Internal\Transport\HttpRequest;
 use AgentCat\Tests\Integration\Support\MockCollector;
 use AgentCat\Tests\Support\Environment;
+use AgentCat\Tests\Support\EventApiGuard;
 use AgentCat\Tests\Support\JsonAssert;
 use AgentCat\Tests\Support\McpSdk\TrackingFixture;
 use AgentCat\Tests\Support\MemoryLogger;
@@ -50,6 +51,7 @@ final class BundleConfigurationTest extends SymfonyTestCase
     protected function setUp(): void
     {
         $this->diagnosticsEnvironment = Environment::clear('AGENTCAT_DISABLE_DIAGNOSTICS', 'DISABLE_DIAGNOSTICS', 'AGENTCAT_DIAGNOSTICS_TOKEN', 'MCPCAT_API_URL', 'APP_ENV');
+        EventApiGuard::set(); // tests/bootstrap.php's closed event API again, after the clear
         putenv('AGENTCAT_DISABLE_DIAGNOSTICS=true'); // tests/bootstrap.php's value: a test that wants diagnostics says so
         $this->configuredCollector = MockCollector::closedPortUrl() . '/configured';
         Diagnostics::reset(); // the first init() of the process decides: a test of another class can have made it

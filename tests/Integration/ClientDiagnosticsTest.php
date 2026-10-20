@@ -13,11 +13,13 @@ use AgentCat\Internal\Engine\HttpContext;
 use AgentCat\Internal\Engine\TrackedServers;
 use AgentCat\Internal\Json\Json;
 use AgentCat\Internal\Logging\Log;
+use AgentCat\Internal\Transport\ApiBaseUrl;
 use AgentCat\Internal\Transport\CurlTransport;
 use AgentCat\Internal\Transport\RetryPolicy;
 use AgentCat\Options;
 use AgentCat\Tests\Integration\Support\MockCollector;
 use AgentCat\Tests\Support\Environment;
+use AgentCat\Tests\Support\EventApiGuard;
 use AgentCat\Tests\Support\JsonAssert;
 use AgentCat\Tests\Support\McpSdk\HttpHarness;
 use AgentCat\Tests\Support\McpSdk\Tools;
@@ -47,6 +49,7 @@ final class ClientDiagnosticsTest extends TestCase
     protected function setUp(): void
     {
         $this->environment = Environment::clear('AGENTCAT_DISABLE_DIAGNOSTICS', 'AGENTCAT_DIAGNOSTICS_ENDPOINT', 'AGENTCAT_DIAGNOSTICS_TOKEN', 'DISABLE_DIAGNOSTICS', 'DIAGNOSTICS_ENDPOINT', 'DIAGNOSTICS_TOKEN', 'AGENTCAT_PROJECT_ID', 'AGENTCAT_API_URL', 'MCPCAT_API_URL', 'AGENTCAT_ENABLED', 'APP_ENV');
+        EventApiGuard::set(); // tests/bootstrap.php's closed event API again, after the clear
         $this->endpoint = MockCollector::closedPortUrl();
         putenv('AGENTCAT_DIAGNOSTICS_ENDPOINT=' . $this->endpoint); // fail closed: never otel.agentcat.com
         putenv('DIAGNOSTICS_ENDPOINT=' . MockCollector::closedPortUrl()); // an application's own variable: never read (D50)
@@ -146,6 +149,12 @@ final class ClientDiagnosticsTest extends TestCase
         $client->track(TrackingFixture::builder(), self::PROJECT);
 
         $this->assertFalse(Diagnostics::enabled());
+    }
+
+    /** After this class's setUp, which clears the URL variables, the event API is still a closed local port. */
+    public function testTheEventApiIsAClosedLocalPort(): void
+    {
+        $this->assertStringStartsWith('http://127.0.0.1:', ApiBaseUrl::resolve());
     }
 
     /** A copy with an HTTP context keeps the telemetry setting of its client: the fake's copy sets up no diagnostics. */

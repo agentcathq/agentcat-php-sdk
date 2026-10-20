@@ -676,6 +676,19 @@ final class BundleTest extends SymfonyTestCase
         $this->assertFalse(EventQueue::global()->hasWork());
     }
 
+    /** A test whose configuration names no `api_url` sends to a closed local port, never to the AgentCat API. */
+    #[MaximumDuration(1000)]
+    public function testWithoutAnApiUrlTheEventGoesToAClosedLocalPort(): void
+    {
+        $http = $this->http($this->kernel(agentcat: self::ON));
+
+        $http->callTool('echo', ['msg' => 'hi', 'session_id' => self::SESSION]);
+
+        $urls = array_map(static fn(Delivery $delivery): string => $delivery->url, $this->deliveries());
+        $this->assertCount(1, $urls);
+        $this->assertStringStartsWith('http://127.0.0.1:', $urls[0]);
+    }
+
     /** Review Focus 3, ruling P9: mistyped and unset values; the container compiles and the request answers. */
     #[MaximumDuration(1000)]
     public function testBadRuntimeValuesNeverBreakARequest(): void

@@ -19,6 +19,7 @@ use AgentCat\Internal\Transport\HttpChannel;
 use AgentCat\Internal\Transport\HttpRequest;
 use AgentCat\Internal\Transport\HttpResponse;
 use AgentCat\Internal\Wire\WireEncoder;
+use AgentCat\Tests\Support\EventApiGuard;
 use AgentCat\Tests\Support\JsonAssert;
 use AgentCat\Tests\Support\MemoryLogger;
 use AgentCat\Tests\Support\RecordingCompanion;
@@ -60,6 +61,7 @@ final class EventQueueTest extends TestCase
             putenv($name);
             unset($_ENV[$name], $_SERVER[$name]);
         }
+        EventApiGuard::set(); // tests/bootstrap.php's closed event API again, after the clear
     }
 
     #[\Override]
@@ -248,6 +250,7 @@ final class EventQueueTest extends TestCase
 
     public function testEndpointDefaultsToTheAgentCatApiAndTheLastConfigureWins(): void
     {
+        EventApiGuard::remove(); // the default URL: no variable at all; tearDown() puts the guard back
         $transport = new RecordingTransport();
         $queue = new EventQueue(transport: $transport);
 
@@ -810,6 +813,7 @@ final class EventQueueTest extends TestCase
 
     public function testAPreparedEventGoesToTheEndpointOfTheLastConfigure(): void
     {
+        EventApiGuard::remove(); // the default URL: no variable at all; tearDown() puts the guard back
         $transport = new RecordingTransport(complete: false);
         $queue = new EventQueue(transport: $transport);
         for ($i = 0; $i < 6; ++$i) {

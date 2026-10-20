@@ -17,6 +17,7 @@ use AgentCat\Internal\Logging\Log;
 use AgentCat\Options;
 use AgentCat\Tests\Integration\Support\MockCollector;
 use AgentCat\Tests\Support\Environment;
+use AgentCat\Tests\Support\EventApiGuard;
 use AgentCat\Tests\Support\McpSdk\HttpHarness;
 use AgentCat\Tests\Support\McpSdk\Tools;
 use AgentCat\Tests\Support\McpSdk\TrackingFixture;
@@ -52,6 +53,7 @@ final class AgentCatFakeTest extends TestCase
     protected function setUp(): void
     {
         $this->environment = Environment::clear('AGENTCAT_ENABLED', 'AGENTCAT_API_URL', 'MCPCAT_API_URL', 'AGENTCAT_PROJECT_ID');
+        EventApiGuard::set(); // tests/bootstrap.php's closed event API again, after the clear
         $this->logger = new MemoryLogger();
         Log::setLogger($this->logger);
         $this->home = $this->home();

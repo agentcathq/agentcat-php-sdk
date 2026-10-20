@@ -27,6 +27,7 @@ use AgentCat\McpSdk\McpSdkAdapter;
 use AgentCat\Options;
 use AgentCat\Tests\Integration\Support\MockCollector;
 use AgentCat\Tests\Support\Environment;
+use AgentCat\Tests\Support\EventApiGuard;
 use AgentCat\Tests\Support\JsonAssert;
 use AgentCat\Tests\Support\McpSdk\BuilderMembers;
 use AgentCat\Tests\Support\McpSdk\HttpHarness;
@@ -87,6 +88,7 @@ final class ClientTrackTest extends TestCase
             $this->savedAsyncSignals = pcntl_async_signals();
         }
         $this->environment = Environment::clear('AGENTCAT_PROJECT_ID', 'AGENTCAT_API_URL', 'MCPCAT_API_URL', 'AGENTCAT_ENABLED', 'APP_ENV');
+        EventApiGuard::set(); // tests/bootstrap.php's closed event API again, after the clear
         TrackedServers::resetIncomplete();
         TrackedServers::resetSkipped();
         $this->logger = new MemoryLogger();
@@ -506,6 +508,7 @@ final class ClientTrackTest extends TestCase
     #[Group('ac-01-59')]
     public function testTheLastApiBaseUrlWins(): void
     {
+        EventApiGuard::remove(); // no variable at all; tearDown() puts the guard back
         $this->client->track(TrackingFixture::builder(), self::PROJECT, new Options(apiBaseUrl: 'https://u1.test'));
         $builder = TrackingFixture::builder();
         Tools::echo($builder);
