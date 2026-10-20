@@ -114,8 +114,8 @@ final class ExporterConfigsTest extends TestCase
     {
         $this->assertSame([], ExporterConfigs::fromArray([3 => 'otlp', 'x' => new \stdClass()]));
         $this->assertSame([
-            'Failed to initialize exporter 3: InvalidArgumentException: exporter configuration must be an array, got string',
-            'Failed to initialize exporter x: InvalidArgumentException: exporter configuration must be an array, got stdClass',
+            'Failed to initialize exporter 3: InvalidArgumentException: exporter "exporters.3" must be an array, got string; write an array or omit the entry',
+            'Failed to initialize exporter x: InvalidArgumentException: exporter "exporters.x" must be an array, got stdClass; write an array or omit the entry',
         ], $this->logger->messages());
     }
 
@@ -158,12 +158,12 @@ final class ExporterConfigsTest extends TestCase
 
         ExporterConfigs::fromArray(['otlp' => ['type' => 'otlp', 'endpoint' => 'http://127.0.0.1:1', 'headers' => ['Authorization' => null]]]);
 
-        $this->assertSame(['Failed to initialize exporter otlp: InvalidArgumentException: exporter option "headers.Authorization" must be string, got null'], $logger->messages());
+        $this->assertSame(['Failed to initialize exporter otlp: InvalidArgumentException: exporter option "headers.Authorization" must be a string, got null; write a string or omit the entry'], $logger->messages());
     }
 
     public function testTheFirstHeaderThatIsNotAStringIsNamed(): void
     {
         $this->assertSame([], ExporterConfigs::fromArray(['a' => ['type' => 'otlp', 'endpoint' => 'e', 'headers' => ['x' => 'y', 'z' => 1, 'w' => null]]]));
-        $this->assertSame(['Failed to initialize exporter a: InvalidArgumentException: exporter option "headers.z" must be string, got int'], $this->logger->messages());
+        $this->assertSame(['Failed to initialize exporter a: InvalidArgumentException: exporter option "headers.z" must be a string, got int; write a string or omit the entry'], $this->logger->messages());
     }
 }

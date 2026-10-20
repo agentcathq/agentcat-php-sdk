@@ -254,9 +254,9 @@ final class OptionsTest extends TestCase
             'Failed to initialize exporter dd: InvalidArgumentException: exporter option "apiKey" must be string, got null',
             'Failed to initialize exporter sentry: InvalidArgumentException: exporter option "enableTracing" must be bool, got string',
             'WARN: Unknown AgentCat option "exporters.otlp.timeout" ignored',
-            'Failed to initialize exporter otlp: InvalidArgumentException: exporter option "headers.x" must be string, got int',
+            'Failed to initialize exporter otlp: InvalidArgumentException: exporter option "headers.x" must be a string, got int; write a string or omit the entry',
             'WARN: Unknown AgentCat option "exporters.ph.hots" ignored',
-            'Failed to initialize exporter str: InvalidArgumentException: exporter configuration must be an array, got string',
+            'Failed to initialize exporter str: InvalidArgumentException: exporter "exporters.str" must be an array, got string; write an array or omit the entry',
         ], $this->logger->messages());
     }
 

@@ -45,7 +45,7 @@ final class ExporterConfigs
                 $config = match (true) {
                     $entry instanceof OtlpExporter, $entry instanceof DatadogExporter, $entry instanceof SentryExporter, $entry instanceof PostHogExporter => $entry,
                     is_array($entry) => self::one($name, $entry),
-                    default => throw new \InvalidArgumentException('exporter configuration must be an array, got ' . get_debug_type($entry)),
+                    default => throw new \InvalidArgumentException(sprintf('exporter "exporters.%s" must be an array, got %s; write an array or omit the entry', $name, get_debug_type($entry))),
                 };
             } catch (\InvalidArgumentException $e) {
                 Log::write(sprintf('Failed to initialize exporter %s: %s', $name, ErrorText::of($e)));
@@ -118,7 +118,7 @@ final class ExporterConfigs
         $value = $entry['headers'] ?? [];
         $headers = [];
         foreach (is_array($value) ? $value : throw self::invalid('headers', 'array<string, string>', $value) as $header => $text) {
-            $headers[(string) $header] = is_string($text) ? $text : throw self::invalid('headers.' . $header, 'string', $text);
+            $headers[(string) $header] = is_string($text) ? $text : throw new \InvalidArgumentException(sprintf('exporter option "headers.%s" must be a string, got %s; write a string or omit the entry', $header, get_debug_type($text)));
         }
 
         return $headers;
