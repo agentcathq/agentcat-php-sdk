@@ -98,13 +98,13 @@ final class ServerTracker
             }
             $this->lines = [];
             $client = AgentCat::client();
-            // A fake records every server (header conflict 6); the shared client is never replaced.
+            $context = $this->requests instanceof RequestStack ? RequestStackContext::of($this->requests) : null;
+            // A fake records every server (header conflict 6), with the request of each call, as production sends it
+            // (D41); the shared client is never replaced.
             if (!FakeLog::of($client) instanceof FakeLog) {
-                $client = $this->client ??= new Client(ClientSeams::of(
-                    EventQueue::global(),
-                    EnabledGate::of($config['enabled'] ?? null),
-                    httpContext: $this->requests instanceof RequestStack ? RequestStackContext::of($this->requests) : null,
-                ));
+                $client = $this->client ??= new Client(ClientSeams::of(EventQueue::global(), EnabledGate::of($config['enabled'] ?? null), httpContext: $context));
+            } elseif ($context instanceof \Closure) {
+                $client = $client->withHttpContext($context);
             }
             $this->options ??= ConfigOptions::options($keys['options'], self::BRIDGE_KEYS, $this->services->get(...));
             // A null entry (`%env(default::…)%` of an unset variable) is the configured project; without one, the

@@ -66,6 +66,20 @@ final readonly class Client
     }
 
     /**
+     * Internal: this client with the HTTP request of a call from `$httpContext`, for every server the copy tracks. The
+     * copy keeps the event queue, the enabled gate and the telemetry setting, so the copy of a fake's client records
+     * into the fake. The Symfony bundle gives a fake's client its `RequestStack` this way (D41).
+     *
+     * @internal
+     *
+     * @param \Closure(): ?HttpContext $httpContext
+     */
+    public function withHttpContext(\Closure $httpContext): self
+    {
+        return new self(ClientSeams::of($this->publisher->queue(), $this->enabled, $this->telemetry, $httpContext));
+    }
+
+    /**
      * Adds AgentCat analytics to an MCP server. Call it before the server is built: for mcp/sdk, pass the
      * `Mcp\Server\Builder` before `build()`.
      *

@@ -9,6 +9,7 @@ use AgentCat\Identity;
 use AgentCat\Internal\ClientSeams;
 use AgentCat\Internal\Delivery\EventQueue;
 use AgentCat\Internal\Diagnostics\Diagnostics;
+use AgentCat\Internal\Engine\HttpContext;
 use AgentCat\Internal\Engine\TrackedServers;
 use AgentCat\Internal\Json\Json;
 use AgentCat\Internal\Logging\Log;
@@ -143,6 +144,17 @@ final class ClientDiagnosticsTest extends TestCase
         $client = new Client(ClientSeams::of(new EventQueue(transport: new RecordingTransport(), channel: new RecordingHttpChannel()), static fn(): bool => true, telemetry: false));
 
         $client->track(TrackingFixture::builder(), self::PROJECT);
+
+        $this->assertFalse(Diagnostics::enabled());
+    }
+
+    /** A copy with an HTTP context keeps the telemetry setting of its client: the fake's copy sets up no diagnostics. */
+    public function testACopyWithAnHttpContextKeepsTheTelemetrySetting(): void
+    {
+        putenv('AGENTCAT_DISABLE_DIAGNOSTICS=false');
+        $client = new Client(ClientSeams::of(new EventQueue(transport: new RecordingTransport(), channel: new RecordingHttpChannel()), static fn(): bool => true, telemetry: false));
+
+        $client->withHttpContext(static fn(): ?HttpContext => null)->track(TrackingFixture::builder(), self::PROJECT);
 
         $this->assertFalse(Diagnostics::enabled());
     }
