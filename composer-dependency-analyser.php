@@ -42,5 +42,5 @@ return (new Configuration())
     ->ignoreErrorsOnPackageAndPath('symfony/console', __DIR__ . '/tests/E2E/Laravel', [ErrorType::SHADOW_DEPENDENCY])
     // Symfony\Component\Console arrives with symfony/framework-bundle; a bundle test runs a console command as an application does.
     ->ignoreErrorsOnPackageAndPath('symfony/console', __DIR__ . '/tests/Integration/Symfony/BundleTest.php', [ErrorType::SHADOW_DEPENDENCY])
-    // Symfony\Component\Routing arrives with symfony/framework-bundle and symfony/mcp-bundle; the test kernel imports the bundle's MCP routes with it, and a contract test reads them.
-    ->ignoreErrorsOnPackageAndPaths('symfony/routing', [__DIR__ . '/tests/Support/Symfony/TestKernel.php', __DIR__ . '/tests/Contract/Symfony/BundleServicesTest.php'], [ErrorType::SHADOW_DEPENDENCY]);
+    // Symfony\Component\Routing arrives with symfony/framework-bundle (and symfony/mcp-bundle); the test kernel imports the bundle's MCP routes with it, the kernel without symfony/mcp-bundle adds its own route, and a contract test reads the routes.
+    ->ignoreErrorsOnPackageAndPaths('symfony/routing', [__DIR__ . '/tests/Support/Symfony/TestKernel.php', __DIR__ . '/tests/Support/Symfony/WithoutMcpBundleKernel.php', __DIR__ . '/tests/Contract/Symfony/BundleServicesTest.php'], [ErrorType::SHADOW_DEPENDENCY]);

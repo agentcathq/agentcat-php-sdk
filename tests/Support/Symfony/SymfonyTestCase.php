@@ -23,10 +23,11 @@ use PHPUnit\Framework\TestCase;
 use Symfony\AI\McpBundle\McpBundle;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
+use Symfony\Component\HttpKernel\KernelInterface;
 
 /**
  * Symfony applications with symfony/mcp-bundle, for the bundle tests. Skipped where the bundle is not installed (the
- * mcp/sdk main leg removes it). Each kernel compiles its container into a directory of this test under the test HOME,
+ * mcp/sdk main leg removes it), unless a test class needs no symfony/mcp-bundle (`needsTheMcpBundle()`). Each kernel compiles its container into a directory of this test under the test HOME,
  * removed after the test (Ruling R8). The AGENTCAT_* variables of the process that runs the tests are cleared, so the
  * configuration decides, and the global event queue records its deliveries.
  */
@@ -40,7 +41,7 @@ abstract class SymfonyTestCase extends TestCase
     /** This test's directory under the test HOME. */
     private string $directory = '';
 
-    /** @var list<TestKernel> the kernels this test booted */
+    /** @var list<KernelInterface> the kernels this test booted */
     private array $kernels = [];
 
     private ?Environment $environment = null;
@@ -91,7 +92,7 @@ abstract class SymfonyTestCase extends TestCase
     #[\Override]
     protected function setUp(): void
     {
-        if (!class_exists(McpBundle::class)) {
+        if ($this->needsTheMcpBundle() && !class_exists(McpBundle::class)) {
             self::markTestSkipped('symfony/mcp-bundle is not installed');
         }
         $home = getenv('HOME');
@@ -105,6 +106,12 @@ abstract class SymfonyTestCase extends TestCase
             throw new \RuntimeException('Cannot create ' . $this->directory);
         }
         EventQueue::setGlobal(new EventQueue(transport: $this->transport = new RecordingTransport()));
+    }
+
+    /** Whether the tests of the class need symfony/mcp-bundle: without it, they skip. */
+    protected function needsTheMcpBundle(): bool
+    {
+        return true;
     }
 
     #[\Override]
@@ -142,15 +149,27 @@ abstract class SymfonyTestCase extends TestCase
      */
     protected function kernel(array $agentcat = [], array $services = [], bool $withAgentCat = true, ?CompilerPassInterface $probe = null, ?array $mcp = null, ?string $directory = null, ?CompilerPassInterface $before = null): TestKernel
     {
-        $kernel = new TestKernel($directory ?? $this->directory . '/kernel-' . count($this->kernels), $agentcat, $services, $mcp ?? TestKernel::MCP, $withAgentCat, $probe, $before);
+        $kernel = new TestKernel($directory ?? $this->directory() . '/kernel-' . count($this->kernels), $agentcat, $services, $mcp ?? TestKernel::MCP, $withAgentCat, $probe, $before);
+        $this->boot($kernel);
+
+        return $kernel;
+    }
+
+    /** Boots a kernel of this test, which shuts it down after the test. */
+    protected function boot(KernelInterface $kernel): void
+    {
         $this->kernels[] = $kernel;
         $handler = $this->exceptionHandler();
         $kernel->boot();
         if ($this->exceptionHandler() !== $handler) {
             restore_exception_handler(); // FrameworkBundle::boot() leaves Symfony's handler with symfony/error-handler 7.3
         }
+    }
 
-        return $kernel;
+    /** This test's directory under the test HOME, removed after the test. */
+    protected function directory(): string
+    {
+        return $this->directory;
     }
 
     /**
@@ -202,7 +221,7 @@ abstract class SymfonyTestCase extends TestCase
      *
      * @return list<mixed>
      */
-    protected function listeners(TestKernel $kernel, string $event): array
+    protected function listeners(KernelInterface $kernel, string $event): array
     {
         $dispatcher = $kernel->getContainer()->get('event_dispatcher');
         $this->assertInstanceOf(EventDispatcherInterface::class, $dispatcher);
