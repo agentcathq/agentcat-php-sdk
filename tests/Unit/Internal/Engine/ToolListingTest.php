@@ -227,6 +227,24 @@ final class ToolListingTest extends TestCase
         $this->assertNotNull($before);
     }
 
+    /**
+     * D66: the pages merge into the output registry. A tool without a name is recorded there as `unknown`, but with
+     * its own `session_id` and context injection off it has no registry entry, so a merge without de-duplication
+     * would add one more copy at each listing of a long-running process.
+     */
+    public function testListingANamelessToolAgainKeepsOneOutputRegistryEntry(): void
+    {
+        $server = $this->server(new Options(enableToolCallContext: false));
+        $nameless = '{"inputSchema":{"type":"object","properties":{"session_id":{"type":"string"}}},"outputSchema":{"type":"object","properties":{}}}';
+
+        for ($listing = 1; $listing <= 5; ++$listing) {
+            ToolListing::apply($server, [$this->tool($nameless), $this->tool('{"name":"a"}')], lastPage: true);
+        }
+
+        $this->assertSame(['unknown'], $server->outputRegistry);
+        $this->assertSame(['a', 'get_more_tools'], $this->registered($server));
+    }
+
     /** D66: a registered tool needs no rebuild; before, any registry skipped it. */
     public function testEnsureRegistriesSkipsTheListingWhenTheToolIsRegistered(): void
     {

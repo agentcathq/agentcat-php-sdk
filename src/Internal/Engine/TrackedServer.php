@@ -75,13 +75,15 @@ final class TrackedServer
     /**
      * Merges one page's registries into the server's (D66, B10 fixed; TypeScript replaces them): the page's entries
      * replace those of the same tools, and the output registry keeps the tools of the other pages. `array_replace()`
-     * keeps the int keys that PHP makes of numeric-string names, and `array_diff()` compares them as strings. Every
-     * tool of a page's output registry has an entry in its registry, so the merged output registry has no duplicate.
+     * keeps the int keys that PHP makes of numeric-string names, and `array_diff()` compares them as strings. A tool
+     * without a name is in the output registry as `unknown` and can have no registry entry, so `array_unique()` keeps
+     * one copy of it when the page is listed again.
      */
     public function adopt(InjectedList $list): void
     {
         $this->registry = array_replace($this->registry ?? [], $list->registry);
-        $this->outputRegistry = [...array_diff($this->outputRegistry ?? [], array_keys($list->registry)), ...$list->outputRegistry];
+        $kept = array_diff($this->outputRegistry ?? [], array_keys($list->registry));
+        $this->outputRegistry = [...array_unique([...$kept, ...$list->outputRegistry])];
     }
 
     /** @return array{0: ?string, 1: ?string} */
