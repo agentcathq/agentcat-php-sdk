@@ -59,7 +59,26 @@ final class DockerRuntime
 
     private static ?string $problem = null;
 
+    /** @var array<string, true> the images of the containers that this process started since `forgetImages()` */
+    private static array $images = [];
+
     private function __construct(private readonly string $name) {}
+
+    /**
+     * The images that this process started a container from since `forgetImages()`, in start order: a failing test
+     * names them (`RuntimeTestCase::onNotSuccessfulTest()`).
+     *
+     * @return list<string>
+     */
+    public static function imagesUsed(): array
+    {
+        return array_keys(self::$images);
+    }
+
+    public static function forgetImages(): void
+    {
+        self::$images = [];
+    }
 
     /** `AGENTCAT_RUNTIME_TESTS=1`: the runtime tests run, and a Docker that does not answer fails them. */
     public static function requested(): bool
@@ -368,6 +387,7 @@ final class DockerRuntime
                 throw new \InvalidArgumentException(sprintf('A container needs %s on http://127.0.0.1:<port>, the collector of the test or a closed port: pass RuntimeTestCase::env()', $required));
             }
         }
+        self::$images[$image] = true;
         $repo = self::repo();
         $options = ['--pull', 'never', '--name', $name, '--network', 'host', '--mount', self::bind($repo, $repo, readonly: true), '--workdir', $repo];
         foreach ([Constants::DEFAULT_API_BASE_URL, Constants::DEFAULT_DIAGNOSTICS_ENDPOINT] as $default) {

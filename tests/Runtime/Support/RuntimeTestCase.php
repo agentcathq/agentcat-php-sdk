@@ -10,6 +10,7 @@ use AgentCat\Tests\Support\FileTree;
 use AgentCat\Tests\Support\JsonAssert;
 use AgentCat\Tests\Support\McpSdk\HttpHarness;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\ExpectationFailedException;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -84,6 +85,7 @@ abstract class RuntimeTestCase extends TestCase
     #[\Override]
     protected function setUp(): void
     {
+        DockerRuntime::forgetImages();
         if (!DockerRuntime::requested()) {
             self::markTestSkipped('The runtime tests run with AGENTCAT_RUNTIME_TESTS=1');
         }
@@ -116,6 +118,30 @@ abstract class RuntimeTestCase extends TestCase
                 }
             },
         ]);
+    }
+
+    /**
+     * A failing runtime test names the images of the containers it started (`AGENTCAT_RUNTIME_IMAGES=latest` runs
+     * floating tags, so a nightly failure must say which image broke). The original throwable stays as `previous`.
+     */
+    #[\Override]
+    protected function invokeTestMethod(string $methodName, array $testArguments): mixed
+    {
+        try {
+            return parent::invokeTestMethod($methodName, $testArguments);
+        } catch (\Throwable $t) {
+            $images = DockerRuntime::imagesUsed();
+            $isExpectation = $t instanceof ExpectationFailedException;
+            if ($images === [] || (!$isExpectation && str_starts_with($t::class, 'PHPUnit\\'))) { // a skip, an incomplete test or fail()
+                throw $t;
+            }
+            $message = $t->getMessage() . "\nRuntime images: " . implode(', ', $images);
+            if ($isExpectation) {
+                throw new ExpectationFailedException($message, $t->getComparisonFailure(), $t);
+            }
+
+            throw new \RuntimeException(sprintf('%s: %s', $t::class, $message), 0, $t);
+        }
     }
 
     /** The repository's absolute path, which every container mounts read-only at the same path. */
