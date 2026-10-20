@@ -10,7 +10,6 @@ use AgentCat\Tests\Integration\Support\MockCollector;
 use AgentCat\Tests\Runtime\Support\DockerRuntime;
 use AgentCat\Tests\Runtime\Support\Images;
 use AgentCat\Tests\Runtime\Support\RuntimeTestCase;
-use AgentCat\Tests\Support\JsonAssert;
 use AgentCat\Tests\Support\McpSdk\HttpHarness;
 use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -53,8 +52,6 @@ final class FrankenPhpTest extends RuntimeTestCase
     /** How often the diagnostics test sends a request while it waits for the POST. */
     private const float REQUEST_INTERVAL_SECONDS = 0.25;
 
-    private const string SENT_EVENT = 'Successfully sent event ';
-
     private ?DockerRuntime $runtime = null;
 
     #[Group('ac-03-1')]
@@ -65,7 +62,7 @@ final class FrankenPhpTest extends RuntimeTestCase
         $client = $this->warmClassicClient('/classic.php');
         $started = microtime(true);
 
-        $answer = $client->post($this->call(2, 'hi'), $this->headers($scenario));
+        $answer = $client->post(self::echoCall(2, 'hi'), self::echoHeaders($scenario));
 
         $this->assertLessThan(self::ANSWER_SECONDS, $answer['receivedAt'] - $started, 'FrankenPHP held the answer for the delivery');
         $this->assertEchoed('hi', $answer, 2);
@@ -79,6 +76,7 @@ final class FrankenPhpTest extends RuntimeTestCase
      * and flushing the output buffers (D57) sends the bytes but not the end, so only the shutdown function's call of
      * `frankenphp_finish_request()` gives the client its answer before the delivery.
      */
+    #[Group('ac-03-1')]
     #[MaximumDuration(40000)]
     public function testClassicModeEndsAnAnswerWithoutContentLengthBeforeTheDelivery(): void
     {
@@ -86,7 +84,7 @@ final class FrankenPhpTest extends RuntimeTestCase
         $client = $this->warmClassicClient('/unsized.php');
         $started = microtime(true);
 
-        $answer = $client->post($this->call(2, 'hi'), $this->headers($scenario));
+        $answer = $client->post(self::echoCall(2, 'hi'), self::echoHeaders($scenario));
 
         $this->assertLessThan(self::ANSWER_SECONDS, $answer['receivedAt'] - $started, 'the shutdown function did not end the answer with frankenphp_finish_request() before the delivery');
         $this->assertSame('removed', $answer['headers']['x-e2e-content-length'] ?? null, 'PHP sent the answer without its Content-Length');
@@ -110,7 +108,7 @@ final class FrankenPhpTest extends RuntimeTestCase
 
         // slow.php works 1 s of wall time of its 2 s limit, then answers; the delivery waits 2 s more (ruling P16: about
         // 1 s of slack before the limit, and the drain ends about 1 s after it).
-        $answer = $client->post($this->call(1, 'hi'), $this->headers($events));
+        $answer = $client->post(self::echoCall(1, 'hi'), self::echoHeaders($events));
 
         $this->assertEchoed('hi', $answer, 1);
         $deliveries = $this->waitForRequests($events, 1, self::COLLECTOR_DEADLINE_SECONDS);
@@ -127,7 +125,7 @@ final class FrankenPhpTest extends RuntimeTestCase
         $client = new McpHttpClient($this->frankenphp(worker: true) . '/worker.php');
 
         foreach (['one', 'two'] as $i => $msg) {
-            $answer = $client->post($this->call($i + 1, $msg), $this->headers($scenario));
+            $answer = $client->post(self::echoCall($i + 1, $msg), self::echoHeaders($scenario));
             $this->assertEchoed($msg, $answer, $i + 1);
             $this->assertSame('null', $answer['headers']['x-agentcat-finish'] ?? null, 'no finish function in worker mode');
             $this->assertSame('1', $answer['headers']['x-agentcat-wait'] ?? null, 'D58: a worker waits at most 1 s after each request');
@@ -142,11 +140,11 @@ final class FrankenPhpTest extends RuntimeTestCase
         $scenario = self::$collector->scenario([], ['status' => 202, 'delayMs' => 4000]);
         // one worker thread: a request waits for the previous one's flush; no --rm: the logs are read after the stop (P16)
         $client = new McpHttpClient($this->frankenphp(worker: true, remove: false) . '/worker.php');
-        $headers = $this->headers($scenario);
-        $this->assertEchoed('m1', $client->post($this->call(1, 'm1'), $headers), 1);
+        $headers = self::echoHeaders($scenario);
+        $this->assertEchoed('m1', $client->post(self::echoCall(1, 'm1'), $headers), 1);
         $started = microtime(true);
 
-        $answer = $client->post($this->call(2, 'm2'), $headers);
+        $answer = $client->post(self::echoCall(2, 'm2'), $headers);
 
         $this->assertLessThan(self::WORKER_WAIT_SECONDS, microtime(true) - $started, 'the loop waited longer than the D58 cap');
         $this->assertEchoed('m2', $answer, 2);
@@ -155,7 +153,7 @@ final class FrankenPhpTest extends RuntimeTestCase
         $logs = $runtime->logs();
         $runtime->stop();
         $this->assertStringNotContainsString('Fatal error', $logs);
-        $this->assertSame(2, substr_count($this->sdkLog(), self::SENT_EVENT), 'the worker\'s stop waited for both deliveries');
+        $this->assertSame(2, substr_count($this->outFile('agentcat.log'), MockCollector::SENT_EVENT), 'the worker\'s stop waited for both deliveries');
         $this->assertCount(2, $this->waitForRequests($scenario, 2, self::COLLECTOR_DEADLINE_SECONDS));
     }
 
@@ -190,7 +188,7 @@ final class FrankenPhpTest extends RuntimeTestCase
         $deadline = microtime(true) + self::COLLECTOR_DEADLINE_SECONDS;
         do {
             ++$calls;
-            $answer = $client->post($this->call($calls, 'm' . $calls), $headers);
+            $answer = $client->post(self::echoCall($calls, 'm' . $calls), $headers);
             $this->assertEchoed('m' . $calls, $answer, $calls);
             $this->assertSame($server, $answer['headers']['x-e2e-server'] ?? null);
             $posts = self::$collector->waitFor($diagnostics, static fn(array $posts): bool => $posts !== [], self::REQUEST_INTERVAL_SECONDS);
@@ -200,7 +198,7 @@ final class FrankenPhpTest extends RuntimeTestCase
         $this->assertStringContainsString('AgentCat setup started', MockCollector::body($posts[0]), 'the first POST carries the first track()\'s lines');
         $this->assertGreaterThan($started + self::DIAGNOSTICS_WINDOW_SECONDS, $this->time($posts[0], 'start'), 'the 2 s window, not an earlier post');
         ++$calls;
-        $this->assertEchoed('m' . $calls, $client->post($this->call($calls, 'm' . $calls), $headers), $calls); // the worker still runs
+        $this->assertEchoed('m' . $calls, $client->post(self::echoCall($calls, 'm' . $calls), $headers), $calls); // the worker still runs
         $this->assertCount($calls, $this->waitForRequests($events, $calls, self::COLLECTOR_DEADLINE_SECONDS));
     }
 
@@ -260,7 +258,7 @@ final class FrankenPhpTest extends RuntimeTestCase
     {
         $warmUp = self::$collector->scenario();
         $client = new McpHttpClient($this->frankenphp(worker: false) . $script);
-        $this->assertEchoed('warm', $client->post($this->call(1, 'warm'), $this->headers($warmUp)), 1);
+        $this->assertEchoed('warm', $client->post(self::echoCall(1, 'warm'), self::echoHeaders($warmUp)), 1);
         $this->waitForRequests($warmUp, 1, self::COLLECTOR_DEADLINE_SECONDS);
 
         return $client;
@@ -283,63 +281,5 @@ final class FrankenPhpTest extends RuntimeTestCase
         $this->assertInstanceOf(DockerRuntime::class, $this->runtime, 'frankenphp() starts the container');
 
         return $this->runtime;
-    }
-
-    /**
-     * Diagnostics on, sent to `$scenario`, for every request of the container.
-     *
-     * @return array<string, string>
-     */
-    private function diagnosticsTo(string $scenario): array
-    {
-        return ['AGENTCAT_DISABLE_DIAGNOSTICS' => 'false', 'AGENTCAT_DIAGNOSTICS_ENDPOINT' => $scenario];
-    }
-
-    /**
-     * The headers of a 2026-07-28 `tools/call` of `echo`, and the AgentCat API of the server built per request.
-     *
-     * @return array<string, string>
-     */
-    private function headers(string $scenario): array
-    {
-        return [...HttpHarness::modernHeaders('tools/call', 'echo'), 'X-E2E-Collector' => $scenario];
-    }
-
-    /**
-     * A 2026-07-28 `tools/call` of `echo`: no handshake, the client in `_meta`.
-     *
-     * @return array<string, mixed>
-     */
-    private function call(int $id, string $msg): array
-    {
-        $params = HttpHarness::modernParams(['name' => 'echo', 'arguments' => (object) ['msg' => $msg, 'session_id' => 'start']], ['name' => 'fp', 'version' => '1']);
-
-        return ['jsonrpc' => '2.0', 'id' => $id, 'method' => 'tools/call', 'params' => $params];
-    }
-
-    /** @param array{status: int, headers: array<string, string>, body: string, receivedAt: float} $answer */
-    private function assertEchoed(string $msg, array $answer, int $id): void
-    {
-        $this->assertSame(200, $answer['status'], $answer['body']);
-        $result = HttpHarness::result(HttpHarness::decode($answer['body'], $answer['headers']['content-type'] ?? '', $id));
-        $this->assertSame('echo: ' . $msg, JsonAssert::at($result, 'content', 1, 'text'));
-    }
-
-    /** When the collector received (`start`) or answered (`end`) a request. */
-    private function time(\stdClass $request, string $field): float
-    {
-        $time = $request->{$field} ?? null;
-        $this->assertIsFloat($time);
-
-        return $time;
-    }
-
-    /** AgentCat's own log in the container (`$HOME/agentcat.log`, HOME=/out). */
-    private function sdkLog(): string
-    {
-        $log = file_get_contents($this->out() . '/agentcat.log');
-        $this->assertIsString($log);
-
-        return $log;
     }
 }

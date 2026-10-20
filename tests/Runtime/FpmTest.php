@@ -54,7 +54,7 @@ final class FpmTest extends RuntimeTestCase
         $this->assertLessThan(self::ANSWER_SECONDS, $answer['endedAt'] - $started, 'FPM held the request for the hooks or the delivery');
         $request = $this->requestAt($scenario, 0);
         $this->assertSame('e2e-user', JsonAssert::at($this->event($request), 'identify_actor_given_id'));
-        $this->assertGreaterThan($answer['endedAt'] + self::AFTER_THE_HOOK_SECONDS, $this->start($request), 'the delivery started after the hook, which ran after the answer');
+        $this->assertGreaterThan($answer['endedAt'] + self::AFTER_THE_HOOK_SECONDS, $this->time($request, 'start'), 'the delivery started after the hook, which ran after the answer');
         $wokeAt = file_get_contents($this->out() . '/identify'); // written in the container when the hook woke up
         $this->assertIsString($wokeAt);
         $this->assertIsNumeric($wokeAt);
@@ -91,7 +91,7 @@ final class FpmTest extends RuntimeTestCase
         $this->assertSame('2', $second['headers']['x-e2e-session-count'] ?? null, 'the second request read the session that the first one wrote');
         $this->assertLessThan(self::ANSWER_SECONDS, $second['endedAt'] - $started, 'the second request waited for the first one\'s session lock');
         $this->requestAt($scenario, 1); // the second request's event
-        $this->assertGreaterThan($second['endedAt'] + 1.0, $this->end($this->requestAt($scenario, 0)), 'the first request\'s drain still waited for the collector when the second one had its answer');
+        $this->assertGreaterThan($second['endedAt'] + 1.0, $this->time($this->requestAt($scenario, 0), 'end'), 'the first request\'s drain still waited for the collector when the second one had its answer');
     }
 
     /**
@@ -127,7 +127,7 @@ final class FpmTest extends RuntimeTestCase
         }
         $own = MockCollector::withASentEvent($posts, $first);
         $this->assertCount(1, $own, 'one POST carries the delivery line of the first request');
-        $this->assertGreaterThan($answer['endedAt'] + self::AFTER_THE_HOOK_SECONDS, $this->start($own[0]), 'the first request posted its diagnostics after the hook, which ran after the answer');
+        $this->assertGreaterThan($answer['endedAt'] + self::AFTER_THE_HOOK_SECONDS, $this->time($own[0], 'start'), 'the first request posted its diagnostics after the hook, which ran after the answer');
     }
 
     /**
@@ -177,7 +177,7 @@ final class FpmTest extends RuntimeTestCase
         $delivery = $this->requestAt($scenario, 1);
         $event = $this->event($delivery);
         $this->assertSame(['conformance-server', 'echo'], [JsonAssert::at($event, 'server_name'), JsonAssert::at($event, 'resource_name')]);
-        $this->assertGreaterThan($answer['endedAt'] + 1.0, $this->end($delivery), 'the collector answered the delivery after the client had its answer');
+        $this->assertGreaterThan($answer['endedAt'] + 1.0, $this->time($delivery, 'end'), 'the collector answered the delivery after the client had its answer');
     }
 
     /**
@@ -260,23 +260,5 @@ final class FpmTest extends RuntimeTestCase
         $this->assertIsString($id);
 
         return $id;
-    }
-
-    /** When the request reached the collector. */
-    private function start(\stdClass $request): float
-    {
-        $start = $request->start ?? null;
-        $this->assertIsFloat($start);
-
-        return $start;
-    }
-
-    /** When the collector answered the request (after its delay). */
-    private function end(\stdClass $request): float
-    {
-        $end = $request->end ?? null;
-        $this->assertIsFloat($end);
-
-        return $end;
     }
 }

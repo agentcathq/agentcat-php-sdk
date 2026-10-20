@@ -6,6 +6,8 @@ namespace AgentCat\Tests\Runtime\Support;
 
 use AgentCat\Tests\Integration\Support\MockCollector;
 use AgentCat\Tests\Support\FileTree;
+use AgentCat\Tests\Support\JsonAssert;
+use AgentCat\Tests\Support\McpSdk\HttpHarness;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
@@ -141,6 +143,17 @@ abstract class RuntimeTestCase extends TestCase
         return $this->out = $out;
     }
 
+    /** What a container wrote to `$path` under `/out` (`out()`), for example AgentCat's log in `HOME=/out`. */
+    final protected function outFile(string $path): string
+    {
+        $file = $this->out() . '/' . $path;
+        $this->assertFileExists($file);
+        $contents = file_get_contents($file);
+        $this->assertIsString($contents, $file);
+
+        return $contents;
+    }
+
     /** A free local port: the port of a URL where nothing listens. */
     final protected function freePort(): int
     {
@@ -174,6 +187,60 @@ abstract class RuntimeTestCase extends TestCase
             'AGENTCAT_E2E_MARKERS' => '/out',
             'APP_BASE_PATH' => '/out/app',
         ];
+    }
+
+    /**
+     * Diagnostics on for every request of the container, sent to `$scenario`: add it to `env()`.
+     *
+     * @return array<string, string>
+     */
+    final protected function diagnosticsTo(string $scenario): array
+    {
+        return ['AGENTCAT_DISABLE_DIAGNOSTICS' => 'false', 'AGENTCAT_DIAGNOSTICS_ENDPOINT' => $scenario];
+    }
+
+    /**
+     * A 2026-07-28 `tools/call` of `echo` with `$msg` (id `$id`): no handshake, the client in `_meta`.
+     *
+     * @return array<string, mixed>
+     */
+    final protected static function echoCall(int $id, string $msg): array
+    {
+        $params = HttpHarness::modernParams(['name' => 'echo', 'arguments' => (object) ['msg' => $msg, 'session_id' => 'start']], ['name' => 'runtime-client', 'version' => '1.0.0']);
+
+        return ['jsonrpc' => '2.0', 'id' => $id, 'method' => 'tools/call', 'params' => $params];
+    }
+
+    /**
+     * The headers of `echoCall()`, with `$scenario` as the AgentCat API of a fixture that builds its server per request
+     * (`X-E2E-Collector`).
+     *
+     * @return array<string, string>
+     */
+    final protected static function echoHeaders(string $scenario): array
+    {
+        return [...HttpHarness::modernHeaders('tools/call', 'echo'), 'X-E2E-Collector' => $scenario];
+    }
+
+    /**
+     * The answer to `echoCall($id, $msg)`: status 200, and `echo: <msg>` after the issued session block.
+     *
+     * @param array{status: int, headers: array<string, string>, body: string, receivedAt: float} $answer
+     */
+    final protected function assertEchoed(string $msg, array $answer, int $id): void
+    {
+        $this->assertSame(200, $answer['status'], $answer['body']);
+        $result = HttpHarness::result(HttpHarness::decode($answer['body'], $answer['headers']['content-type'] ?? '', $id));
+        $this->assertSame('echo: ' . $msg, JsonAssert::at($result, 'content', 1, 'text'));
+    }
+
+    /** When the collector received (`start`) or answered (`end`, after its delay) a request. */
+    final protected function time(\stdClass $request, string $field): float
+    {
+        $time = $request->{$field} ?? null;
+        $this->assertIsFloat($time);
+
+        return $time;
     }
 
     /**

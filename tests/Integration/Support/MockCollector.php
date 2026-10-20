@@ -28,8 +28,8 @@ final class MockCollector
     /** How often `waitFor()` reads the requests again. */
     private const int POLL_MICROSECONDS = 20_000;
 
-    /** The SDK's line for an event that the AgentCat API accepted, as diagnostics posts carry it. */
-    private const string SENT_EVENT = 'Successfully sent event ';
+    /** The SDK's line for an event that the AgentCat API accepted, as diagnostics posts and AgentCat's log carry it. */
+    public const string SENT_EVENT = 'Successfully sent event ';
 
     private bool $stopped = false;
 
