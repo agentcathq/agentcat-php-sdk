@@ -138,10 +138,11 @@ abstract class SymfonyTestCase extends TestCase
      *                                                loads the container that an earlier kernel of its directory
      *                                                compiled, as each request of PHP-FPM does. A test that passes a
      *                                                directory gives each configuration its own and removes them
+     * @param CompilerPassInterface|null   $before    a pass that runs before AgentCat's (`TestKernel`)
      */
-    protected function kernel(array $agentcat = [], array $services = [], bool $withAgentCat = true, ?CompilerPassInterface $probe = null, ?array $mcp = null, ?string $directory = null): TestKernel
+    protected function kernel(array $agentcat = [], array $services = [], bool $withAgentCat = true, ?CompilerPassInterface $probe = null, ?array $mcp = null, ?string $directory = null, ?CompilerPassInterface $before = null): TestKernel
     {
-        $kernel = new TestKernel($directory ?? $this->directory . '/kernel-' . count($this->kernels), $agentcat, $services, $mcp ?? TestKernel::MCP, $withAgentCat, $probe);
+        $kernel = new TestKernel($directory ?? $this->directory . '/kernel-' . count($this->kernels), $agentcat, $services, $mcp ?? TestKernel::MCP, $withAgentCat, $probe, $before);
         $this->kernels[] = $kernel;
         $handler = $this->exceptionHandler();
         $kernel->boot();

@@ -20,6 +20,7 @@ use AgentCat\Tests\Support\MemoryLogger;
 use AgentCat\Tests\Support\Symfony\CustomerCallHandler;
 use AgentCat\Tests\Support\Symfony\DefinitionsProbe;
 use AgentCat\Tests\Support\Symfony\FailingHook;
+use AgentCat\Tests\Support\Symfony\HandlersCallShape;
 use AgentCat\Tests\Support\Symfony\SymfonyTestCase;
 use AgentCat\Tests\Support\Symfony\TestKernel;
 use AgentCat\Tests\Support\ToolCalls;
@@ -30,6 +31,7 @@ use PHPUnit\Framework\Attributes\Group;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
+use Symfony\Component\DependencyInjection\Argument\TaggedIteratorArgument;
 use Symfony\Component\DependencyInjection\Reference;
 
 /**
@@ -138,6 +140,42 @@ final class BundleTest extends SymfonyTestCase
         $this->assertSame([], ToolCalls::of('echo'));
         $this->assertSame('customer', $this->text($answer, 0));
         $this->assertCount(1, $this->deliveries());
+    }
+
+    /**
+     * The shape of the `addRequestHandlers` call (null: the bundle's own), and the events of one tool call.
+     *
+     * @return iterable<string, array{(\Closure(TaggedIteratorArgument): array<array-key, mixed>)|null, int}>
+     */
+    public static function handlersCalls(): iterable
+    {
+        yield 'the bundle\'s own shape' => [null, 1];
+        yield 'a named argument' => [static fn(TaggedIteratorArgument $handlers): array => ['$handlers' => $handlers], 0];
+        yield 'a list of services' => [static fn(TaggedIteratorArgument $handlers): array => [[new Reference(CustomerCallHandler::class)]], 0];
+    }
+
+    /**
+     * Header conflict 3, with a compiled container: an `addRequestHandlers` call of another shape stays where it is. The
+     * customer's handler still answers; it comes before AgentCat's, which still tracks the server (its listing), but
+     * no longer sees the calls that the customer's handler answers.
+     *
+     * @param (\Closure(TaggedIteratorArgument): array<array-key, mixed>)|null $shape
+     */
+    #[DataProvider('handlersCalls')]
+    #[MaximumDuration(1000)]
+    public function testTheCustomersHandlersAnswerWhateverTheShapeOfTheirCall(?\Closure $shape, int $events): void
+    {
+        $kernel = $this->kernel(agentcat: self::ON, services: [CustomerCallHandler::class => CustomerCallHandler::class], before: $shape instanceof \Closure ? new HandlersCallShape($shape) : null);
+        $http = $this->http($kernel);
+        $tools = $http->listTools()->tools;
+
+        $answer = $http->callTool('echo', ['msg' => 'hi', 'session_id' => self::SESSION]);
+
+        $this->assertSame('customer', $this->text($answer, 0));
+        $this->assertSame([], ToolCalls::of('echo'));
+        $this->assertIsArray($tools);
+        $this->assertSame(GetMoreTools::NAME, JsonAssert::at(end($tools), 'name'));
+        $this->assertCount($events, $this->deliveries());
     }
 
     /** A customer's handler answers on the first call too, before AgentCat has a session: with the mint-back. */

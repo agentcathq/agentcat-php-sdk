@@ -23,7 +23,8 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
  * `structured`, `refuses`, `boom`, `own`. Its cache and log directories live in the directory it is given
  * (`SymfonyTestCase` gives each kernel one under the test HOME). The `logger` service is a `MemoryLogger`, so nothing
  * reaches `error_log()`; a test that passes its own `logger` replaces it. Every `mcp.server.*` service is public, so a
- * test reads the servers and builders from the container.
+ * test reads the servers and builders from the container. A test's `$probe` runs where AgentCat's own pass runs, after
+ * it; a test's `$before` runs before it, after symfony/mcp-bundle's passes.
  */
 final class TestKernel extends Kernel
 {
@@ -69,6 +70,7 @@ final class TestKernel extends Kernel
         private readonly array $mcp = self::MCP,
         private readonly bool $withAgentCat = true,
         private readonly ?CompilerPassInterface $probe = null,
+        private readonly ?CompilerPassInterface $before = null,
     ) {
         parent::__construct('test', false);
     }
@@ -141,6 +143,9 @@ final class TestKernel extends Kernel
         });
         if ($this->probe instanceof CompilerPassInterface) {
             $container->addCompilerPass($this->probe, PassConfig::TYPE_BEFORE_OPTIMIZATION, -100);
+        }
+        if ($this->before instanceof CompilerPassInterface) {
+            $container->addCompilerPass($this->before, PassConfig::TYPE_BEFORE_OPTIMIZATION, -50);
         }
     }
 
