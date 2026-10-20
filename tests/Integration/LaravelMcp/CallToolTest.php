@@ -29,6 +29,7 @@ use AgentCat\Tests\Support\LaravelMcp\RequestEchoServer;
 use AgentCat\Tests\Support\LaravelMcp\StreamingServer;
 use AgentCat\Tests\Support\LaravelMcp\Tools\EchoTool;
 use AgentCat\Tests\Support\LaravelMcp\Tools\StructuredTool;
+use AgentCat\Tests\Support\ListingLines;
 use AgentCat\Tests\Support\ToolCalls;
 use AgentCat\ToolCall;
 use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
@@ -153,7 +154,7 @@ final class CallToolTest extends LaravelTestCase
         $this->assertSame('', $event->sessionId);
         $this->assertSame('foreign', $event->tags[Constants::TAG_SESSION_SOURCE] ?? null);
         $this->assertSame('why', $event->userIntent);
-        $this->assertContains(self::REBUILT, $fixture->lines());
+        $this->assertSame([ListingLines::ownSessionId('own'), self::REBUILT], $fixture->lines());
     }
 
     /** D66 (B10 fixed): on a long-running server each listed page merges into the registries, so no call rebuilds. */
@@ -174,13 +175,13 @@ final class CallToolTest extends LaravelTestCase
         $this->assertSame(['own', GetMoreTools::NAME], $this->names($second));
         $this->assertSame([['msg' => 'hi', 'agent_id' => 'a1']], ToolCalls::of('echo'), 'agent tracking is off: agent_id is not ours');
         $this->assertSame([['session_id' => 'theirs']], ToolCalls::of('own'));
-        $this->assertNotContains(self::REBUILT, $fixture->lines(), 'both tools were listed');
+        $this->assertSame([ListingLines::ownSessionId('own')], $fixture->lines(), 'both tools were listed: no rebuild');
     }
 
     /**
-     * D66 (B10 fixed), with the rebuild's early stop (Plan F spec conflict 3): no page that the rebuild could read names
-     * `echo`, and page 2 fails. Page 1 is kept, one line says where the rebuild stopped, and the call is served with the
-     * heuristic strip.
+     * D66 (B10 fixed): the rebuild stops at the first page that names the tool, or at a page it cannot read. No page
+     * that the rebuild could read names `echo`, and page 2 fails. Page 1 is kept, one line says where the rebuild
+     * stopped, and the call is served with the heuristic strip.
      */
     #[Group('ac-02-21')]
     public function testASecondPageThatFailsLeavesTheCallServed(): void
@@ -201,10 +202,10 @@ final class CallToolTest extends LaravelTestCase
     }
 
     /**
-     * Task 2 fix round 0: a get_more_tools call rebuilds like any other tool. A new server per request (PHP-FPM), no
-     * listing: the rebuild finds the customer's own get_more_tools on page 2. AgentCat answers the call (report-missing
-     * shadows the customer's tool), and the `session_id` that tool declares stays the customer's: no session is read
-     * from it and no "unrecognized" block is added.
+     * D66: a get_more_tools call rebuilds like any other tool. A new server per request (PHP-FPM), no listing: the
+     * rebuild finds the customer's own get_more_tools on page 2. AgentCat answers the call (report-missing shadows the
+     * customer's tool), and the `session_id` that tool declares stays the customer's: no session is read from it and
+     * no "unrecognized" block is added.
      */
     #[Group('ac-02-19')]
     #[Group('ac-02-14')]
@@ -221,10 +222,10 @@ final class CallToolTest extends LaravelTestCase
         $this->assertSame('', $event->sessionId);
         $this->assertSame('foreign', $event->tags[Constants::TAG_SESSION_SOURCE] ?? null);
         $this->assertSame('need X', $event->userIntent);
-        $this->assertContains(self::REBUILT, $fixture->lines());
+        $this->assertSame(ListingLines::shadowedCall(6), $fixture->lines());
     }
 
-    /** Task 2 fix round 0: with report-missing off, the customer's own get_more_tools on page 2 gets its `session_id`. */
+    /** D66: with report-missing off, the customer's own get_more_tools on page 2 is found and gets its `session_id`. */
     #[Group('ac-02-19')]
     #[Group('ac-02-41')]
     public function testWithReportMissingOffACustomerGetMoreToolsOnPageTwoGetsItsOwnSessionId(): void

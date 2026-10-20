@@ -402,7 +402,7 @@ final class CallInterceptorTest extends TestCase
         $this->interceptor->intercept($this->server(), $seam);
 
         $this->assertSame([null, 'p2'], $seam->cursors);
-        $this->assertSame(['stripped', ['context']], $seam->calls[0] ?? null); // the heuristic: session_id, agent_id, context
+        $this->assertSame(['stripped', ['context']], $seam->calls[0] ?? null); // before D66: the heuristic session_id, agent_id, context
         $event = $this->onlyEvent();
         $this->assertSame('foreign', $event->tags[Constants::TAG_SESSION_SOURCE] ?? null);
         $this->assertSame('', $event->sessionId);
@@ -603,8 +603,8 @@ final class CallInterceptorTest extends TestCase
     }
 
     /**
-     * A get_more_tools call rebuilds like any other tool (Task 2 fix round 0): AgentCat's own is on no page, so the
-     * read goes to the last page. Its entry then names the handles AgentCat injected, and they are AgentCat's.
+     * D66: a get_more_tools call rebuilds like any other tool. AgentCat's own is on no page, so the read goes to the
+     * last page. Its entry then names the handles AgentCat injected, and they are AgentCat's.
      */
     #[Group('ac-02-40')]
     public function testAGetMoreToolsCallRebuildsAndItsHandlesAreAgentCats(): void

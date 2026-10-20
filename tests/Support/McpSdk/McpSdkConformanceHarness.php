@@ -58,32 +58,13 @@ final class McpSdkConformanceHarness implements ConformanceHarness
     /** `echo`, then `t01` to `t14`, with a page size of 15: laravel/mcp's default page, one full page here too. */
     public static function fullPage(): self
     {
-        $harness = new self(new Options());
-        $builder = self::builder()->setPaginationLimit(15);
-        $tools = ['echo' => Tools::echo($builder)];
-        foreach (range(1, 14) as $i) {
-            $tools[sprintf('t%02d', $i)] = Tools::named($builder, sprintf('t%02d', $i));
-        }
-        $harness->tools[] = $tools;
-        $harness->server = $harness->fixture->harness($harness->tracked($builder));
-
-        return $harness;
+        return self::pagesOf15(withOwn: false);
     }
 
     /** `fullPage()`'s 15 tools, then `own` alone on page 2. */
     public static function paged(): self
     {
-        $harness = new self(new Options());
-        $builder = self::builder()->setPaginationLimit(15);
-        $tools = ['echo' => Tools::echo($builder)];
-        foreach (range(1, 14) as $i) {
-            $tools[sprintf('t%02d', $i)] = Tools::named($builder, sprintf('t%02d', $i));
-        }
-        $tools['own'] = Tools::own($builder);
-        $harness->tools[] = $tools;
-        $harness->server = $harness->fixture->harness($harness->tracked($builder));
-
-        return $harness;
+        return self::pagesOf15(withOwn: true);
     }
 
     /**
@@ -153,6 +134,24 @@ final class McpSdkConformanceHarness implements ConformanceHarness
     private static function builder(): Builder
     {
         return Server::builder()->setServerInfo('conformance-server', '2.0.0');
+    }
+
+    /** `echo` and `t01` to `t14` with a page size of 15, then `own` on page 2 when `$withOwn`, tracked with defaults. */
+    private static function pagesOf15(bool $withOwn): self
+    {
+        $harness = new self(new Options());
+        $builder = self::builder()->setPaginationLimit(15);
+        $tools = ['echo' => Tools::echo($builder)];
+        foreach (range(1, 14) as $i) {
+            $tools[sprintf('t%02d', $i)] = Tools::named($builder, sprintf('t%02d', $i));
+        }
+        if ($withOwn) {
+            $tools['own'] = Tools::own($builder);
+        }
+        $harness->tools[] = $tools;
+        $harness->server = $harness->fixture->harness($harness->tracked($builder));
+
+        return $harness;
     }
 
     /** Adds the five conformance tools, which `received()` reads. */

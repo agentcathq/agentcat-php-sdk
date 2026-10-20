@@ -18,6 +18,7 @@ use AgentCat\Options;
 use AgentCat\Tests\Support\CallContexts;
 use AgentCat\Tests\Support\FakeCallSeam;
 use AgentCat\Tests\Support\JsonAssert;
+use AgentCat\Tests\Support\ListingLines;
 use AgentCat\Tests\Support\MemoryLogger;
 use AgentCat\Tests\Support\RecordingTransport;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -461,7 +462,7 @@ final class ToolListingTest extends TestCase
         $this->assertSame($next, ToolListing::nextCursor($cursor));
     }
 
-    /** Plan F spec conflict 3: the rebuild stops at the first page that names the called tool. */
+    /** D66: the rebuild stops at the first page that names the called tool, so a page-1 tool costs one page. */
     #[Group('ac-02-20')]
     public function testARebuildForAPageOneToolReadsOnePage(): void
     {
@@ -489,6 +490,7 @@ final class ToolListingTest extends TestCase
         $this->assertTrue($server->injection->hasDeclaredSessionParam('own'));
         $this->assertSame(['context'], ArgumentStripper::names('own', $server->registry)); // its session_id stays
         $this->assertTrue($server->everyPageRead);
+        $this->assertSame([ListingLines::ownSessionId('own'), self::REBUILT], $this->logger->messages());
     }
 
     /**
@@ -545,8 +547,8 @@ final class ToolListingTest extends TestCase
     }
 
     /**
-     * A get_more_tools call rebuilds like any other tool (coordinator ruling, Task 2 fix round 0). AgentCat's own is on
-     * no page, so the read goes to the last page, which appends it: its entry holds the parameters AgentCat injected.
+     * D66: a get_more_tools call rebuilds like any other tool. AgentCat's own is on no page, so the read goes to the
+     * last page, which appends it: its entry holds the parameters AgentCat injected.
      */
     #[Group('ac-02-40')]
     public function testAGetMoreToolsCallReadsToTheLastPageForAgentCatsOwn(): void
