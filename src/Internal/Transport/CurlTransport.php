@@ -171,9 +171,15 @@ final class CurlTransport implements Transport
     #[\Override]
     public function send(Delivery $delivery, float $deadline = INF): bool
     {
-        $this->start($delivery);
+        RepeatedLines::begin(); // the first step in start() is a pass of the same delivery
 
-        return $this->drain($deadline);
+        try {
+            $this->start($delivery);
+
+            return $this->drain($deadline);
+        } finally {
+            RepeatedLines::end();
+        }
     }
 
     #[\Override]

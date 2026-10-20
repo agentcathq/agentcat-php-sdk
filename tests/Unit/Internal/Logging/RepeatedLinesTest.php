@@ -82,7 +82,11 @@ final class RepeatedLinesTest extends TestCase
         RepeatedLines::end();
         RepeatedLines::write('Failed: boom');
         RepeatedLines::write('Failed: boom');
+        RepeatedLines::begin();
+        RepeatedLines::write('Failed: next');
+        RepeatedLines::write('Failed: next');
+        RepeatedLines::end();
 
-        $this->assertSame(['Failed: boom', 'Failed: boom'], $this->logger->messages());
+        $this->assertSame(['Failed: boom', 'Failed: boom', 'Failed: next', 'Failed: next (1 more times in this delivery)'], $this->logger->messages());
     }
 }

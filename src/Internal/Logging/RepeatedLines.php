@@ -31,12 +31,12 @@ final class RepeatedLines
     /** Logs `$line`, except a line the running delivery logged already: that one is counted. */
     public static function write(string $line): void
     {
-        if (self::$depth > 0 && array_key_exists($line, self::$repeats)) {
-            ++self::$repeats[$line];
-
-            return;
-        }
         if (self::$depth > 0) {
+            if (array_key_exists($line, self::$repeats)) {
+                ++self::$repeats[$line];
+
+                return;
+            }
             self::$repeats[$line] = 0;
         }
         Log::write($line);
