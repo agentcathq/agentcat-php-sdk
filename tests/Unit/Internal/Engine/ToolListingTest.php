@@ -239,10 +239,10 @@ final class ToolListingTest extends TestCase
         $nameless = '{"inputSchema":{"type":"object","properties":{"session_id":{"type":"string"}}},"outputSchema":{"type":"object","properties":{}}}';
 
         for ($listing = 1; $listing <= 5; ++$listing) {
-            ToolListing::apply($server, [$this->tool($nameless), $this->tool('{"name":"a"}')], lastPage: true);
+            ToolListing::apply($server, [$this->tool($nameless), $this->tool('{"name":"a","outputSchema":{"type":"object","properties":{}}}')], lastPage: true);
         }
 
-        $this->assertSame(['unknown'], $server->outputRegistry);
+        $this->assertSame(['unknown', 'a'], $server->outputRegistry); // a list: the copy removed before `a` leaves no gap
         $this->assertSame(['a', 'get_more_tools'], $this->registered($server));
     }
 
