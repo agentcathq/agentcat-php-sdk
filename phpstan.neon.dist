@@ -42,6 +42,8 @@ parameters:
             - tests/Contract/*
             # builds a cyclic `previous` chain and a corrupt trace (05 E10)
             - tests/Unit/Internal/Errors/ExceptionCaptureTest.php
+            # reads libcurl's queue of finished transfers off the transport's multi handle: no time can show it
+            - tests/Support/UnreadTransfers.php
 services:
     -
         class: AgentCat\Tests\Architecture\LayeringTest

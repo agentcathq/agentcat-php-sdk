@@ -18,6 +18,7 @@ use AgentCat\Internal\Wire\WireEncoder;
 use AgentCat\Tests\Integration\Support\MockCollector;
 use AgentCat\Tests\Support\MemoryLogger;
 use AgentCat\Tests\Support\Thrown;
+use AgentCat\Tests\Support\UnreadTransfers;
 use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
@@ -544,57 +545,62 @@ final class CurlTransportTest extends TestCase
     }
 
     /**
-     * Fix round 1: a transfer that finished while a slow logger held the loop is collected at once, not after a wait
-     * of up to 1 s on the socket of a slower transfer. evt_b fails at once (connection refused) and its line blocks the
-     * loop while evt_a's answer arrives. The time counts from the later of two moments, the slow logger letting go and
-     * the collector answering evt_a, so a loaded machine that delays either one does not count against the transport:
-     * with the fix it collects evt_a within milliseconds, without it about 1 s later.
+     * Fix round 1: every curl_multi_exec() is followed by a read of the transfers it finished, so a finished transfer is
+     * collected by the call that finished it, not after a wait of up to 1 s on the socket of a slower transfer. evt_b
+     * fails at once (connection refused) and its line blocks the loop (a slow customer PSR logger) while evt_a's answer
+     * arrives; evt_c goes to a local server that never answers, so its socket is the one a wait blocks on. The test
+     * asserts an order, not a time: after every start() and pump(), libcurl holds no finished transfer that the transport
+     * has not read, and evt_a is collected while evt_c is still in transfer. A time cannot tell the two apart with 1 s of
+     * slack: without the fix, evt_a waits one wait at most (`MAX_WAIT_SECONDS`, 1 s).
      */
     #[MaximumDuration(2000)]
     public function testAFinishedTransferIsCollectedWithoutWaitingForOthers(): void
     {
-        $collector = self::collector();
-        $slow = $collector->scenario([], ['status' => 202, 'delayMs' => 2000, 'body' => '']);
-        $fast = $collector->scenario([], ['status' => 202, 'delayMs' => 300, 'body' => '']);
+        $silent = stream_socket_server('tcp://127.0.0.1:0', $errorCode, $errorMessage); // the kernel accepts; nothing reads
+        $this->assertNotFalse($silent, 'no local server: ' . $errorMessage);
+        $address = stream_socket_get_name($silent, false);
+        $this->assertIsString($address);
+        $unanswered = 'http://' . $address;
+        $fast = self::collector()->scenario([], ['status' => 202, 'delayMs' => 300, 'body' => '']);
         $logger = new class extends AbstractLogger {
-            /** @var array<string, float> when each line was logged (wall clock) */
-            public array $at = [];
-
-            /** When the slow line was done (wall clock). */
-            public float $released = 0.0;
+            /** @var list<string> */
+            public array $lines = [];
 
             /** @param mixed[] $context */
             #[\Override]
             public function log($level, string|\Stringable $message, array $context = []): void
             {
-                $this->at[(string) $message] = microtime(true);
+                $this->lines[] = (string) $message;
                 if (str_starts_with((string) $message, 'Failed to send event evt_b')) {
                     usleep(700_000); // a slow customer PSR logger; evt_a's response arrives meanwhile
-                    $this->released = microtime(true);
                 }
             }
         };
         Log::setLogger($logger);
         $transport = new CurlTransport(new RetryPolicy([10.0]));
-        $transport->start(new Delivery(ApiBaseUrl::endpoint($slow), '{}', 'evt_c', 'slow'));
-        $transport->start(new Delivery(ApiBaseUrl::endpoint($fast), '{}', 'evt_a', 'fast'));
-        $transport->start(new Delivery(ApiBaseUrl::endpoint(MockCollector::closedPortUrl()), '{}', 'evt_b', 'refused'));
+        foreach ([[$unanswered, 'evt_c', 'slow'], [$fast, 'evt_a', 'fast'], [MockCollector::closedPortUrl(), 'evt_b', 'refused']] as [$url, $id, $summary]) {
+            $transport->start(new Delivery(ApiBaseUrl::endpoint($url), '{}', $id, $summary));
+            $this->assertSame(0, UnreadTransfers::of($transport), 'start() left a finished transfer unread: ' . implode(' / ', $logger->lines));
+        }
         $sent = 'Successfully sent event evt_a | fast';
 
-        // drain() without its deadline: evt_c runs 2 s and evt_b retries in 10 s, so stop once evt_a is collected.
+        // drain() without its deadline: evt_c never ends and evt_b retries in 10 s, so stop once evt_a is collected (no
+        // wait after it: a wait would block on evt_c's socket for 1 s).
         $deadline = $transport->now() + self::DEADLINE;
-        while (!isset($logger->at[$sent]) && $transport->now() < $deadline) {
+        while (true) {
             $transport->pump();
+            $this->assertSame(0, UnreadTransfers::of($transport), 'pump() left a finished transfer unread: ' . implode(' / ', $logger->lines));
+            if (in_array($sent, $logger->lines, true) || $transport->now() >= $deadline) {
+                break;
+            }
             $transport->waitForActivity($deadline);
         }
 
-        $lines = implode(' / ', array_keys($logger->at));
-        $this->assertArrayHasKey($sent, $logger->at, $lines);
+        $lines = implode(' / ', $logger->lines);
         $this->assertStringStartsWith('Failed to send event evt_b, retrying... [Error: cURL error 7: ', $lines);
-        $this->assertGreaterThan(0.0, $logger->released);
-        $answered = $collector->requests($fast)[0]->end ?? null; // the collector logs just before it answers
-        $this->assertIsNumeric($answered);
-        $this->assertLessThan(0.5, $logger->at[$sent] - max($logger->released, (float) $answered), $lines);
+        $this->assertContains($sent, $logger->lines, $lines);
+        $this->assertSame(2, $transport->inFlight(), 'evt_a is collected while evt_c is in transfer and evt_b waits for its retry');
+        fclose($silent);
     }
 
     #[MaximumDuration(2000)]
