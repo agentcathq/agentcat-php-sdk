@@ -13,7 +13,7 @@ use AgentCat\Internal\Tools\GetMoreTools;
 
 /**
  * Port of the TypeScript `buildInjectedList`: adds `session_id`, `agent_id` and `context` to each listed tool's
- * input schema, appends get_more_tools, and declares `mcp_session` in output schemas.
+ * input schema, appends get_more_tools to the last page (D66), and declares `mcp_session` in output schemas.
  *
  * @internal
  */
@@ -36,17 +36,20 @@ final class ToolListInjector
     private function __construct(
         private readonly InjectionConfig $config,
         private readonly InjectionState $state,
+        private readonly bool $lastPage,
     ) {}
 
     /**
      * Never throws. The input is never mutated; changed tools are deep copies.
      *
      * @param list<mixed> $tools the `tools` of a `tools/list` result
+     * @param bool $lastPage the page has no next cursor: only the last page gets get_more_tools (D66, B10). A
+     *                       one-page listing is its own last page, as in TypeScript.
      */
-    public static function inject(array $tools, InjectionConfig $config, InjectionState $state): InjectedList
+    public static function inject(array $tools, InjectionConfig $config, InjectionState $state, bool $lastPage = true): InjectedList
     {
         try {
-            return (new self($config, $state))->build($tools);
+            return (new self($config, $state, $lastPage))->build($tools);
         } catch (\Throwable $throwable) {
             ToolListing::injectionFailed($throwable);
 
@@ -90,7 +93,7 @@ final class ToolListInjector
         }
         foreach ($tools as $tool) {
             if ($this->nameOf($tool) === GetMoreTools::NAME) {
-                // The customer's tool stays listed, but AgentCat answers its calls.
+                // The customer's tool stays listed, but AgentCat answers its calls, on whichever page it is.
                 if ($this->state->warnShadowOnce()) {
                     Log::write(self::SHADOW_WARNING);
                 }
@@ -98,7 +101,9 @@ final class ToolListInjector
                 return $tools;
             }
         }
-        $tools[] = GetMoreTools::descriptor();
+        if ($this->lastPage) {
+            $tools[] = GetMoreTools::descriptor();
+        }
 
         return $tools;
     }

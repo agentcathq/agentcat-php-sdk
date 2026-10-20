@@ -45,6 +45,12 @@ trait AdapterConformance
     abstract protected function fullPage(): ConformanceHarness;
 
     /**
+     * A server whose listing has two pages of 15: `echo` and `t01` to `t14` on page 1, then `own` (its own required
+     * `session_id`) alone on page 2.
+     */
+    abstract protected function paged(): ConformanceHarness;
+
+    /**
      * The `parameters.extra.requestInfo` that the leg records for one `tools/call` of `echo` (a supplied session) that
      * a web server hands to PHP with these server variables. The mcp/sdk adapter reads the SAPI's variables, so its
      * leg reads them as `fpm-fcgi` would give them; a leg whose library takes a request object builds it from them.
@@ -293,6 +299,26 @@ trait AdapterConformance
         $named = array_map(static fn(int $i): string => sprintf('t%02d', $i), range(1, 14));
         $this->assertSame(['echo', ...$named, GetMoreTools::NAME], array_map(static fn(mixed $tool): mixed => JsonAssert::at($tool, 'name'), $tools));
         $this->assertSame(array_fill(0, 14, ['session_id', 'context']), array_map(fn(mixed $tool): array => $this->memberNames(JsonAssert::at($tool, 'inputSchema', 'properties')), array_slice($tools, 1, 14)));
+    }
+
+    /**
+     * D66 (B10 fixed): a client lists page 1 only, then calls `own` from page 2. A long-running leg now holds page 1's
+     * registries, which do not name `own`, so the call rebuilds to page 2: `own` keeps its own `session_id`.
+     */
+    #[Group('ac-02-8')]
+    #[Group('ac-02-19')]
+    public function testConformanceSecondPage(): void
+    {
+        $harness = $this->paged();
+        $first = $harness->listTools();
+
+        $harness->callTool('own', ['session_id' => 'theirs']);
+
+        $names = array_map(static fn(mixed $tool): mixed => JsonAssert::at($tool, 'name'), $this->listedTools($first));
+        $this->assertSame(['echo', ...array_map(static fn(int $i): string => sprintf('t%02d', $i), range(1, 14))], $names);
+        $this->assertObjectHasProperty('nextCursor', $first);
+        $this->assertSame([['session_id' => 'theirs']], $harness->received('own'));
+        $this->assertSame('foreign', $this->onlyEvent($harness)->tags[Constants::TAG_SESSION_SOURCE] ?? null);
     }
 
     /** The library's validation of the tool's own arguments fails: the tool does not run, and the event records it. */

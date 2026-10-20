@@ -22,6 +22,9 @@ final class TrackedServer
     /** @var list<string>|null tools whose outputSchema declares `mcp_session` */
     public ?array $outputRegistry = null;
 
+    /** True once a rebuild read every page (D66): a tool the registry lacks is then in no listing. */
+    public bool $everyPageRead = false;
+
     /**
      * @param string $projectId '' in telemetry-only mode
      * @param \Closure(): array{0: ?string, 1: ?string} $serverInfo server name and version, read when an event is published
@@ -69,11 +72,16 @@ final class TrackedServer
         return $this->outputRegistry === null || in_array($toolName, $this->outputRegistry, true);
     }
 
-    /** Replaces both registries wholesale. */
+    /**
+     * Merges one page's registries into the server's (D66, B10 fixed; TypeScript replaces them): the page's entries
+     * replace those of the same tools, and the output registry keeps the tools of the other pages. `array_replace()`
+     * keeps the int keys that PHP makes of numeric-string names, and `array_diff()` compares them as strings. Every
+     * tool of a page's output registry has an entry in its registry, so the merged output registry has no duplicate.
+     */
     public function adopt(InjectedList $list): void
     {
-        $this->registry = $list->registry;
-        $this->outputRegistry = $list->outputRegistry;
+        $this->registry = array_replace($this->registry ?? [], $list->registry);
+        $this->outputRegistry = [...array_diff($this->outputRegistry ?? [], array_keys($list->registry)), ...$list->outputRegistry];
     }
 
     /** @return array{0: ?string, 1: ?string} */

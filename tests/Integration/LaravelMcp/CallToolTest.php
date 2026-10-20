@@ -20,6 +20,8 @@ use AgentCat\Tests\Support\LaravelMcp\LaravelStdioHarness;
 use AgentCat\Tests\Support\LaravelMcp\LaravelTestCase;
 use AgentCat\Tests\Support\LaravelMcp\LaravelTrackingFixture;
 use AgentCat\Tests\Support\LaravelMcp\LineTransport;
+use AgentCat\Tests\Support\LaravelMcp\ListingServer;
+use AgentCat\Tests\Support\LaravelMcp\PagedOwnServer;
 use AgentCat\Tests\Support\LaravelMcp\RecordingCallServer;
 use AgentCat\Tests\Support\LaravelMcp\RecordingMethod;
 use AgentCat\Tests\Support\LaravelMcp\RequestEchoServer;
@@ -44,6 +46,8 @@ use PHPUnit\Framework\Attributes\Group;
 final class CallToolTest extends LaravelTestCase
 {
     private const string SESSION = 'ses_bbbbbbbbbbbbbbbbbbbbbbbbbbb';
+
+    private const string REBUILT = 'Rebuilt injection registries on demand (tools/call before tools/list on this instance)';
 
     #[Group('ac-02-16')]
     #[Group('ac-02-47')]
@@ -115,6 +119,82 @@ final class CallToolTest extends LaravelTestCase
         $this->assertSame([['msg' => 'hi']], ToolCalls::of('echo')); // the heuristic strip: no listing names echo
         $this->assertSame([], $fixture->lines(), 'no rebuild without a listing');
         $this->assertCount(1, $fixture->events());
+    }
+
+    /** @return iterable<string, array{\Closure(LaravelHarness): \stdClass}> */
+    public static function eras(): iterable
+    {
+        yield '2026-07-28' => [static fn(LaravelHarness $harness): \stdClass => $harness->callTool('own', ['session_id' => 'theirs', 'context' => 'why'])];
+        yield 'legacy' => [static fn(LaravelHarness $harness): \stdClass => $harness->request('tools/call', ['name' => 'own', 'arguments' => ['session_id' => 'theirs', 'context' => 'why']])];
+    }
+
+    /**
+     * D66 (B10 fixed): a new server per request, as under PHP-FPM, rebuilds from page 1 to the page that names the
+     * tool, so `own`, alone on page 2, is stripped exactly and keeps its own `session_id`.
+     *
+     * @param \Closure(LaravelHarness): \stdClass $call
+     */
+    #[DataProvider('eras')]
+    #[Group('ac-02-19')]
+    #[Group('ac-02-20')]
+    public function testAToolOnTheSecondPageKeepsItsOwnSessionId(\Closure $call): void
+    {
+        $fixture = new LaravelTrackingFixture();
+        $harness = new LaravelHarness(PagedOwnServer::class, $fixture->tracker());
+
+        $answer = $call($harness);
+
+        $this->assertSame([['session_id' => 'theirs']], ToolCalls::of('own'));
+        $this->assertEquals([(object) ['type' => 'text', 'text' => 'ok']], JsonAssert::at($answer, 'result', 'content')); // no "unrecognized" block
+        $event = $fixture->event();
+        $this->assertSame('', $event->sessionId);
+        $this->assertSame('foreign', $event->tags[Constants::TAG_SESSION_SOURCE] ?? null);
+        $this->assertSame('why', $event->userIntent);
+        $this->assertContains(self::REBUILT, $fixture->lines());
+    }
+
+    /** D66 (B10 fixed): on a long-running server each listed page merges into the registries, so no call rebuilds. */
+    #[Group('ac-02-8')]
+    public function testListedPagesMergeOnALongRunningServer(): void
+    {
+        $fixture = new LaravelTrackingFixture();
+        $stdio = new LaravelStdioHarness(PagedOwnServer::class, $fixture->tracker());
+        $first = JsonAssert::at($stdio->send(['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/list', 'params' => new \stdClass()]), 'result');
+        $cursor = JsonAssert::at($first, 'nextCursor');
+        $this->assertIsString($cursor);
+        $second = JsonAssert::at($stdio->send(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list', 'params' => ['cursor' => $cursor]]), 'result');
+
+        $stdio->send(['jsonrpc' => '2.0', 'id' => 3, 'method' => 'tools/call', 'params' => ['name' => 'echo', 'arguments' => ['msg' => 'hi', 'agent_id' => 'a1', 'session_id' => 'start']]]);
+        $stdio->send(['jsonrpc' => '2.0', 'id' => 4, 'method' => 'tools/call', 'params' => ['name' => 'own', 'arguments' => ['session_id' => 'theirs']]]);
+
+        $this->assertSame(['echo', ...array_map(static fn(int $i): string => sprintf('t%02d', $i), range(1, 14))], $this->names($first));
+        $this->assertSame(['own', GetMoreTools::NAME], $this->names($second));
+        $this->assertSame([['msg' => 'hi', 'agent_id' => 'a1']], ToolCalls::of('echo'), 'agent tracking is off: agent_id is not ours');
+        $this->assertSame([['session_id' => 'theirs']], ToolCalls::of('own'));
+        $this->assertNotContains(self::REBUILT, $fixture->lines(), 'both tools were listed');
+    }
+
+    /**
+     * D66 (B10 fixed), with the rebuild's early stop (Plan F spec conflict 3): no page that the rebuild could read names
+     * `echo`, and page 2 fails. Page 1 is kept, one line says where the rebuild stopped, and the call is served with the
+     * heuristic strip.
+     */
+    #[Group('ac-02-21')]
+    public function testASecondPageThatFailsLeavesTheCallServed(): void
+    {
+        $list = new RecordingMethod(answer: static fn(JsonRpcRequest $request): JsonRpcResponse => isset($request->params['cursor'])
+            ? throw new \RuntimeException('page down')
+            : JsonRpcResponse::result($request->id, ['tools' => [['name' => 't01', 'inputSchema' => ['type' => 'object', 'properties' => new \stdClass()]]], 'nextCursor' => 'p2']));
+        $this->app?->instance(RecordingMethod::class, $list);
+        $fixture = new LaravelTrackingFixture();
+
+        $answer = (new LaravelHarness(ListingServer::class, $fixture->tracker()))->callTool('echo', ['msg' => 'hi', 'agent_id' => 'a1', 'session_id' => 'start', 'context' => 'why']);
+
+        $this->assertSame('echo: hi', JsonAssert::at($answer, 'result', 'content', 1, 'text'));
+        $this->assertSame([['msg' => 'hi']], ToolCalls::of('echo'));
+        $this->assertSame([null, 'p2'], array_map(static fn(JsonRpcRequest $request): mixed => $request->params['cursor'] ?? null, $list->requests));
+        $this->assertSame('minted', $fixture->event()->tags[Constants::TAG_SESSION_SOURCE] ?? null);
+        $this->assertSame(['Warning: registry rebuild-on-demand stopped after page 1 - RuntimeException: page down'], $fixture->lines());
     }
 
     #[Group('ac-02-24')]
@@ -659,6 +739,15 @@ final class CallToolTest extends LaravelTestCase
         }
 
         return implode('', $sent->getArrayCopy());
+    }
+
+    /** @return list<mixed> the names of a listing's tools */
+    private function names(mixed $result): array
+    {
+        $tools = JsonAssert::at($result, 'tools');
+        $this->assertIsList($tools);
+
+        return array_map(static fn(mixed $tool): mixed => JsonAssert::at($tool, 'name'), $tools);
     }
 
     private function text(mixed $value): string

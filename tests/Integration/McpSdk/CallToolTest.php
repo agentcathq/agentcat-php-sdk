@@ -31,6 +31,8 @@ use Mcp\Schema\JsonRpc\Request;
 use Mcp\Schema\Request\CallToolRequest;
 use Mcp\Schema\Request\ListToolsRequest;
 use Mcp\Schema\Result\CallToolResult;
+use Mcp\Schema\Result\ListToolsResult;
+use Mcp\Schema\Tool;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -38,6 +40,8 @@ use PHPUnit\Framework\TestCase;
 final class CallToolTest extends TestCase
 {
     private const string SESSION = 'ses_bbbbbbbbbbbbbbbbbbbbbbbbbbb';
+
+    private const string REBUILT = 'Rebuilt injection registries on demand (tools/call before tools/list on this instance)';
 
     private TrackingFixture $fixture;
 
@@ -169,6 +173,108 @@ final class CallToolTest extends TestCase
         $warning = 'Warning: registry rebuild-on-demand failed - RuntimeException: list failed';
         $this->assertSame([$warning, $warning], $this->fixture->lines());
         $this->assertCount(2, $this->fixture->events());
+    }
+
+    /** @return iterable<string, array{bool}> */
+    public static function eras(): iterable
+    {
+        yield 'handshake' => [false];
+        yield '2026-07-28' => [true];
+    }
+
+    /**
+     * D66 (B10 fixed): a server that never listed (every PHP-FPM request) rebuilds from page 1 to the page that names
+     * the tool, so the 51st tool, alone on page 2 of mcp/sdk's pages of 50, keeps its own required `session_id`.
+     */
+    #[DataProvider('eras')]
+    #[Group('ac-02-19')]
+    #[Group('ac-02-20')]
+    public function testTheFiftyFirstToolKeepsItsOwnSessionId(bool $modern): void
+    {
+        $builder = TrackingFixture::builder();
+        foreach (range(1, 50) as $i) {
+            Tools::named($builder, sprintf('t%02d', $i));
+        }
+        $own = Tools::own($builder);
+        $this->fixture->track($builder);
+        $harness = $this->fixture->harness($builder);
+        $arguments = ['session_id' => 'theirs', 'agent_id' => 'a1'];
+
+        $answer = $modern ? $harness->callToolModern('own', $arguments) : $harness->callTool('own', $arguments);
+
+        $this->assertObjectNotHasProperty('error', $answer); // without D66: -32602, "Missing required properties"
+        $this->assertSame([['session_id' => 'theirs', 'agent_id' => 'a1']], $own->calls);
+        $this->assertSame('foreign', $this->tag($this->fixture->event(), Constants::TAG_SESSION_SOURCE));
+        $this->assertCount(1, array_filter($this->fixture->lines(), static fn(string $line): bool => $line === self::REBUILT));
+    }
+
+    /** D66 (B10 fixed): each listed page merges into the registries, so a tool of an earlier page is stripped exactly. */
+    #[Group('ac-02-8')]
+    public function testListedPagesMergeIntoTheRegistries(): void
+    {
+        $builder = TrackingFixture::builder()->setPaginationLimit(1);
+        $echo = Tools::echo($builder);
+        $own = Tools::own($builder);
+        $this->fixture->track($builder);
+        $harness = $this->fixture->harness($builder);
+        $cursor = JsonAssert::at($harness->listTools(), 'nextCursor');
+        $this->assertIsString($cursor);
+        $harness->listTools($cursor);
+
+        $harness->callTool('echo', ['msg' => 'hi', 'agent_id' => 'a1', 'session_id' => 'start']);
+        $harness->callTool('own', ['session_id' => 'mine']);
+
+        $this->assertSame([['msg' => 'hi', 'agent_id' => 'a1']], $echo->calls, 'agent tracking is off: agent_id is not ours');
+        $this->assertSame([['session_id' => 'mine']], $own->calls);
+        $this->assertNotContains(self::REBUILT, $this->fixture->lines());
+    }
+
+    /**
+     * D66 (B10 fixed), with the rebuild's early stop (Plan F spec conflict 3): a customer list handler that ignores the
+     * cursor gives the same next cursor again. The rebuild for a tool that no page names reads two pages and stops at
+     * that cursor, as at the last page; the call is served with the heuristic strip.
+     */
+    #[Group('ac-02-20')]
+    #[Group('ac-04-30')]
+    public function testAListHandlerThatIgnoresTheCursorEndsTheRebuild(): void
+    {
+        $builder = TrackingFixture::builder();
+        $echo = Tools::echo($builder);
+        $this->fixture->track($builder);
+        $listed = new Tool(name: 'listed', title: null, inputSchema: ['type' => 'object', 'properties' => [], 'required' => []], description: 'Listed', annotations: null);
+        $list = new CustomerHandler(ListToolsRequest::class, static fn(): ListToolsResult => new ListToolsResult([$listed], 'again'));
+        $builder->addRequestHandler($list);
+        $harness = $this->fixture->harness($builder);
+
+        $answer = $harness->callTool('echo', ['msg' => 'hi', 'agent_id' => 'a1', 'session_id' => 'start', 'context' => 'why']);
+
+        $this->assertSame(2, $list->calls); // page 1, then page "again", whose cursor was already followed
+        $this->assertSame([['msg' => 'hi']], $echo->calls); // no page names echo: the heuristic strip
+        $this->assertSame('echo: hi', JsonAssert::at(HttpHarness::result($answer), 'content', 1, 'text'));
+        $this->assertContains(self::REBUILT, $this->fixture->lines());
+        $this->assertSame([], array_values(array_filter($this->fixture->lines(), static fn(string $line): bool => str_starts_with($line, 'Warning:'))));
+    }
+
+    /**
+     * D66: the rebuild reads the cursor that the client gets. mcp/sdk sends no `nextCursor` for a falsy one, so a page
+     * whose next cursor is `'0'` is the last page for the rebuild too, as for the listing.
+     */
+    #[Group('ac-02-20')]
+    public function testANextCursorTheLibraryDoesNotSendEndsTheRebuild(): void
+    {
+        $builder = TrackingFixture::builder();
+        $echo = Tools::echo($builder);
+        $this->fixture->track($builder);
+        $listed = new Tool(name: 'listed', title: null, inputSchema: ['type' => 'object', 'properties' => [], 'required' => []], description: 'Listed', annotations: null);
+        $list = new CustomerHandler(ListToolsRequest::class, static fn(): ListToolsResult => new ListToolsResult([$listed], '0'));
+        $builder->addRequestHandler($list);
+        $harness = $this->fixture->harness($builder);
+
+        $harness->callTool('echo', ['msg' => 'hi', 'session_id' => 'start']);
+
+        $this->assertSame(1, $list->calls);
+        $this->assertSame([['msg' => 'hi']], $echo->calls);
+        $this->assertContains(self::REBUILT, $this->fixture->lines());
     }
 
     /** @return iterable<string, array{array<string, string>}> */

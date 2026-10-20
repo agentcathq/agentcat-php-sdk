@@ -8,6 +8,7 @@ use AgentCat\Internal\Engine\CallContext;
 use AgentCat\Internal\Engine\CallSeam;
 use AgentCat\Internal\Engine\Observed;
 use AgentCat\Internal\Engine\ThrowableStash;
+use AgentCat\Internal\Engine\ToolListing;
 use AgentCat\Internal\Json\JsonTree;
 use Mcp\Schema\JsonRpc\Error;
 use Mcp\Schema\JsonRpc\Response;
@@ -121,15 +122,16 @@ final class McpCallSeam implements CallSeam
     }
 
     #[\Override]
-    public function listOriginal(): ?array
+    public function listOriginal(?string $cursor): ?array
     {
         $delegate = ($this->listDelegate)();
         if (!$delegate instanceof RequestHandlerInterface) {
             return null;
         }
-        $answer = $delegate->handle((new ListToolsRequest())->withId('agentcat-rebuild'), $this->session);
+        $answer = $delegate->handle((new ListToolsRequest($cursor))->withId('agentcat-rebuild'), $this->session);
+        $listing = $answer instanceof Response ? Trees::listing($answer->result) : null;
 
-        return $answer instanceof Response ? (Trees::listing($answer->result)[2] ?? null) : null;
+        return $listing === null ? null : [$listing[2], ToolListing::nextCursor($listing[1]->nextCursor ?? null)];
     }
 
     /** mcp/sdk answers are complete when `handle()` returns: a tool that waits suspends its fiber inside it. */

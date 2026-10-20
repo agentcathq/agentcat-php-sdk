@@ -47,16 +47,22 @@ final class TrackedServerTest extends TestCase
         $server = new TrackedServer('p', new Options(), static fn(): array => [null, null], $this->publisher());
         $this->assertTrue($server->mirrorAllowed('a'));
 
-        $server->adopt(new InjectedList([], ['a' => []], ['b']));
+        $server->adopt(new InjectedList([], ['a' => [], 'b' => []], ['b']));
 
         $this->assertFalse($server->mirrorAllowed('a'));
         $this->assertTrue($server->mirrorAllowed('b'));
-        $this->assertSame(['a' => []], $server->registry);
+        $this->assertSame(['a' => [], 'b' => []], $server->registry);
         $this->assertSame(['b'], $server->outputRegistry);
 
-        $server->adopt(new InjectedList([], ['c' => ['x']], []));
-        $this->assertSame(['c' => ['x']], $server->registry);
-        $this->assertSame([], $server->outputRegistry);
+        // D66 (B10 fixed): each page merges; TypeScript replaces both registries. A numeric name keeps its int key.
+        $server->adopt(new InjectedList([], ['c' => ['x'], '7' => ['context']], ['c']));
+        $this->assertSame(['a' => [], 'b' => [], 'c' => ['x'], 7 => ['context']], $server->registry);
+        $this->assertSame(['b', 'c'], $server->outputRegistry);
+
+        // A tool listed again replaces its entry, and leaves the output registry without an outputSchema.
+        $server->adopt(new InjectedList([], ['b' => ['session_id']], []));
+        $this->assertSame(['a' => [], 'b' => ['session_id'], 'c' => ['x'], 7 => ['context']], $server->registry);
+        $this->assertSame(['c'], $server->outputRegistry);
     }
 
     public function testServerInfoIsReadOnEveryCall(): void

@@ -11,6 +11,7 @@ use AgentCat\Tests\Integration\Support\MockCollector;
 use AgentCat\Tests\Support\FileTree;
 use AgentCat\Tests\Support\JsonAssert;
 use AgentCat\Tests\Support\Symfony\FullPage\FullPageTools;
+use AgentCat\Tests\Support\Symfony\FullPage\SecondPageOwnTool;
 use AgentCat\Tests\Support\Symfony\SymfonyConformanceHarness;
 use AgentCat\Tests\Support\Symfony\SymfonyTestCase;
 use AgentCat\Tests\Support\Symfony\TestKernel;
@@ -57,6 +58,7 @@ final class SymfonyConformanceTest extends SymfonyTestCase
                 $compile->conformanceKernel(new Options());
                 $compile->conformanceKernel(new Options(enableTracing: false));
                 $compile->fullPageKernel();
+                $compile->pagedKernel();
                 $compiled = true;
             } finally {
                 $compile->tearDown();
@@ -123,6 +125,12 @@ final class SymfonyConformanceTest extends SymfonyTestCase
         return SymfonyConformanceHarness::of($this->fullPageKernel(...));
     }
 
+    #[\Override]
+    protected function paged(): ConformanceHarness
+    {
+        return SymfonyConformanceHarness::of($this->pagedKernel(...));
+    }
+
     /** The adapter's reader with the bundle's request context: a `RequestStack` whose main request has these values. */
     #[\Override]
     protected function requestInfoOf(array $server): \stdClass
@@ -148,6 +156,12 @@ final class SymfonyConformanceTest extends SymfonyTestCase
     private function fullPageKernel(): TestKernel
     {
         return $this->compiled($this->config(new Options()), TestKernel::FULL_PAGE, [FullPageTools::class => FullPageTools::class]);
+    }
+
+    /** A kernel of `TestKernel::PAGED`. */
+    private function pagedKernel(): TestKernel
+    {
+        return $this->compiled($this->config(new Options()), TestKernel::PAGED, [FullPageTools::class => FullPageTools::class, SecondPageOwnTool::class => SecondPageOwnTool::class]);
     }
 
     /**

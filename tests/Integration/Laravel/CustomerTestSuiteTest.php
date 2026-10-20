@@ -12,14 +12,19 @@ use AgentCat\Internal\Tools\GetMoreTools;
 use AgentCat\LaravelMcp\Internal\Access\ServerAccess;
 use AgentCat\Tests\Support\Laravel\BridgeTestCase;
 use AgentCat\Tests\Support\LaravelMcp\ConformanceServer;
+use AgentCat\Tests\Support\LaravelMcp\PagedOwnServer;
+use AgentCat\Tests\Support\LaravelMcp\PagedServer;
 use AgentCat\Tests\Support\LaravelMcp\Tools\EchoTool;
+use AgentCat\Tests\Support\LaravelMcp\Tools\OwnTool;
 use AgentCat\Tests\Support\LaravelMcp\Tools\StructuredTool;
 use AgentCat\Tests\Support\MemoryLogger;
+use AgentCat\Tests\Support\ToolCalls;
 use Illuminate\Testing\Fluent\AssertableJson;
 use Laravel\Mcp\Server\Methods\CallTool;
 use Laravel\Mcp\Server\Methods\ListTools;
 use Laravel\Mcp\Server\Testing\TestListResponse;
 use Laravel\Mcp\Server\Transport\FakeTransporter;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * A customer's Laravel test suite with AgentCat installed (plan E1 header conflict 18, D31, Review Focus 2): laravel/mcp's
@@ -77,12 +82,34 @@ final class CustomerTestSuiteTest extends BridgeTestCase
         $this->assertSame(['echo', 'structured'], array_map(static fn(Event $event): ?string => $event->resourceName, $fake->events()));
     }
 
-    /** D15: a tracked listing ends with AgentCat's tool; `tools()` follows `nextCursor`, so it shows one per page. */
+    /** A tracked listing ends with AgentCat's tool: `tools()` follows `nextCursor`, and it comes once, after the last page (D66). */
     public function testWithAFakeTheListingEndsWithTheGetMoreToolsTool(): void
     {
         AgentCat::fake();
 
         $this->assertSame([...self::TOOLS, GetMoreTools::NAME], $this->names(ConformanceServer::tools()));
+    }
+
+    /** D66 (B10 fixed): `tools()` follows `nextCursor` on one server, and only the last page has AgentCat's tool. */
+    #[Group('ac-02-8')]
+    public function testWithAFakeAPagedListingEndsWithOneGetMoreTools(): void
+    {
+        AgentCat::fake();
+
+        $this->assertSame(['echo', ...array_map(static fn(int $i): string => sprintf('t%02d', $i), range(1, 15)), GetMoreTools::NAME], $this->names(PagedServer::tools()));
+    }
+
+    /** D66 (B10 fixed): each `tool()` builds a new server, whose rebuild reads up to page 2, where `own` is. */
+    #[Group('ac-02-19')]
+    #[Group('ac-02-20')]
+    public function testWithAFakeAToolOnTheSecondPageKeepsItsOwnSessionId(): void
+    {
+        $fake = AgentCat::fake();
+
+        PagedOwnServer::tool(OwnTool::class, ['session_id' => 'theirs'])->assertSee('ok');
+
+        $this->assertSame([['session_id' => 'theirs']], ToolCalls::of('own'));
+        $fake->assertTrackedCount(1);
     }
 
     /** @return list<mixed> */

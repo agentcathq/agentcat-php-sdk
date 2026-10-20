@@ -159,6 +159,12 @@ final class McpSdkConformanceTest extends TestCase
         return McpSdkConformanceHarness::fullPage();
     }
 
+    #[\Override]
+    protected function paged(): ConformanceHarness
+    {
+        return McpSdkConformanceHarness::paged();
+    }
+
     /** The adapter's reader with what `HttpContext::capture()` gives under PHP-FPM for these server variables. */
     #[\Override]
     protected function requestInfoOf(array $server): \stdClass

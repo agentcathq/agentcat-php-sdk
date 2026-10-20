@@ -14,8 +14,8 @@ use Laravel\Mcp\Transport\JsonRpcResponse;
 
 /**
  * Answers `tools/list` (TS listWrap): the handler the server's entry named before AgentCat's lists, then AgentCat
- * injects its parameters and appends get_more_tools to every page. Streams, JSON-RPC errors, exceptions and answers
- * without a tool list pass unchanged (02 AC-10).
+ * injects its parameters into every page and appends get_more_tools to the last one (D66). Streams, JSON-RPC errors,
+ * exceptions and answers without a tool list pass unchanged (02 AC-10).
  *
  * @internal
  */
@@ -34,8 +34,9 @@ final readonly class TrackedListTools implements Method
         }
         try {
             // AgentCat changes only the result's `tools`; its other members (the cursor, `_meta`) stay.
-            $tools = ToolListing::apply($this->server, LaravelTrees::tools($response));
             $result = $response->content['result'] ?? null;
+            $lastPage = ToolListing::nextCursor(is_array($result) ? ($result['nextCursor'] ?? null) : null) === null;
+            $tools = ToolListing::apply($this->server, LaravelTrees::tools($response), $lastPage);
             if ($tools === null || !is_array($result)) {
                 return $response;
             }

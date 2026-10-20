@@ -165,6 +165,12 @@ final class LaravelMcpConformanceTest extends LaravelTestCase
         return LaravelConformanceHarness::fullPage();
     }
 
+    #[\Override]
+    protected function paged(): ConformanceHarness
+    {
+        return LaravelConformanceHarness::paged();
+    }
+
     /** One HTTP request to a tracked server, built from the server variables like `Request::capture()` does. */
     #[\Override]
     protected function requestInfoOf(array $server): \stdClass

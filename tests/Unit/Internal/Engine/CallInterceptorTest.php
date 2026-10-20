@@ -34,6 +34,8 @@ final class CallInterceptorTest extends TestCase
 {
     private const string ECHO_TOOL = '{"name":"echo","inputSchema":{"type":"object","properties":{"msg":{"type":"string"}},"required":["msg"]}}';
 
+    private const string OWN_TOOL = '{"name":"own","inputSchema":{"type":"object","properties":{"session_id":{"type":"string"}},"required":["session_id"]}}';
+
     private const string STRUCTURED_TOOL = '{"name":"structured","inputSchema":{"type":"object","properties":{}},"outputSchema":{"type":"object","properties":{"echoed":{"type":"string"}}}}';
 
     private const string STRUCTURED_RESULT = '{"content":[{"type":"text","text":"x"}],"structuredContent":{"echoed":"x"}}';
@@ -385,6 +387,24 @@ final class CallInterceptorTest extends TestCase
         $this->assertSame(1, $seam->listCalls);
         $this->assertSame([self::REBUILT], $this->logger->messages());
         $this->assertSame([['stripped', ['session_id', 'context']], ['replace'], ['stripped', ['session_id', 'context']], ['replace']], $seam->calls);
+    }
+
+    /** D66 (B10 fixed): the rebuild reads page 2 for a tool that page 1 does not name; before, it read page 1 only. */
+    #[Group('ac-02-19')]
+    public function testAToolOnALaterPageIsStrippedExactly(): void
+    {
+        $seam = $this->seam('own', ['session_id' => 'theirs', 'agent_id' => 'a1']);
+        $seam->listing = [$this->tree(self::ECHO_TOOL)];
+        $seam->nextCursor = 'p2';
+        $seam->pages = ['p2' => [[$this->tree(self::OWN_TOOL)], null]];
+
+        $this->interceptor->intercept($this->server(), $seam);
+
+        $this->assertSame([null, 'p2'], $seam->cursors);
+        $this->assertSame(['stripped', ['context']], $seam->calls[0] ?? null); // the heuristic: session_id, agent_id, context
+        $event = $this->onlyEvent();
+        $this->assertSame('foreign', $event->tags[Constants::TAG_SESSION_SOURCE] ?? null);
+        $this->assertSame('', $event->sessionId);
     }
 
     #[Group('ac-02-21')]

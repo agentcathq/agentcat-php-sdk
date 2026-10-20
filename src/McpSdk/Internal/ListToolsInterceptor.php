@@ -15,8 +15,8 @@ use Mcp\Server\Handler\Request\RequestHandlerInterface;
 use Mcp\Server\Session\SessionInterface;
 
 /**
- * Answers `tools/list` first (TS listWrap): the next handler lists, then AgentCat injects its parameters and
- * appends get_more_tools. Errors, exceptions and other answers pass unchanged (02 AC-10).
+ * Answers `tools/list` first (TS listWrap): the next handler lists, then AgentCat injects its parameters into the page
+ * and appends get_more_tools to the last one (D66). Errors, exceptions and other answers pass unchanged (02 AC-10).
  *
  * @implements RequestHandlerInterface<mixed>
  *
@@ -53,7 +53,8 @@ final readonly class ListToolsInterceptor implements RequestHandlerInterface
         try {
             // The library's own wire tree: AgentCat changes only its `tools`. Null: another answer, or no tool list.
             $listing = Trees::listing($response->result);
-            $tools = ToolListing::apply($this->server, $listing[2] ?? null);
+            $lastPage = ToolListing::nextCursor($listing[1]->nextCursor ?? null) === null;
+            $tools = ToolListing::apply($this->server, $listing[2] ?? null, $lastPage);
             if ($listing === null || $tools === null) {
                 return $response;
             }

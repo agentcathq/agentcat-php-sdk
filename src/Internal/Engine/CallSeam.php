@@ -65,11 +65,12 @@ interface CallSeam
     public function answer(\stdClass $tree): mixed;
 
     /**
-     * The `tools` of the library's own first `tools/list` page, or null when there is none. May throw.
+     * One page of the library's own `tools/list`: the tools of the page at `$cursor` (null for the first) and its next
+     * cursor (`ToolListing::nextCursor()`; null on the last page), or null when the answer has no tool list. May throw.
      *
-     * @return list<mixed>|null
+     * @return array{list<mixed>, ?string}|null
      */
-    public function listOriginal(): ?array;
+    public function listOriginal(?string $cursor): ?array;
 
     /**
      * For a result that completes later (a stream), a result that calls `$complete` with the final result, and yields

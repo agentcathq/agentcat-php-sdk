@@ -59,7 +59,7 @@ final readonly class CallInterceptor
 
         $start = ($this->clock)();
         try {
-            ToolListing::ensureRegistries($server, $seam->listOriginal(...));
+            ToolListing::ensureRegistries($server, $name, $seam->listOriginal(...));
             $arguments = $seam->arguments();
             $resolution = HandleResolver::resolve($arguments, $server->hookMode(), $options->enableAgentTracking, !$server->injection->hasDeclaredSessionParam($name));
             $call = $this->start($server, $name, $arguments, $resolution, $seam->describe(), $start, $intercept);

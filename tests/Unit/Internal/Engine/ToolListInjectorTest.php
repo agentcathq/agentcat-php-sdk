@@ -338,6 +338,25 @@ final class ToolListInjectorTest extends TestCase
         $this->assertSame(2, $this->logCount(self::SHADOW_WARN));
     }
 
+    /** D66 (B10 fixed): TypeScript appends get_more_tools to every page; only the page without a next cursor gets it. */
+    #[Group('ac-02-8')]
+    #[Group('ac-04-24')]
+    public function testGetMoreToolsIsAppendedOnlyToTheLastPage(): void
+    {
+        $state = new InjectionState();
+        $customer = $this->decode('{"name":"get_more_tools","inputSchema":{"type":"object","properties":{}}}');
+
+        $first = ToolListInjector::inject([$this->decode('{"name":"a"}')], new InjectionConfig(), $state, lastPage: false);
+        $last = ToolListInjector::inject([$this->decode('{"name":"b"}')], new InjectionConfig(), $state, lastPage: true);
+        $shadowing = ToolListInjector::inject([$customer], new InjectionConfig(), $state, lastPage: false);
+
+        $this->assertSame(['a'], $this->names($first));
+        $this->assertSame(['a' => ['session_id', 'context']], $first->registry);
+        $this->assertSame(['b', 'get_more_tools'], $this->names($last));
+        $this->assertSame(['get_more_tools'], $this->names($shadowing)); // listed once, with no second copy
+        $this->assertSame([self::SHADOW_WARN], $this->logger->messages());
+    }
+
     #[Group('ac-04-48')]
     public function testContextPassSkipsCustomerGetMoreToolsEvenWithReportMissingOff(): void
     {
@@ -875,6 +894,12 @@ final class ToolListInjectorTest extends TestCase
     private function inject(array $tools, InjectionConfig $config = new InjectionConfig(enableReportMissing: false), InjectionState $state = new InjectionState()): InjectedList
     {
         return ToolListInjector::inject($tools, $config, $state);
+    }
+
+    /** @return list<mixed> the names of the listed tools */
+    private function names(InjectedList $result): array
+    {
+        return array_map(static fn(mixed $tool): mixed => $tool instanceof \stdClass ? ($tool->name ?? null) : null, $result->tools);
     }
 
     private function logCount(string $message): int

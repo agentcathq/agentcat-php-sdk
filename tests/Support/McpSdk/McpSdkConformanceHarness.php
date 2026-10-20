@@ -70,6 +70,22 @@ final class McpSdkConformanceHarness implements ConformanceHarness
         return $harness;
     }
 
+    /** `fullPage()`'s 15 tools, then `own` alone on page 2. */
+    public static function paged(): self
+    {
+        $harness = new self(new Options());
+        $builder = self::builder()->setPaginationLimit(15);
+        $tools = ['echo' => Tools::echo($builder)];
+        foreach (range(1, 14) as $i) {
+            $tools[sprintf('t%02d', $i)] = Tools::named($builder, sprintf('t%02d', $i));
+        }
+        $tools['own'] = Tools::own($builder);
+        $harness->tools[] = $tools;
+        $harness->server = $harness->fixture->harness($harness->tracked($builder));
+
+        return $harness;
+    }
+
     /**
      * The conformance server, tracked by `Client::track()` after an earlier one, which the client had tracked with
      * `enableTracing: false` and built, was freed. Asserts that the new Builder has the old one's object ID.

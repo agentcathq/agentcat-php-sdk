@@ -8,6 +8,7 @@ use AgentCat\Internal\Engine\CallContext;
 use AgentCat\Internal\Engine\CallSeam;
 use AgentCat\Internal\Engine\Observed;
 use AgentCat\Internal\Engine\ThrowableStash;
+use AgentCat\Internal\Engine\ToolListing;
 use AgentCat\Internal\Json\JsonTree;
 use Illuminate\Container\Container;
 use Laravel\Mcp\Request as McpRequest;
@@ -139,11 +140,19 @@ final class LaravelCallSeam implements CallSeam
     }
 
     #[\Override]
-    public function listOriginal(): ?array
+    public function listOriginal(?string $cursor): ?array
     {
-        return $this->listDelegate instanceof \Closure
-            ? LaravelTrees::tools(($this->listDelegate)(new JsonRpcRequest('agentcat-rebuild', 'tools/list', [])))
-            : null;
+        if (!$this->listDelegate instanceof \Closure) {
+            return null;
+        }
+        $answer = ($this->listDelegate)(new JsonRpcRequest('agentcat-rebuild', 'tools/list', $cursor === null ? [] : ['cursor' => $cursor]));
+        $tools = LaravelTrees::tools($answer);
+        if ($tools === null || !$answer instanceof JsonRpcResponse) {
+            return null;
+        }
+        $result = $answer->content['result'] ?? null;
+
+        return [$tools, ToolListing::nextCursor(is_array($result) ? ($result['nextCursor'] ?? null) : null)];
     }
 
     /**

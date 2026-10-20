@@ -54,8 +54,9 @@ final class ListToolsTest extends LaravelTestCase
         $this->assertSame(GetMoreTools::descriptor()->description, JsonAssert::at($result, 'tools', 5, 'description'));
     }
 
+    /** D66 (B10 fixed): every page is injected, and only the last one, without a next cursor, gets get_more_tools. */
     #[Group('ac-02-8')]
-    public function testEveryPageGetsGetMoreToolsAndKeepsItsCursor(): void
+    public function testOnlyTheLastPageGetsGetMoreToolsAndEachKeepsItsCursor(): void
     {
         $fixture = new LaravelTrackingFixture();
         $harness = new LaravelHarness(PagedServer::class, $fixture->tracker());
@@ -65,8 +66,7 @@ final class ListToolsTest extends LaravelTestCase
         $this->assertIsString($first->nextCursor);
         $second = $harness->listTools($first->nextCursor);
 
-        $this->assertCount(16, $this->names($first)); // 15 + get_more_tools (D15, B10)
-        $this->assertSame(GetMoreTools::NAME, $this->names($first)[15]);
+        $this->assertSame(['echo', ...array_map(static fn(int $i): string => sprintf('t%02d', $i), range(1, 14))], $this->names($first));
         $this->assertSame($twin->nextCursor, $first->nextCursor);
         $this->assertSame(['t15', GetMoreTools::NAME], $this->names($second));
         $this->assertObjectNotHasProperty('nextCursor', $second);
@@ -133,7 +133,7 @@ final class ListToolsTest extends LaravelTestCase
         $result = JsonAssert::at($answer, 'result');
         $this->assertInstanceOf(\stdClass::class, $twin);
         $this->assertInstanceOf(\stdClass::class, $result);
-        $this->assertSame(['x', GetMoreTools::NAME], $this->names($result));
+        $this->assertSame(['x'], $this->names($result)); // D66: a page with a next cursor has no get_more_tools
         $this->assertSame(['session_id', 'context'], $this->keys(JsonAssert::at($result, 'tools', 0, 'inputSchema', 'properties')));
         $this->assertSame($this->keys($twin), $this->keys($result));
         $this->assertSame('c', $result->nextCursor);

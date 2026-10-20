@@ -57,6 +57,14 @@ final class LaravelConformanceHarness implements ConformanceHarness
         return new self($fixture, new LaravelStdioHarness(FullPageServer::class, $fixture->tracker()));
     }
 
+    /** `PagedOwnServer`: a full page, then `own` alone on page 2. */
+    public static function paged(): self
+    {
+        $fixture = new LaravelTrackingFixture();
+
+        return new self($fixture, new LaravelStdioHarness(PagedOwnServer::class, $fixture->tracker()));
+    }
+
     /**
      * The conformance server, tracked by `Client::track()` after an earlier one, which the client had tracked with
      * `enableTracing: false`, was freed. Asserts that the new server has the old one's object ID, so the same
