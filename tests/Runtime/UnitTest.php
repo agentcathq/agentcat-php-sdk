@@ -51,7 +51,7 @@ final class UnitTest extends RuntimeTestCase
     {
         $events = self::$collector->scenario([['status' => 202, 'delayMs' => 2000]]);
         $diagnostics = self::$collector->scenario();
-        [$runtime, $base] = $this->unit($diagnostics);
+        [$runtime, $base] = $this->unit($diagnostics, null, 1);
         $client = new McpHttpClient($base . '/mcp');
         $this->warmUp($client, self::$collector->scenario(), self::COLLECTOR_DEADLINE_SECONDS, $headers);
         $started = microtime(true);
@@ -89,7 +89,7 @@ final class UnitTest extends RuntimeTestCase
     {
         $events = self::$collector->scenario([['status' => 202], ['status' => 202, 'delayMs' => 2000]]);
         $diagnostics = self::$collector->scenario();
-        [$runtime, $base] = $this->unit($diagnostics, $events);
+        [$runtime, $base] = $this->unit($diagnostics, $events, 1);
         $client = new McpHttpClient($base . $path);
         $this->warmUp($client, $events, self::COLLECTOR_DEADLINE_SECONDS);
         $started = microtime(true);
@@ -107,16 +107,19 @@ final class UnitTest extends RuntimeTestCase
 
     /**
      * NGINX Unit on 127.0.0.1 only (checked: 127.0.0.2 is refused), running `Fixtures/unit.php` for every request in
-     * two application processes. The configuration is `conf.json` in a state directory in `out()`, so Unit starts
-     * with it once: the image's entrypoint configures an empty state directory with a Unit that it stops again, and
-     * the port would accept connections before that restart. The application gets `RuntimeTestCase::env()` with
-     * diagnostics on and sent to `$diagnostics`, and `$events` as the AgentCat API when a bridge's fixture, which reads it from
-     * the environment, runs (otherwise a closed port; the echo fixtures read the request's `X-E2E-Collector`), and logs PHP's errors to Unit's log, the container's output. `HOME` is
+     * `$processes` application processes. Unit cannot route a request to a chosen process, so a case with one warm-up
+     * request uses one process: the timed request never meets a cold one. The configuration is `conf.json` in a state
+     * directory in `out()`, so Unit starts with it once: the image's entrypoint configures an empty state directory
+     * with a Unit that it stops again, and the port would accept connections before that restart.
+     *
+     * The application gets `RuntimeTestCase::env()` with diagnostics on and sent to `$diagnostics`. Its AgentCat API is
+     * `$events` for a bridge's fixture, which reads it from the environment, and a closed port otherwise (the echo
+     * fixtures read the request's `X-E2E-Collector`). PHP's errors go to Unit's log, the container's output. `HOME` is
      * `/out`, where AgentCat writes its log.
      *
      * @return array{DockerRuntime, string} the container, and its base URL
      */
-    private function unit(string $diagnostics, ?string $events = null): array
+    private function unit(string $diagnostics, ?string $events, int $processes): array
     {
         $out = $this->out();
         $port = $this->freePort();
@@ -127,7 +130,7 @@ final class UnitTest extends RuntimeTestCase
             'listeners' => ['127.0.0.1:' . $port => ['pass' => 'applications/agentcat']],
             'applications' => ['agentcat' => [
                 'type' => 'php',
-                'processes' => 2,
+                'processes' => $processes,
                 'root' => self::repo() . '/tests/Runtime/Fixtures',
                 'script' => 'unit.php',
                 'environment' => $env,

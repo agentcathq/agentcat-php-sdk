@@ -79,7 +79,7 @@ final class CliTest extends RuntimeTestCase
         $lines = $client->stdoutLines();
         $this->assertCount(2, $lines, 'the answers to initialize and tools/call');
         foreach ($lines as $line) {
-            $this->assertInstanceOf(\stdClass::class, Json::decode($line), $line);
+            $this->assertSame('2.0', JsonAssert::at(Json::decode($line), 'jsonrpc'), $line);
         }
     }
 
