@@ -68,7 +68,6 @@ final class LaravelMcpConformanceTest extends LaravelTestCase
     }
 
     /** laravel/mcp binds each call's `mcp.request` in the container: no call sees the arguments of the one before. */
-    #[Group('ac-02-51')]
     #[Group('ac-05-E5')]
     public function testConsecutiveCallsSeeOnlyTheirOwnArgumentsThroughMcpRequest(): void
     {

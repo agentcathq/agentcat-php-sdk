@@ -8,6 +8,8 @@ use ShipMonk\ComposerDependencyAnalyser\Config\ErrorType;
 return (new Configuration())
     // ext-pcntl, ext-posix and ext-session are optional: FileLogger, SignalDrain and RequestEnd guard their use with function_exists().
     ->ignoreErrorsOnExtensions(['ext-pcntl', 'ext-posix', 'ext-session'], [ErrorType::SHADOW_DEPENDENCY])
+    // ext-tokenizer reads the attributes of the test files in TraceabilityTest; php-cs-fixer/shim, a dev dependency, requires it.
+    ->ignoreErrorsOnExtensionAndPath('ext-tokenizer', __DIR__ . '/tests/Architecture/TraceabilityTest.php', [ErrorType::SHADOW_DEPENDENCY])
     // Test fixture functions, loaded with require_once by ExceptionCaptureTest (not autoloadable).
     ->ignoreUnknownFunctionsRegex('~^AgentCat\\\\Tests\\\\Fixtures\\\\Errors\\\\~')
     // mcp/sdk is optional (01 AC-90): a dev dependency and a suggestion, used only by the adapter.

@@ -91,7 +91,6 @@ final class HardenedHostTest extends TestCase
     #[DataProvider('lists')]
     #[Group('hardened-host')]
     #[Group('ac-03-37')]
-    #[Group('ac-03-9')]
     #[MaximumDuration(10000)]
     public function testTheServerAnswersAndEndsWithOneLinePerMissingFunction(string $functions): void
     {

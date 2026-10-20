@@ -339,7 +339,6 @@ trait AdapterConformance
     }
 
     /** Each call of a long-lived server sees and records only its own arguments. */
-    #[Group('ac-02-51')]
     public function testConformanceConsecutiveCalls(): void
     {
         $harness = $this->conformance();
