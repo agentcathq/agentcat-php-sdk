@@ -24,7 +24,7 @@ require dirname(__DIR__, 3) . '/vendor/autoload.php';
 //   disabled-shutdown: like disabled, but it prints "ending" and ends normally: the shutdown function delivers the event.
 //   shutdown:   no signal of its own: it prints "ending" and ends, so that the shutdown function delivers the event.
 //   outside:    it prints "ready" and waits for the SIGTERM of the test, so that it also runs where a host disabled
-//               posix_getpid().
+//               posix_getpid() or posix_kill().
 $baseUrl = $argv[1] ?? '';
 $mode = $argv[2] ?? '';
 $markerFile = $argv[3] ?? '';

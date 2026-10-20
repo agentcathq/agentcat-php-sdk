@@ -8,6 +8,7 @@ use AgentCat\Internal\Json\Json;
 use AgentCat\Tests\Integration\Support\MockCollector;
 use AgentCat\Tests\Support\JsonAssert;
 use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
@@ -115,12 +116,20 @@ final class SignalDrainDeliveryTest extends TestCase
         $this->assertSame([], $this->resourceNames($base));
     }
 
-    /** A host can disable `posix_getpid()`: the drain then ends the process with the shell's status for SIGTERM. */
+    /** @return iterable<string, array{string}> */
+    public static function posixFunctions(): iterable
+    {
+        yield 'posix_getpid' => ['posix_getpid'];
+        yield 'posix_kill' => ['posix_kill'];
+    }
+
+    /** A host can disable `posix_getpid()` or `posix_kill()`: the drain then ends the process with the shell's status for SIGTERM. */
+    #[DataProvider('posixFunctions')]
     #[MaximumDuration(10000)]
-    public function testWithoutPosixGetpidTheDrainEndsTheProcessWithTheExitStatusOfTheSignal(): void
+    public function testWithoutAPosixFunctionTheDrainEndsTheProcessWithTheExitStatusOfTheSignal(string $disabled): void
     {
         $base = $this->collector()->scenario();
-        $process = $this->fixture($base, 'outside', '', ['-d', 'disable_functions=posix_getpid']);
+        $process = $this->fixture($base, 'outside', '', ['-d', 'disable_functions=' . $disabled]);
 
         $process->start();
         $ready = microtime(true) + self::SIGNAL_DEADLINE;
