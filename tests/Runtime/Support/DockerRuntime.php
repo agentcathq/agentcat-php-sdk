@@ -305,7 +305,7 @@ final class DockerRuntime
     {
         $deadline = microtime(true) + $timeout;
         $nextRunningCheck = microtime(true) + self::RUNNING_CHECK_SECONDS;
-        while (!$this->accepts($port)) {
+        while (!self::accepts($port)) {
             if (microtime(true) >= $nextRunningCheck) {
                 if (!$this->running()) {
                     throw new \RuntimeException(sprintf('Container %s ended before port %d accepted a connection: %s', $this->name, $port, $this->logsOrWhy()));
@@ -319,12 +319,16 @@ final class DockerRuntime
         }
     }
 
-    private function accepts(int $port): bool
+    /**
+     * Whether `$host:$port` accepts a TCP connection now (one attempt). A runtime that listens on 127.0.0.1 only
+     * refuses another loopback address, such as 127.0.0.2.
+     */
+    public static function accepts(int $port, string $host = '127.0.0.1'): bool
     {
         set_error_handler(static fn(): bool => true); // connection refused while the runtime boots
 
         try {
-            $socket = stream_socket_client('tcp://127.0.0.1:' . $port, $errorCode, $errorMessage, self::CONNECT_SECONDS);
+            $socket = stream_socket_client('tcp://' . $host . ':' . $port, $errorCode, $errorMessage, self::CONNECT_SECONDS);
         } finally {
             restore_error_handler();
         }

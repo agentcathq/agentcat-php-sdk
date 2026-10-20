@@ -62,18 +62,36 @@ final class FrankenPhpTest extends RuntimeTestCase
     public function testClassicModeAnswersBeforeTheDelivery(): void
     {
         $scenario = self::$collector->scenario([['status' => 202, 'delayMs' => 2000]]);
-        $client = new McpHttpClient($this->frankenphp(worker: false) . '/classic.php');
+        $client = $this->warmClassicClient('/classic.php');
         $started = microtime(true);
 
-        $answer = $client->post($this->call(1, 'hi'), $this->headers($scenario));
+        $answer = $client->post($this->call(2, 'hi'), $this->headers($scenario));
 
         $this->assertLessThan(self::ANSWER_SECONDS, $answer['receivedAt'] - $started, 'FrankenPHP held the answer for the delivery');
-        $this->assertEchoed('hi', $answer, 1);
+        $this->assertEchoed('hi', $answer, 2);
         $this->assertSame('frankenphp_finish_request', $answer['headers']['x-agentcat-finish'] ?? null);
         $this->assertSame('0', $answer['headers']['x-agentcat-wait'] ?? null, 'a per-request SAPI leaves the delivery to the shutdown function');
-        $deliveries = $this->waitForRequests($scenario, 1, self::COLLECTOR_DEADLINE_SECONDS);
-        $this->assertCount(1, $deliveries);
-        $this->assertGreaterThan($answer['receivedAt'] + 1.0, $this->time($deliveries[0], 'end'), 'the collector answered the delivery after the client had its answer');
+        $this->assertDeliveredAfter($answer, $scenario);
+    }
+
+    /**
+     * Without a Content-Length, the client sees the end of the answer only when FrankenPHP ends the response. Closing
+     * and flushing the output buffers (D57) sends the bytes but not the end, so only the shutdown function's call of
+     * `frankenphp_finish_request()` gives the client its answer before the delivery.
+     */
+    #[MaximumDuration(40000)]
+    public function testClassicModeEndsAnAnswerWithoutContentLengthBeforeTheDelivery(): void
+    {
+        $scenario = self::$collector->scenario([['status' => 202, 'delayMs' => 2000]]);
+        $client = $this->warmClassicClient('/unsized.php');
+        $started = microtime(true);
+
+        $answer = $client->post($this->call(2, 'hi'), $this->headers($scenario));
+
+        $this->assertLessThan(self::ANSWER_SECONDS, $answer['receivedAt'] - $started, 'the shutdown function did not end the answer with frankenphp_finish_request() before the delivery');
+        $this->assertSame('removed', $answer['headers']['x-e2e-content-length'] ?? null, 'PHP sent the answer without its Content-Length');
+        $this->assertEchoed('hi', $answer, 2);
+        $this->assertDeliveredAfter($answer, $scenario);
     }
 
     /**
@@ -187,8 +205,8 @@ final class FrankenPhpTest extends RuntimeTestCase
     }
 
     /**
-     * FrankenPHP on 127.0.0.1, serving `Fixtures/frankenphp/` in classic mode, or with `worker.php` as a worker of one
-     * thread, from a Caddyfile in `out()`. PHP logs its errors (FrankenPHP's image has no php.ini, so `log_errors` is
+     * FrankenPHP on 127.0.0.1 only (`bind`, checked: 127.0.0.2 is refused), serving `Fixtures/frankenphp/` in classic
+     * mode, or with `worker.php` as a worker of one thread, from a Caddyfile in `out()`. PHP logs its errors (FrankenPHP's image has no php.ini, so `log_errors` is
      * off and a fatal error after the answer would leave no trace). The container gets `RuntimeTestCase::env()` with
      * `$collector` as the AgentCat API, plus `$env`; `HOME` is `/out`, where AgentCat writes its log.
      *
@@ -215,6 +233,7 @@ final class FrankenPhpTest extends RuntimeTestCase
             '}',
             '',
             'http://127.0.0.1:' . $port . ' {',
+            "\tbind 127.0.0.1", // the site address alone names a host to match, and Caddy would listen on every interface
             "\troot * " . $fixtures,
             "\tphp_server",
             '}',
@@ -228,8 +247,35 @@ final class FrankenPhpTest extends RuntimeTestCase
             port: $port,
             remove: $remove,
         );
+        $this->assertFalse(DockerRuntime::accepts($port, '127.0.0.2'), 'FrankenPHP listens beyond 127.0.0.1');
 
         return 'http://127.0.0.1:' . $port;
+    }
+
+    /**
+     * FrankenPHP in classic mode, after one untimed request to `$script` with its own scenario, whose delivery the
+     * collector has received: the timed request then meets a warm OPcache and no drain of the warm-up (ruling P16).
+     */
+    private function warmClassicClient(string $script): McpHttpClient
+    {
+        $warmUp = self::$collector->scenario();
+        $client = new McpHttpClient($this->frankenphp(worker: false) . $script);
+        $this->assertEchoed('warm', $client->post($this->call(1, 'warm'), $this->headers($warmUp)), 1);
+        $this->waitForRequests($warmUp, 1, self::COLLECTOR_DEADLINE_SECONDS);
+
+        return $client;
+    }
+
+    /**
+     * The scenario received one delivery, and answered it more than 1 s after the client had its answer.
+     *
+     * @param array{status: int, headers: array<string, string>, body: string, receivedAt: float} $answer
+     */
+    private function assertDeliveredAfter(array $answer, string $scenario): void
+    {
+        $deliveries = $this->waitForRequests($scenario, 1, self::COLLECTOR_DEADLINE_SECONDS);
+        $this->assertCount(1, $deliveries);
+        $this->assertGreaterThan($answer['receivedAt'] + 1.0, $this->time($deliveries[0], 'end'), 'the collector answered the delivery after the client had its answer');
     }
 
     private function runtime(): DockerRuntime
