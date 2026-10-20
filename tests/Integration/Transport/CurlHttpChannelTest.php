@@ -585,7 +585,9 @@ final class CurlHttpChannelTest extends TestCase
     /**
      * Ruling P7: only a wait with a transfer in progress reaches the NaN guard. Without the guard, PHP 8.4+ computes
      * a NAN bound (`max(0.0, NAN)`), which curl_multi_select() rejects with a ValueError: tearDown() sees it swallowed.
-     * CurlSupportTest pins the bound itself.
+     * CurlSupportTest pins the bound itself. The test counts waits instead of timing one: libcurl ends a wait early at a
+     * timer of its own (on libcurl 7.88, one due about 200 ms after the transfer starts), and until a pump() runs that
+     * timer, every later wait returns at once.
      */
     #[MaximumDuration(3000)]
     public function testAWaitWithANanOrNegativeBoundReturnsAtOnceDuringATransfer(): void
@@ -615,12 +617,21 @@ final class CurlHttpChannelTest extends TestCase
 
         foreach ([NAN, -1.0] as $seconds) {
             $begin = hrtime(true);
-            $channel->waitForActivity($seconds);
-            $this->assertLessThan(0.5, (hrtime(true) - $begin) / 1e9);
+            for ($i = 0; $i < 10; ++$i) {
+                $channel->pump(); // runs libcurl's due timers, which would end a wait early
+                $channel->waitForActivity($seconds);
+            }
+            $this->assertLessThan(1.0, (hrtime(true) - $begin) / 1e9, 'ten waits return at once, not after a second each');
         }
-        $begin = hrtime(true);
-        $channel->waitForActivity(0.2);
-        $this->assertGreaterThanOrEqual(0.15, (hrtime(true) - $begin) / 1e9, 'a positive bound does block');
+        // A positive bound does block: pump() and a wait of 0.2 s, for 0.6 s, run about three times, not thousands.
+        $passes = 0;
+        $until = hrtime(true) + 600_000_000;
+        while (hrtime(true) < $until) {
+            $channel->pump();
+            $channel->waitForActivity(0.2);
+            ++$passes;
+        }
+        $this->assertLessThan(20, $passes, 'a positive bound does block');
 
         fclose($connection);
         fclose($server);
