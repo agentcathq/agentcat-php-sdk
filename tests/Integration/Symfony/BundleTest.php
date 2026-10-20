@@ -129,8 +129,10 @@ final class BundleTest extends SymfonyTestCase
             }
         }
         $this->assertSame([], $bare);
-        $this->assertSame(5, substr_count(implode("
-", $lines), 'Takes true, false, 1, 0, yes, no, on, off or an %env()% value.'), 'every bool key states the accepted words');
+        $dump = implode("\n", $lines);
+        $this->assertSame(5, substr_count($dump, 'Takes true, false, 1, 0, yes, no, on, off or an %env()% value.'), 'every bool key states the accepted words');
+        $this->assertStringContainsString('Adds an agent_id parameter to your tools, to tell agents apart. Default: false. Takes true, false', $dump);
+        $this->assertStringContainsString('Keeps AgentCat from installing its SIGTERM and SIGINT handlers in CLI servers. Default: false. Takes true, false', $dump);
     }
 
     /** The container builds the server once, so its Builder is tracked once, for every request of the container. */
