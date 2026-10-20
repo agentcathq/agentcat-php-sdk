@@ -71,6 +71,12 @@ final class TestMode
         return self::$configured ?? self::word(Env::get('AGENTCAT_ENABLED') ?? '') ?? self::byDefault(self::normalized('AGENTCAT_ENABLED'), $classLoaded);
     }
 
+    /** The D44 word that `AGENTCAT_ENABLED` holds, without a log line; null when it is unset, blank or unknown. */
+    public static function environmentWord(): ?bool
+    {
+        return self::word(Env::get('AGENTCAT_ENABLED') ?? '');
+    }
+
     /**
      * The D44 words: `true`, `1`, `yes`, `on` (trimmed, any case), bool true and int 1 are true; `false`, `0`, `no`,
      * `off`, bool false and int 0 are false. Anything else, blank included, is null.

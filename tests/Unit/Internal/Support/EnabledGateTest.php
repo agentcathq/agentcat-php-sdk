@@ -87,6 +87,24 @@ final class EnabledGateTest extends TestCase
         $this->assertSame(['WARN: AgentCat config "agentcat.enabled" is "maybe", not one of true, 1, yes, on, false, 0, no, off; the default is used'], $this->logger->messages());
     }
 
+    public function testAnUnknownWordFallsBackToTheEnvironmentOfTheProcess(): void
+    {
+        putenv('AGENTCAT_ENABLED=false');
+        $off = EnabledGate::of('maybe');
+        putenv('AGENTCAT_ENABLED=true');
+        $on = EnabledGate::of('maybe');
+        putenv('AGENTCAT_ENABLED');
+        $unset = EnabledGate::of('maybe');
+
+        putenv('AGENTCAT_ENABLED=false');
+        $this->assertFalse($off());
+        putenv('AGENTCAT_ENABLED=true');
+        $this->assertTrue($on()); // forced on, also in a test environment (D44)
+        putenv('AGENTCAT_ENABLED');
+        $this->assertFalse($unset()); // PHPUnit is loaded: the default (D31)
+        $this->assertCount(3, $this->logger->messages()); // one line for each unknown word, none for the variable
+    }
+
     /** @return iterable<string, array{mixed, string}> */
     public static function unknownValues(): iterable
     {
