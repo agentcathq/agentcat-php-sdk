@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace AgentCat\Tests\Runtime\Support;
 
 /**
- * The Docker images of the runtime tests, pinned by tag (header conflict 10). The CI job pulls them before the suite,
+ * The Docker images of the runtime tests, pinned by tag. The CI job pulls them before the suite,
  * and builds `cli()` and `swoole()`; a test never pulls (`docker run --pull never`).
  *
  * With `AGENTCAT_RUNTIME_IMAGES=latest` (the nightly `runtime-latest` job) every method returns the floating tag of
@@ -61,14 +61,15 @@ final class Images
         return self::pick('agentcat-runtime-swoole:6.2.3-php8.3', 'agentcat-runtime-swoole:latest');
     }
 
-    /** NGINX Unit with PHP 8.3.26 (ruling P19). */
+    /** NGINX Unit with PHP 8.3.26. */
     public static function unit(): string
     {
         return self::pick('unit:1.34.2-php8.3', 'unit:php8.3');
     }
 
     /**
-     * The images whose main process is PHP CLI: PHP must not be PID 1 there (header conflict 11).
+     * The images whose main process is PHP CLI: PHP must not be PID 1 there, or its signal drain's re-raise would not
+     * end it.
      *
      * @return list<string>
      */

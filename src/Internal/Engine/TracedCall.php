@@ -17,7 +17,7 @@ final readonly class TracedCall
     /**
      * @param list<\Closure(Event): void> $pending the customer hooks, run later by the event queue (D04)
      * @param string|null $invalidIntent the type of a `context` intent that is a number, a boolean or an object; the
-     *                                   event is then not published (header conflict 2, B16). A list intent is no
+     *                                   event is then not published (B16). A list intent is no
      *                                   intent and the event is published (PHP divergence: TypeScript sends the raw list).
      */
     public function __construct(

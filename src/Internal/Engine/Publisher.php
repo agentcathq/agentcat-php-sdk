@@ -83,7 +83,7 @@ final readonly class Publisher
     {
         [$serverName, $serverVersion] = $server->serverInfo();
         (new SessionInfo($serverName, $serverVersion, $clientName, $clientVersion))->stamp($event);
-        $event->projectId = $server->projectId !== '' ? $server->projectId : null; // telemetry-only mode has no project (C16)
+        $event->projectId = $server->projectId !== '' ? $server->projectId : null; // telemetry-only mode has no project
         if (!Js::truthy($event->duration)) {
             $event->duration = self::elapsedMs($event->timestamp, ($this->clock)());
         }

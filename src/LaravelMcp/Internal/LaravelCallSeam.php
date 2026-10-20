@@ -34,7 +34,7 @@ final class LaravelCallSeam implements CallSeam
      *                                                                                        the handler the server's
      *                                                                                        entry named before
      *                                                                                        AgentCat's, built at the
-     *                                                                                        call (Task 4 review M2)
+     *                                                                                        call, after the strip
      * @param (\Closure(JsonRpcRequest): (iterable<JsonRpcResponse>|JsonRpcResponse))|null $listDelegate the same for
      *                                                                                                   the server's
      *                                                                                                   `tools/list`
@@ -77,8 +77,8 @@ final class LaravelCallSeam implements CallSeam
 
     /**
      * Sends a copy of the request without the names, and removes them from the `mcp.request` that laravel/mcp bound
-     * for this call: the tool's own `Request`, and any other the container builds now, copy its arguments (05 E5).
-     * The handler is built after that (Task 4 review M2).
+     * for this call: the tool's own `Request`, and any other the container builds now, copy its arguments (ac-05-E5).
+     * The handler is built after that, so it sees the request without the names.
      *
      * @param list<string> $names
      */
@@ -127,7 +127,7 @@ final class LaravelCallSeam implements CallSeam
     #[\Override]
     public function replace(mixed $result, \stdClass $tree): iterable|JsonRpcResponse
     {
-        // A JSON-RPC error is never decorated (C1 header conflict 3).
+        // A JSON-RPC error is never decorated: it reaches the client as the library built it.
         return $result instanceof JsonRpcResponse && isset($result->content['result'])
             ? new JsonRpcResponse([...$result->content, 'result' => LaravelTrees::nativeResult($tree)])
             : $result;
@@ -158,7 +158,7 @@ final class LaravelCallSeam implements CallSeam
     /**
      * A streamed answer (a generator, or another iterable of messages) passes message by message. Its first result or
      * JSON-RPC error completes the call and goes out as `$complete` returns it; what the stream throws before that
-     * fails the call, then passes on. A stream the client abandons completes nothing (plan E1 header conflict 6).
+     * fails the call, then passes on. A stream the client abandons completes nothing: no event.
      *
      * @param iterable<JsonRpcResponse>|JsonRpcResponse $result
      * @param \Closure(iterable<JsonRpcResponse>|JsonRpcResponse): (iterable<JsonRpcResponse>|JsonRpcResponse) $complete

@@ -6,7 +6,7 @@ namespace AgentCat\Internal\Engine;
 
 /**
  * The exception a tool threw, kept for the request it ran for. The MCP libraries catch tool exceptions and answer
- * with an error result or a JSON-RPC error; the event needs the exception itself (05 E5). Entries go away with their
+ * with an error result or a JSON-RPC error; the event needs the exception itself (ac-05-E5). Entries go away with their
  * request.
  *
  * @internal

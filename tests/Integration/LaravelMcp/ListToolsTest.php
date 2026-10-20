@@ -156,7 +156,7 @@ final class ListToolsTest extends LaravelTestCase
         $this->assertSame([], $fixture->lines());
     }
 
-    /** Task 4 review M1: PHP's own `Error`, not an AgentCat exception, reaches laravel/mcp's `report()`. */
+    /** PHP's own `Error`, not an AgentCat exception, reaches laravel/mcp's `report()`. */
     public function testAListHandlerTheContainerCannotResolveToAMethodFailsLikeWithoutAgentCat(): void
     {
         $this->app?->bind(RecordingMethod::class, static fn(): \stdClass => new \stdClass());
@@ -174,7 +174,7 @@ final class ListToolsTest extends LaravelTestCase
         $this->assertSame('Call to undefined method stdClass::handle()', $error->getMessage());
     }
 
-    /** Task 4 review M1: laravel/mcp calls `handle()` on whatever the container returns, so AgentCat does too. */
+    /** laravel/mcp calls `handle()` on whatever the container returns, so AgentCat does too. */
     public function testAListHandlerThatIsNoMethodButHasHandleIsCalledAndWrapped(): void
     {
         $this->app?->bind(RecordingMethod::class, static fn(): object => new class {

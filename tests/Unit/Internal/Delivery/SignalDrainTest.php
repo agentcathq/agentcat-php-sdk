@@ -316,7 +316,7 @@ final class SignalDrainTest extends TestCase
         $this->assertSame($later, pcntl_signal_get_handler(\SIGTERM), 'the second install() changed nothing');
     }
 
-    /** Review Focus 2: the application chose to ignore the signal, so AgentCat leaves it alone. */
+    /** The application chose to ignore the signal, so AgentCat leaves it alone. */
     #[RequiresPhpExtension('pcntl')]
     public function testAnIgnoredSignalStaysIgnored(): void
     {

@@ -31,8 +31,8 @@ use Laravel\Mcp\Server\Transport\HttpTransport;
 
 /**
  * Detects and instruments laravel/mcp servers. AgentCat changes a server only through its public `addMethod()`: the
- * entries it points at AgentCat's own method objects, bound in the container under per-server keys (plan E1 header
- * conflict 3), which delegate to the classes the entries named before.
+ * entries it points at AgentCat's own method objects, bound in the container under per-server keys, which delegate to
+ * the classes the entries named before.
  *
  * @internal
  */
@@ -107,9 +107,9 @@ final class LaravelMcpAdapter
     }
 
     /**
-     * The HTTP request the server answers, read from its own transport when a call is recorded (plan E1 header
-     * conflict 9); null on stdio and once the server is gone. Holds the server weakly, like `serverInfo()`. Never
-     * throws; the call is then recorded without HTTP context:
+     * The HTTP request the server answers, read from its own transport when a call is recorded, so an Octane worker
+     * records the request it serves; null on stdio and once the server is gone. Holds the server weakly, like
+     * `serverInfo()`. Never throws; the call is then recorded without HTTP context:
      * - when the transport or its request cannot be read (drift), and the compatibility line is logged once per server;
      * - when Laravel cannot read the request (Symfony refuses an invalid `X-HTTP-Method-Override` header, which the
      *   client sends), and nothing is logged.

@@ -539,7 +539,7 @@ final class EventQueueTest extends TestCase
     }
 
     /**
-     * N1: a 0 s flush (a console command's request-end wait, `AgentCat::flush(0)`) stays one non-blocking pass. A
+     * A 0 s flush (a console command's request-end wait, `AgentCat::flush(0)`) stays one non-blocking pass. A
      * backlog's hooks wait for the shutdown function of the same request or process, inside its 5 s budget; the pass
      * runs only those of the events it starts. A negative or NaN timeout is no window either.
      *
@@ -570,7 +570,7 @@ final class EventQueueTest extends TestCase
     }
 
     /**
-     * N2: a hook that queues an event whose own hook queues the next one (a `redactEvent` hook that publishes a custom
+     * A hook that queues an event whose own hook queues the next one (a `redactEvent` hook that publishes a custom
      * event: custom events carry the same hook) keeps the queue busy, and the flush still ends at its deadline. Each
      * pass prepares the events that waited when it began, each once; later passes take the new ones.
      */
@@ -605,7 +605,7 @@ final class EventQueueTest extends TestCase
         $this->assertSame(['event-0', 'event-1', 'event-2', 'event-3', 'event-4', 'event-5', 'event-6'], $ran->getArrayCopy(), 'each event that waited at the start, once');
     }
 
-    /** N2: an event that a hook queues during a pass waits for the next pass, after the window's wait. */
+    /** An event that a hook queues during a pass waits for the next pass, after the window's wait. */
     public function testAPassPreparesOnlyTheEventsThatWaitedWhenItBegan(): void
     {
         $transport = new RecordingTransport(complete: false);
@@ -1176,7 +1176,7 @@ final class EventQueueTest extends TestCase
         $this->assertTrue($queue->hasWork());
     }
 
-    /** I1: AgentCat's own requests (diagnostics) never hold `flush()` up or make it false; `shutdown()` sends them. */
+    /** AgentCat's own requests (diagnostics) never hold `flush()` up or make it false; `shutdown()` sends them. */
     #[Group('ac-06-63')]
     public function testFlushNeitherCountsNorWaitsForABackgroundRequest(): void
     {
@@ -1361,7 +1361,7 @@ final class EventQueueTest extends TestCase
         $this->assertTrue($queue->flush());
     }
 
-    /** The C2 setup of a shutdown after the shared deadline: the companions finished in the first one's reserve. */
+    /** A second shutdown after the shared deadline: the companions finished in the first one's reserve. */
     #[Group('ac-03-9')]
     public function testALaterShutdownAfterTheSharedDeadlineFinishesNothing(): void
     {

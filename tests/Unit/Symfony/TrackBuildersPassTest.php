@@ -15,11 +15,11 @@ use Symfony\Component\DependencyInjection\Argument\TaggedIteratorArgument;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Reference;
 
-/** The pass on a bare `ContainerBuilder` with builder definitions as symfony/mcp-bundle writes them (header conflict 3). */
+/** The pass on a bare `ContainerBuilder` with builder definitions as symfony/mcp-bundle writes them. */
 final class TrackBuildersPassTest extends TestCase
 {
     /**
-     * Header conflict 1: AgentCat's handlers go first, the customer's tagged ones after them, in the configurator. The
+     * AgentCat's handlers go first, the customer's tagged ones after them, in the configurator. The
      * bundle's other calls with a tagged iterator, the notification handlers and the loaders, stay where they are.
      */
     public function testTheTaggedHandlersMoveIntoAConfiguratorThatRunsAfterTheOtherCalls(): void
@@ -71,7 +71,7 @@ final class TrackBuildersPassTest extends TestCase
         $this->assertEquals([new Reference('app.configurator'), 'configure'], $container->getDefinition('agentcat.builder_configurator.main')->getArgument(3));
     }
 
-    /** Header conflict 3: without the call, the builder is still tracked, after its handlers (the C1 behavior). */
+    /** Without the call, the builder is still tracked, after its handlers: the customer's handlers never go missing. */
     public function testABuilderWithoutTheHandlersCallIsStillTracked(): void
     {
         $container = new ContainerBuilder();
@@ -111,7 +111,7 @@ final class TrackBuildersPassTest extends TestCase
     }
 
     /**
-     * Header conflict 3: a call whose single argument is not a tagged iterator, as a later bundle release can write it,
+     * A call whose single argument is not a tagged iterator, as a later bundle release can write it,
      * stays where it is, untouched. Its handlers then come before AgentCat's, which still tracks the builder.
      *
      * @param array<array-key, mixed> $arguments

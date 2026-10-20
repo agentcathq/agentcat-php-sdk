@@ -12,7 +12,8 @@ use AgentCat\Internal\Transport\HttpResponse;
 
 /**
  * TypeScript `DatadogExporter.export()`: the log and the metrics POSTs side by side, each logging its own outcome. A
- * payload that cannot be built (spec conflict 10) throws, which the manager logs as the rejection.
+ * payload that cannot be built (a tag value that is not a string, as in TypeScript) throws, which the manager logs as
+ * the rejection.
  *
  * @internal
  */

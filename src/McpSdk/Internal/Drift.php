@@ -10,8 +10,9 @@ use Mcp\Server;
 use Mcp\Server\Builder;
 
 /**
- * Runtime drift in what a Builder's build() assembled, or in a built server (C6, README §4.5 rule 4). The first drift
- * on an object logs the compatibility line; later ones on the same object log nothing.
+ * Runtime drift in what a Builder's build() assembled, or in a built server: mcp/sdk's internals changed, and AgentCat
+ * cannot read them. The first drift on an object logs the compatibility line; later ones on the same object log
+ * nothing.
  *
  * @internal
  */

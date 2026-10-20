@@ -7,7 +7,7 @@ namespace AgentCat\LaravelMcp\Internal;
 use AgentCat\Internal\Support\Values;
 
 /**
- * The client info that a legacy client sent in `initialize`, kept for one server (plan E1 header conflict 8). Over
+ * The client info that a legacy client sent in `initialize`, kept for one server. Over
  * stdio one server answers the whole process, so its later tool calls name that client; over HTTP every request builds
  * a new server, and the value is lost.
  *

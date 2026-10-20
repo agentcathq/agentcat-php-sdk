@@ -27,7 +27,7 @@ use PHPUnit\Framework\Attributes\After;
  * A Laravel application with laravel/mcp, for the adapter and bridge tests. `app.debug` is false, like production.
  * Every file Laravel writes (the package and service manifests, the caches, storage, the log, the environment file
  * and published configuration) goes to a directory of this test under the test HOME, removed after the test: none
- * goes into vendor/ (Ruling R8). A notice, warning or deprecation from a file of `src/` that Laravel's error handler
+ * goes into vendor/. A notice, warning or deprecation from a file of `src/` that Laravel's error handler
  * takes (it logs a deprecation and turns any other issue into an exception, which a request answers with an error)
  * fails the test (`SrcErrorGuard`).
  */

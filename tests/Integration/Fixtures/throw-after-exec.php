@@ -18,7 +18,7 @@ require dirname(__DIR__, 3) . '/vendor/autoload.php';
 // flood from a forked child finds that moment in the event transport's run() (at the curl_multi_exec() line on PHP 8.3,
 // right below the returned call's frame on PHP 8.4+). There the handler queues one more event and throws, up to
 // <throws> times. On PHP 8.3 a throw at that moment corrupted the frame when the exec call was nested in another call's
-// arguments (I1: a segfault, a hang or an out-of-memory error). The transport swallows the throwable (D32); the server
+// arguments (a segfault, a hang or an out-of-memory error). The transport swallows the throwable (D32); the server
 // goes on, delivers every event and exits 0.
 // Usage: throw-after-exec.php <large-answer-url> <throws>
 // Prints: "throws=<n> left=<events still queued or in flight>"

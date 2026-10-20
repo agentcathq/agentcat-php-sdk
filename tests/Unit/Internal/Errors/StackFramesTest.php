@@ -466,7 +466,6 @@ final class StackFramesTest extends TestCase
         $this->assertNull(error_get_last());
     }
 
-    #[Group('review-focus-2')]
     public function testThrowingErrorHandlerSeesNoWarningAndIsRestored(): void
     {
         $this->registerTestWrapper();
@@ -595,7 +594,6 @@ final class StackFramesTest extends TestCase
     }
 
     #[DataProvider('legacyMessageProvider')]
-    #[Group('review-focus-2')]
     public function testStackStringReadsANonStringMessageWithoutThrowingOrWarning(mixed $message, string $expected): void
     {
         $exception = new LegacyMessageException($message);

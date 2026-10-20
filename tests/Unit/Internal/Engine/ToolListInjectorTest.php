@@ -861,7 +861,6 @@ final class ToolListInjectorTest extends TestCase
     }
 
     /** A legacy exception message is logged without a warning or a throw, also under a throwing error handler. */
-    #[Group('review-focus-2')]
     #[DataProvider('legacyMessageProvider')]
     public function testLegacyExceptionMessagesAreLoggedSafely(mixed $message, string $text): void
     {

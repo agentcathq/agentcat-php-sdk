@@ -31,7 +31,7 @@ final class TrackedServer
      * @param Publisher $publisher the publisher of the client that tracked the server
      * @param (\Closure(): ?HttpContext)|null $httpContext the HTTP request of a call, from the framework; null reads the
      *                                                    SAPI globals. The laravel/mcp adapter reads the server's own
-     *                                                    transport instead (plan E1 header conflict 9)
+     *                                                    transport instead
      */
     public function __construct(
         public readonly string $projectId,
@@ -66,7 +66,7 @@ final class TrackedServer
         );
     }
 
-    /** Mirror the minted session into a result only when the tool declares `mcp_session` (02 §2.8). */
+    /** Mirror the minted session into a result only when the tool declares `mcp_session`. */
     public function mirrorAllowed(string $toolName): bool
     {
         return $this->outputRegistry === null || in_array($toolName, $this->outputRegistry, true);

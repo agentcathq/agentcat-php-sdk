@@ -27,7 +27,7 @@ final class JsonTree
 
     /**
      * The tree of an associative array as an object, for example a `tools/call` request's arguments: an empty array
-     * is `{}` and integer keys stay keys (N8). Nested values are encoded as they are. Never throws: `{}` when JSON
+     * is `{}` and integer keys stay keys. Nested values are encoded as they are. Never throws: `{}` when JSON
      * cannot carry the value.
      *
      * @param array<array-key, mixed> $value
@@ -45,7 +45,7 @@ final class JsonTree
 
     /**
      * The tree of a tool result. A library's PHP arrays cannot tell `{}` from `[]`, so an empty-list
-     * `structuredContent` is `{}` (C1 header conflict 4).
+     * `structuredContent` is `{}`.
      *
      * @throws \JsonException for a value JSON cannot carry
      */

@@ -7,7 +7,7 @@ namespace AgentCat\Internal\Support;
 use AgentCat\Internal\Logging\Log;
 
 /**
- * The enabled gate of a framework bridge, from its `agentcat.enabled` configuration (plan E1 header conflict 12): the
+ * The enabled gate of a framework bridge, from its `agentcat.enabled` configuration: the
  * configuration decides, because a cached configuration hides the `.env` file from `Env::get()`.
  *
  * @internal

@@ -18,8 +18,8 @@ use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Stdio servers in the PHP CLI image (the official image plus ext-pcntl), the way an MCP host or an orchestrator runs
- * them: `docker run --interactive --init`, so PHP is not PID 1 and a signal with the default disposition ends it
- * (header conflict 11). And the signal guard under Swoole (header conflict 13).
+ * them: `docker run --interactive --init`, so PHP is not PID 1 and a signal with the default disposition ends it.
+ * And the signal guard under Swoole.
  */
 #[Group('runtime')]
 final class CliTest extends RuntimeTestCase
@@ -84,7 +84,7 @@ final class CliTest extends RuntimeTestCase
     }
 
     /**
-     * Plan E1 header conflict 14: ext-swoole stops its workers with C-level signal handlers that PHP cannot see or
+     * ext-swoole stops its workers with C-level signal handlers that PHP cannot see or
      * chain, so the first event installs no SIGTERM handler there; the same script in the CLI image installs one. Both
      * images have ext-pcntl, so the guard, not a missing extension, keeps the handler out.
      */

@@ -455,8 +455,8 @@ final class CallToolTest extends TestCase
     }
 
     /**
-     * Header conflict 4: mcp/sdk cannot tell `{}` from `[]`, so an empty structuredContent is an empty object to the
-     * mirror and to the event. On 0.9.0 and main (C3), mcp/sdk itself rejects `[]` against an object outputSchema first.
+     * mcp/sdk cannot tell `{}` from `[]`, so an empty structuredContent is an empty object to the mirror and to the
+     * event. On 0.9.0 and main, mcp/sdk itself rejects `[]` against an object outputSchema first.
      */
     public function testAnEmptyStructuredContentCountsAsAnEmptyObject(): void
     {
@@ -563,7 +563,7 @@ final class CallToolTest extends TestCase
         $this->assertSame([Constants::TAG_SESSION_SOURCE => 'supplied'], $event->tags);
     }
 
-    /** Review Focus 2: integer-like keys and nested empty objects reach the tool as mcp/sdk decodes them. */
+    /** Integer-like keys and nested empty objects reach the tool as mcp/sdk decodes them. */
     public function testTheToolGetsTheSameArrayAsWithoutAgentCat(): void
     {
         $properties = ['0' => ['type' => 'string'], '123' => ['type' => 'string'], 'nested' => ['type' => 'object']];
@@ -584,7 +584,7 @@ final class CallToolTest extends TestCase
         $this->assertSame(['msg', '0', '123', 'nested', 'session_id'], $this->keys(JsonAssert::at($this->fixture->event()->parameters, 'request', 'params', 'arguments')));
     }
 
-    /** Review Focus 3: a reference handler set after track() replaces AgentCat's; only the stashed exception is lost. */
+    /** A reference handler set after track() replaces AgentCat's; only the stashed exception is lost. */
     public function testAReferenceHandlerSetAfterTrackStillGivesEvents(): void
     {
         $builder = TrackingFixture::builder();
@@ -623,7 +623,7 @@ final class CallToolTest extends TestCase
         $this->assertSame('RuntimeException', JsonAssert::at($this->fixture->event()->error, 'type'));
     }
 
-    /** Review Focus 3: a tools/call handler added after track() answers, and AgentCat records its answer. */
+    /** A tools/call handler added after track() answers, and AgentCat records its answer. */
     public function testACustomerCallHandlerAddedAfterTrackIsRecorded(): void
     {
         $builder = TrackingFixture::builder();
@@ -656,7 +656,7 @@ final class CallToolTest extends TestCase
     public static function containerMoments(): iterable
     {
         yield 'set before track()' => [true];
-        yield 'set after track() (Review Focus 3)' => [false];
+        yield 'set after track()' => [false];
     }
 
     /** The customer's container builds the tool handlers, whenever it was set. */
@@ -703,7 +703,7 @@ final class CallToolTest extends TestCase
         $this->assertSame($tool, JsonAssert::at($completion, 'completion', 'values'));
     }
 
-    /** Review Focus 5: each event of a long-lived server keeps its own handles and identity. */
+    /** Each event of a long-lived server keeps its own handles and identity. */
     public function testInterleavedCallsKeepTheirOwnValues(): void
     {
         $builder = TrackingFixture::builder();

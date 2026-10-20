@@ -14,7 +14,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 /**
- * The adapter conformance suite (README §8 M10): the same calls and the same expected events on every MCP library
+ * The adapter conformance suite: the same calls and the same expected events on every MCP library
  * AgentCat supports. A library leg implements the factories; the library's own tests cover what only it can do.
  *
  * @phpstan-require-extends TestCase
@@ -271,7 +271,7 @@ trait AdapterConformance
         $this->assertSame($server['HTTP_AUTHORIZATION'] ?? null, JsonAssert::at($info, 'headers', 'authorization'));
     }
 
-    /** Plan E1 header conflict 3: a reused object ID belongs to a dead server, so the new server's state replaces it. */
+    /** A reused object ID belongs to a dead server, so the new server's state replaces it. */
     #[Group('ac-02-5')]
     public function testConformanceReusedObjectId(): void
     {
@@ -288,7 +288,7 @@ trait AdapterConformance
         $this->assertNotContains(self::ALREADY_TRACKED, $harness->lines());
     }
 
-    /** Plan E1 header conflict 1: a full page has no `nextCursor`, and `get_more_tools` comes after its 15 tools. */
+    /** A full page has no `nextCursor`, and `get_more_tools` comes after its 15 tools. */
     #[Group('ac-02-8')]
     public function testConformanceOneFullPage(): void
     {

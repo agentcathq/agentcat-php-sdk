@@ -27,7 +27,7 @@ use Illuminate\Container\Container;
 use Orchestra\Testbench\Attributes\DefineEnvironment;
 
 /**
- * An application with `php artisan config:cache` (plan E1 header conflict 12): the configuration holds what `.env`
+ * An application with `php artisan config:cache`: the configuration holds what `.env`
  * gave when the cache was made, and the process holds none of it.
  */
 final class CachedConfigurationTest extends BridgeTestCase
@@ -44,7 +44,7 @@ final class CachedConfigurationTest extends BridgeTestCase
     /** The diagnostics variables of the process; a test turns diagnostics on as a platform variable can. */
     private ?Environment $diagnosticsEnvironment = null;
 
-    /** The collector `.env` names for diagnostics: a closed local port (ruling P8). */
+    /** The collector `.env` names for diagnostics: a closed local port, so a test fails closed. */
     private string $cachedCollector = '';
 
     #[\Override]
@@ -224,7 +224,7 @@ final class CachedConfigurationTest extends BridgeTestCase
         $this->assertSame(self::SESSION, $this->deliveredField('session_id'));
     }
 
-    /** I2 (c): an mcp/sdk Builder tracked with the shared client and no project ID gets the cached one. */
+    /** An mcp/sdk Builder tracked with the shared client and no project ID gets the cached one. */
     #[DefineEnvironment('defineCachedProject')]
     public function testTheSharedClientTracksWithTheCachedProjectId(): void
     {

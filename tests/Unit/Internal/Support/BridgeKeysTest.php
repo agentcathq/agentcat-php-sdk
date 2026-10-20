@@ -7,7 +7,7 @@ namespace AgentCat\Tests\Unit\Internal\Support;
 use AgentCat\Internal\Support\BridgeKeys;
 use PHPUnit\Framework\TestCase;
 
-/** M2: a framework bridge's own keys of its `agentcat` configuration, with their types. */
+/** A framework bridge's own keys of its `agentcat` configuration, with their types. */
 final class BridgeKeysTest extends TestCase
 {
     /** Laravel's `exclude` default. */

@@ -29,7 +29,7 @@ final class BufferedOutputTest extends TestCase
 
     private static ?BuiltInServer $server = null;
 
-    /** HOME (agentcat.log) of the server, under the test HOME (Ruling R8). */
+    /** HOME (agentcat.log) of the server, under the test HOME. */
     private static string $dir = '';
 
     #[\Override]

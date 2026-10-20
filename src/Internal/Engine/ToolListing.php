@@ -31,9 +31,9 @@ final class ToolListing
 
     /**
      * TS listWrap after the original handler: a listing without a tool list or with an empty one is served as is
-     * (`!Array.isArray(tools) || tools.length === 0`, B11, D15); a degraded injection keeps the previous registries
-     * (Plan A ledger carry). PHP divergence (D66, B10 fixed): only the last page gets get_more_tools, and each page's
-     * registries merge into the server's.
+     * (`!Array.isArray(tools) || tools.length === 0`, B11, D15); a degraded injection keeps the previous registries.
+     * PHP divergence (D66, B10 fixed): only the last page gets get_more_tools, and each page's registries merge into the
+     * server's.
      *
      * @param list<mixed>|null $tools null when the answer has no tool list
      * @param bool $lastPage the answer has no next cursor (`nextCursor()`)

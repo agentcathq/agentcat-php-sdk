@@ -339,7 +339,7 @@ final class CallToolTest extends LaravelTestCase
         $this->assertSame('http://localhost/mcp/conformance', JsonAssert::at($info, 'url'));
     }
 
-    /** Task 5 review minor 2: the client controls the headers; Symfony refuses an invalid method override. */
+    /** The client controls the headers; Symfony refuses an invalid method override. */
     public function testAnInvalidMethodOverrideCostsTheHttpContextOnly(): void
     {
         $fixture = new LaravelTrackingFixture();
@@ -355,7 +355,7 @@ final class CallToolTest extends LaravelTestCase
         $this->assertNotContains(LaravelMcpAdapter::COMPATIBILITY_LINE, $fixture->lines());
     }
 
-    /** The URL is built like the SAPI reading's (Task 6 review): an invalid `Host` header is recorded as it was sent. */
+    /** The URL is built like the SAPI reading's: an invalid `Host` header is recorded as it was sent. */
     #[Group('ac-02-43')]
     public function testAnInvalidHostHeaderIsRecordedAsSent(): void
     {
@@ -379,7 +379,7 @@ final class CallToolTest extends LaravelTestCase
     }
 
     /**
-     * TypeScript and mcp/sdk reject such a call before any handler, so none is recorded (D15, Task 5 review minor 4).
+     * TypeScript and mcp/sdk reject such a call before any handler, so none is recorded (D15).
      *
      * @param array<string, mixed> $params
      */
@@ -454,7 +454,7 @@ final class CallToolTest extends LaravelTestCase
         $this->assertCount(1, $fixture->events());
     }
 
-    /** Task 4 review M2: AgentCat builds the handler after laravel/mcp binds `mcp.request`, and after the strip. */
+    /** AgentCat builds the handler after laravel/mcp binds `mcp.request`, and after the strip. */
     public function testACustomHandlersConstructorRequestSeesTheStrippedArguments(): void
     {
         $fixture = new LaravelTrackingFixture();
@@ -497,7 +497,7 @@ final class CallToolTest extends LaravelTestCase
     }
 
     /**
-     * M4: a customer's decorator of `CallTool` from `extend()`, here an authorization check, runs on a tracked server
+     * A customer's decorator of `CallTool` from `extend()`, here an authorization check, runs on a tracked server
      * as without AgentCat: the container builds the handler at each call, and AgentCat answers with what it built.
      */
     public function testAnExtendDecoratorOfCallToolStillRuns(): void
@@ -533,7 +533,7 @@ final class CallToolTest extends LaravelTestCase
     }
 
     /**
-     * M4: a `resolving()` callback of `CallTool` runs at each call, as without AgentCat; the container still builds
+     * A `resolving()` callback of `CallTool` runs at each call, as without AgentCat; the container still builds
      * laravel/mcp's own `CallTool`, so AgentCat keeps the tool's exception.
      */
     public function testAResolvingCallbackOfCallToolRunsAndTheToolExceptionIsKept(): void
@@ -595,9 +595,8 @@ final class CallToolTest extends LaravelTestCase
     }
 
     /**
-     * Over HTTP laravel/mcp sends a stream from `StreamedResponse::sendContent()`, after `Server::handle()` returned
-     * (Review Focus 5): the SSE bytes are the library's, the event comes from the final result, and the hooks run later
-     * (D04).
+     * Over HTTP laravel/mcp sends a stream from `StreamedResponse::sendContent()`, after `Server::handle()` returned:
+     * the SSE bytes are the library's, the event comes from the final result, and the hooks run later (D04).
      */
     #[Group('ac-02-43')]
     #[Group('ac-05-E5')]
@@ -627,7 +626,7 @@ final class CallToolTest extends LaravelTestCase
         $this->assertSame('DomainException', JsonAssert::at($failing->event()->error, 'type'));
     }
 
-    /** A stream the client abandons publishes nothing (plan E1 header conflict 6). */
+    /** A stream the client abandons publishes nothing. */
     public function testAStreamTheClientAbandonsPublishesNothing(): void
     {
         $fixture = new LaravelTrackingFixture();
@@ -661,7 +660,7 @@ final class CallToolTest extends LaravelTestCase
         $this->assertTrue(JsonAssert::at($stdio->lines()[1] ?? null, 'result', 'isError'));
     }
 
-    /** Controller ruling P9: a handler's own stream that throws midway reaches `later()`'s catch. */
+    /** A handler's own stream that throws midway reaches `later()`'s catch. */
     #[Group('ac-05-E5')]
     public function testARawStreamThatThrowsMidwayIsOneErrorEventAndTheLibrarysError(): void
     {

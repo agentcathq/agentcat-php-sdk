@@ -9,7 +9,7 @@ use AgentCat\Internal\Delivery\RequestEndWait;
 use Illuminate\Contracts\Foundation\Application;
 
 /**
- * When a Laravel application delivers (plan E1 header conflict 13, D58): after every request, in `terminating()`, for
+ * When a Laravel application delivers (D58): after every request, in `terminating()`, for
  * at most `RequestEndWait::seconds()` — 1 s in an Octane worker, a single non-blocking pass elsewhere, where the
  * shutdown function delivers within the 5 s budget after the hook (D47) —, and for good when an Octane worker stops.
  *

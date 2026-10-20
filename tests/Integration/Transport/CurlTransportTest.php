@@ -831,7 +831,6 @@ final class CurlTransportTest extends TestCase
         $this->assertSame(['a', 'b', 'a', 'a', 'b'], $order->getArrayCopy());
     }
 
-    #[Group('review-focus-2')]
     #[MaximumDuration(1000)]
     public function testWarningsDuringAnAttemptDoNotReachTheHostHandler(): void
     {
@@ -913,7 +912,6 @@ final class CurlTransportTest extends TestCase
         $this->assertEqualsWithDelta(hrtime(true) / 1e9, $second, 1.0);
     }
 
-    #[Group('review-focus-2')]
     #[MaximumDuration(2000)]
     public function testThrowingErrorHandlerSeesNoWarningAndIsRestored(): void
     {

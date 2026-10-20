@@ -692,7 +692,7 @@ final class CallInterceptorTest extends TestCase
         yield 'object with a length' => [['length' => 3], 'stdClass'];
     }
 
-    /** Header conflict 2 (B16, N10): no event, one line, and the hooks of that call never run. */
+    /** B16: no event, one line, and the hooks of that call never run. */
     #[DataProvider('droppedIntents')]
     public function testANumberBooleanOrObjectIntentDropsTheEventBeforeAnyHookRuns(mixed $context, string $type): void
     {
@@ -806,7 +806,7 @@ final class CallInterceptorTest extends TestCase
         $this->assertSame([$context->toolCall], $seen->getArrayCopy());
     }
 
-    /** Header conflict 4: empty arguments count as absent for the token estimate. */
+    /** mcp/sdk cannot tell empty arguments from absent ones: empty arguments count as absent for the token estimate. */
     public function testEmptyArgumentsHaveNoInputTokens(): void
     {
         $this->interceptor->intercept($this->server(), $this->seam('echo'));

@@ -76,7 +76,7 @@ final class TestModeTest extends TestCase
     public static function runnerClasses(): iterable
     {
         yield 'PHPUnit' => [TestCase::class];
-        // DECISIONS item 6: Pest's sequential runner does not define PHPUNIT_COMPOSER_INSTALL.
+        // Pest's sequential runner does not define PHPUNIT_COMPOSER_INSTALL.
         yield 'Pest' => ['Pest\TestSuite'];
     }
 
@@ -199,7 +199,7 @@ final class TestModeTest extends TestCase
         $this->assertSame($expected, TestMode::word($value));
     }
 
-    /** Plan E1 header conflict 12: a framework bridge's configuration decides before the environment. */
+    /** A framework bridge's configuration decides before the environment, which a cached configuration hides. */
     public function testAConfiguredSwitchDecidesBeforeTheEnvironment(): void
     {
         putenv('AGENTCAT_ENABLED=true');

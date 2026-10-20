@@ -28,7 +28,7 @@ final class ExporterFactory
 {
     /**
      * Null, after the TypeScript `Unknown exporter type: <type>` line, for anything that is not one of the four
-     * configuration classes (`Options::$exporters` entries are not validated, Task 4).
+     * configuration classes (`new Options()` does not validate the entries of `$exporters`).
      *
      * @throws \InvalidArgumentException an invalid Sentry DSN
      */

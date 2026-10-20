@@ -26,7 +26,7 @@ final class CurlHttpChannelTest extends TestCase
 
     private MemoryLogger $logger;
 
-    /** @var list<\Throwable> what the channels of this test swallowed (I2: the normal paths swallow nothing) */
+    /** @var list<\Throwable> what the channels of this test swallowed (the normal paths swallow nothing) */
     private array $swallowed = [];
 
     #[\Override]
@@ -111,7 +111,7 @@ final class CurlHttpChannelTest extends TestCase
         $this->assertSame([], $this->logger->messages(), 'a failed request reaches only its callback');
     }
 
-    /** Review Focus 5: no file is read and no redirect is followed. */
+    /** No file is read and no redirect is followed. */
     #[MaximumDuration(3000)]
     public function testOnlyHttpAndHttpsAreFetched(): void
     {
@@ -223,7 +223,7 @@ final class CurlHttpChannelTest extends TestCase
         $this->assertSame(CurlHttpChannel::MAX_BODY_BYTES, strlen((string) $body));
     }
 
-    /** I1: a background request in transfer is left out of `pending(false)` too. */
+    /** A background request in transfer is left out of `pending(false)` too. */
     #[MaximumDuration(3000)]
     public function testABackgroundRequestInTransferIsLeftOutOfTheForegroundCount(): void
     {
@@ -241,7 +241,7 @@ final class CurlHttpChannelTest extends TestCase
     }
 
     /**
-     * I2 and the N1 ruling: a signal handler (the SIGTERM drain) that runs inside a callback pumps, waits on and posts
+     * A signal handler (the SIGTERM drain) that runs inside a callback pumps, waits on and posts
      * to the channel it interrupted. In the `header` callback the seam clears the busy flag first, as at PHP 8.4+'s
      * callback entry: the nested pump's add and run are refused, the refusal marks the channel busy, and the request
      * waits. In the `write` callback the channel is busy already. Either way: nothing pending, no wait, nothing failed,
@@ -347,7 +347,7 @@ final class CurlHttpChannelTest extends TestCase
         $this->assertCount(12, $this->collector()->requests($url));
     }
 
-    /** Ruling P11: a multi handle that cannot run fails its transfers, so a flush without a deadline cannot hang. */
+    /** A multi handle that cannot run fails its transfers, so a flush without a deadline cannot hang. */
     #[MaximumDuration(3000)]
     public function testAFailingExecFailsEveryTransferInsteadOfWaitingForever(): void
     {
@@ -472,7 +472,7 @@ final class CurlHttpChannelTest extends TestCase
     }
 
     /**
-     * M2: curl_setopt_array() stops at the first option it rejects (libcurl takes no URL over 8 MB). Such a request
+     * curl_setopt_array() stops at the first option it rejects (libcurl takes no URL over 8 MB). Such a request
      * fails through its callback and is never added; the options that take the response come first, so nothing of
      * any response reaches STDOUT (the stdio MCP stream; PHPUnit fails a test that prints).
      */
@@ -498,7 +498,7 @@ final class CurlHttpChannelTest extends TestCase
         $this->assertSame('/next', $requests[0]->path);
     }
 
-    /** I2: a throwable inside a pump never reaches the caller; the seam sees it, and the next pump goes on. */
+    /** A throwable inside a pump never reaches the caller; the seam sees it, and the next pump goes on. */
     #[MaximumDuration(3000)]
     public function testAThrowableInAPumpIsSwallowedAndTheTransfersGoOn(): void
     {
@@ -583,7 +583,7 @@ final class CurlHttpChannelTest extends TestCase
     }
 
     /**
-     * Ruling P7: only a wait with a transfer in progress reaches the NaN guard. Without the guard, PHP 8.4+ computes
+     * Only a wait with a transfer in progress reaches the NaN guard. Without the guard, PHP 8.4+ computes
      * a NAN bound (`max(0.0, NAN)`), which curl_multi_select() rejects with a ValueError: tearDown() sees it swallowed.
      * CurlSupportTest pins the bound itself. The test counts waits instead of timing one: libcurl ends a wait early at a
      * timer of its own (on libcurl 7.88, one due about 200 ms after the transfer starts), and until a pump() runs that

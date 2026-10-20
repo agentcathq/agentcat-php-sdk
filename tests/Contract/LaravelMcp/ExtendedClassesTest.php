@@ -20,7 +20,7 @@ use PHPUnit\Framework\Attributes\Group;
 
 /**
  * AgentCat answers laravel/mcp's `tools/call` with `CapturingCallTool`, a copy of `CallTool::handle()` whose invoker
- * overrides `ToolInvoker::toErrorResponse()` to keep the tool's own exception (plan E1 header conflict 5). A future
+ * overrides `ToolInvoker::toErrorResponse()` to keep the tool's own exception. A future
  * laravel/mcp that makes either parent or method final or private, changes their signatures, or answers differently
  * breaks it.
  */

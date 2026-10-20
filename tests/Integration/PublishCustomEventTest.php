@@ -400,7 +400,7 @@ final class PublishCustomEventTest extends TestCase
         $this->assertSame(self::NO_PROJECT, $error->getMessage());
     }
 
-    /** Review Focus 4: payloads that PHP cannot encode as they are. */
+    /** Payloads that PHP cannot encode as they are never throw. */
     public function testAPayloadPhpCannotEncodeNeverThrows(): void
     {
         $self = ['name' => 'loop'];
@@ -415,7 +415,7 @@ final class PublishCustomEventTest extends TestCase
         $this->assertSame(['Failed to sanitize event: RangeException: Maximum call stack size exceeded'], $failures);
     }
 
-    /** Review Focus 4: what remains encodable is delivered with the pipeline's markers and substitutions. */
+    /** What remains encodable is delivered with the pipeline's markers and substitutions. */
     public function testAPayloadWithoutACycleIsDeliveredWithMarkers(): void
     {
         $data = new CustomEvent(parameters: ['f' => static fn(): int => 1, 'r' => STDIN], response: NAN, message: "caf\xE9");
@@ -446,7 +446,7 @@ final class PublishCustomEventTest extends TestCase
         $this->assertSame(['Warning: Failed to publish custom event - RuntimeException: boom'], $this->logger->messages());
     }
 
-    /** Ruling R1: the event of a server goes out through the client that tracked it. */
+    /** The event of a server goes out through the client that tracked it. */
     public function testATrackedServerPublishesThroughTheClientThatTrackedIt(): void
     {
         $builder = $this->tracked();
@@ -460,7 +460,7 @@ final class PublishCustomEventTest extends TestCase
         $this->assertSame('ses_1', JsonAssert::at($this->body(), 'session_id'));
     }
 
-    /** Ruling R3, `01` AC-69: the server built from a tracked Builder is accepted too. */
+    /** `01` AC-69: the server built from a tracked Builder is accepted too. */
     #[Group('ac-01-69')]
     public function testTheServerBuiltFromATrackedBuilderIsAccepted(): void
     {
@@ -495,7 +495,7 @@ final class PublishCustomEventTest extends TestCase
     }
 
     /**
-     * Finding F1: after a track() that AgentCat could not complete (it logged why), a server it cannot find logs a
+     * After a track() that AgentCat could not complete (it logged why), a server it cannot find logs a
      * warning instead of throwing into the customer's code, for example after an mcp/sdk upgrade.
      *
      * @param \Closure(Client, Builder): void $fail

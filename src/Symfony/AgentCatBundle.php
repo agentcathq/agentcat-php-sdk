@@ -113,7 +113,7 @@ final class AgentCatBundle extends AbstractBundle
             '%agentcat.servers%', // every server name, which TrackBuildersPass writes
             $variables,
         ]);
-        // D58: the wait for delivery after each response, last of kernel.terminate (header conflict 7).
+        // D58: the wait for delivery after each response, last of kernel.terminate.
         $builder->register('agentcat.terminate_listener', TerminateListener::class)
             ->addTag('kernel.event_listener', ['event' => KernelEvents::TERMINATE, 'priority' => TerminateListener::PRIORITY]);
         // D62: boot() makes it a kernel.response listener where responses end with the script.
@@ -150,7 +150,7 @@ final class AgentCatBundle extends AbstractBundle
 
     /**
      * `agentcat.enabled` and every other name AgentCat reads decide for every client, the shared one too, before the
-     * environment (plan E1 header conflict 12): a literal, a parameter or a secret of the configuration is not in the
+     * environment: a literal, a parameter or a secret of the configuration is not in the
      * environment. Diagnostics get the kernel's environment. A fake still records. The tracker logs the bad values;
      * nothing is logged here, and boot tracks nothing. Where this process's SAPI sends a response only when the script
      * ends, the answers of tracked servers get their length (D62).

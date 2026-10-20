@@ -33,7 +33,7 @@ final readonly class ClientSeams
      * @param bool                            $telemetry   false sets up no exporters and no diagnostics (`AgentCat::fake()`)
      * @param (\Closure(): ?HttpContext)|null $httpContext the HTTP request of a call, from the framework (the Symfony
      *                                                     bundle's `RequestStack`), for every server the client tracks;
-     *                                                     null reads the SAPI globals (plan E2 header conflict 5)
+     *                                                     null reads the SAPI globals
      */
     public static function of(EventQueue $queue, ?\Closure $enabled = null, bool $telemetry = true, ?\Closure $httpContext = null): self
     {

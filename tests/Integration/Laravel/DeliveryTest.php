@@ -35,7 +35,7 @@ use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Delivery after each request of a Laravel application whose process outlives the request, as in an Octane worker
- * (plan E1 header conflict 13, D58, Review Focus 4). Each request goes through Laravel's HTTP kernel to `Mcp::web()`,
+ * (D58). Each request goes through Laravel's HTTP kernel to `Mcp::web()`,
  * and Laravel's test client runs `$kernel->terminate()` after it, as a server does after it sent the response.
  */
 final class DeliveryTest extends BridgeTestCase
@@ -228,7 +228,7 @@ final class DeliveryTest extends BridgeTestCase
         $this->assertSame($before, $this->transport->now());
     }
 
-    /** Review Focus 4: three requests in one application container, each with its own server, headers and identity. */
+    /** Three requests in one application container, each with its own server, headers and identity. */
     public function testRequestsInOneContainerKeepTheirOwnContext(): void
     {
         config(['agentcat.identify' => HeaderIdentity::class]);
@@ -276,7 +276,7 @@ final class DeliveryTest extends BridgeTestCase
     }
 
     /**
-     * Review Focus 4 with a hook that reads the container and an AgentCat API that backs up. The first five deliveries
+     * A hook that reads the container, and an AgentCat API that backs up. The first five deliveries
      * stay in flight, so the sixth event waits for a free slot past its own request. Its hook still runs before that
      * request's wait returns, in that request: the payload alone waits for the transport.
      *
@@ -301,7 +301,7 @@ final class DeliveryTest extends BridgeTestCase
         $this->assertSame($users, array_map(static fn(mixed $body): mixed => JsonAssert::at($body, 'identify_actor_given_id'), $bodies));
     }
 
-    /** Review Focus 4: an AgentCat API that does not answer holds each request for the cap, not for the 5 s budget. */
+    /** An AgentCat API that does not answer holds each request for the cap, not for the 5 s budget. */
     #[Group('ac-03-1')]
     public function testAWorkerWaitsAtMostTheCapAndTheNextRequestDeliversTheRest(): void
     {
@@ -321,7 +321,7 @@ final class DeliveryTest extends BridgeTestCase
     }
 
     /**
-     * Review Focus 4 with the real curl transport. The collector answers after 4 s: a hook that waited for the 5 s
+     * The same with the real curl transport. The collector answers after 4 s: a hook that waited for the 5 s
      * shutdown budget would hold the request at least that long, and the worker's stop still has time to deliver.
      */
     #[MaximumDuration(12000)]

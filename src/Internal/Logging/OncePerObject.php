@@ -6,7 +6,7 @@ namespace AgentCat\Internal\Logging;
 
 /**
  * Warnings that are logged once per object, for example the compatibility line of an adapter that cannot read a
- * server on the request path (README §4.5 rule 4): the first one for an object is logged, later ones with the same
+ * server on the request path: the first one for an object is logged, later ones with the same
  * line are not. Entries go away with their object.
  *
  * @internal

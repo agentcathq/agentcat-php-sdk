@@ -154,7 +154,7 @@ final class EventQueueDeliveryTest extends TestCase
     }
 
     /**
-     * Review Focus 1: an exporter endpoint that hangs, on a server whose AgentCat API works. `pump()` returns at once,
+     * An exporter endpoint that hangs, on a server whose AgentCat API works. `pump()` returns at once,
      * the event is delivered, and `shutdown()` waits for the export only until its budget, then abandons it. The export
      * goes to a local server that never answers, not to the mock collector: a collector worker that took both
      * connections would serve the event after the slow export.
@@ -199,7 +199,7 @@ final class EventQueueDeliveryTest extends TestCase
     }
 
     /**
-     * I2: a SIGTERM drain that runs inside a callback of the side channel (the seam stands in for the signal
+     * A SIGTERM drain that runs inside a callback of the side channel (the seam stands in for the signal
      * handler). It delivers the event on the transport's own multi handle and returns once the event is delivered: the
      * side channel cannot progress inside its own callback, so the drain does not wait for it. The side transfer then
      * completes in the next passes.

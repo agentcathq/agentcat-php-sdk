@@ -238,7 +238,7 @@ final class OptionsTest extends TestCase
         $this->assertSame(['Unknown exporter type: bogus', 'Unknown exporter type: undefined'], $this->logger->messages());
     }
 
-    /** Review Focus 2: config files whose env() values are missing or mistyped. */
+    /** Config files whose env() values are missing or mistyped: `fromArray()` skips that exporter. */
     public function testFromArraySkipsAnExporterWithMissingOrMistypedValues(): void
     {
         $options = Options::fromArray(['exporters' => [
@@ -260,7 +260,7 @@ final class OptionsTest extends TestCase
         ], $this->logger->messages());
     }
 
-    /** Plan E1 header conflict 17: a config file switches every exporter off with null entries. */
+    /** A config file switches every exporter off with null entries. */
     public function testFromArrayCountsAMapOfNullExportersAsNoExporters(): void
     {
         $this->assertNull(Options::fromArray(['exporters' => ['otlp' => null, 'dd' => null]])->exporters);
@@ -282,7 +282,7 @@ final class OptionsTest extends TestCase
     }
 
     /**
-     * A4: the opt-out reads what a framework config file gives it, Laravel's `env()` strings included (`env()` turns
+     * The opt-out reads what a framework config file gives it, Laravel's `env()` strings included (`env()` turns
      * only `true`/`false`/`(true)`/`(false)` into bools, so `1` in `.env` arrives as `'1'`). The words of
      * `AGENTCAT_DISABLE_DIAGNOSTICS`, trimmed, in any case. Null is `env()` of an unset variable: not set, the default.
      *
@@ -328,7 +328,7 @@ final class OptionsTest extends TestCase
         yield 'an array' => [[], 'array'];
     }
 
-    /** A4: a privacy opt-out fails closed: a value that is set but cannot be read logs one line and turns diagnostics off. */
+    /** A privacy opt-out fails closed: a value that is set but cannot be read logs one line and turns diagnostics off. */
     #[DataProvider('unreadableDiagnosticsSwitches')]
     public function testFromArrayTurnsDiagnosticsOffForAValueItCannotRead(mixed $value, string $type): void
     {

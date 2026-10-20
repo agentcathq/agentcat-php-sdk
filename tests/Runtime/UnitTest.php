@@ -13,10 +13,10 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
- * NGINX Unit 1.34.2 with PHP 8.3.26 (ruling P19). Unit's PHP module reports the SAPI of `php -S` (`cli-server`), runs
+ * NGINX Unit 1.34.2 with PHP 8.3.26. Unit's PHP module reports the SAPI of `php -S` (`cli-server`), runs
  * each request as a PHP request of its own, and has `fastcgi_finish_request()`, which ends the answer also when it
  * carries no Content-Length. Each upper bound sits about 1 s above the measured time and about 1 s below the time a
- * held answer takes, the collector's 2 s (ruling P16).
+ * held answer takes, the collector's 2 s.
  */
 #[Group('runtime')]
 final class UnitTest extends RuntimeTestCase

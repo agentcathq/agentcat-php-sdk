@@ -7,9 +7,9 @@ namespace AgentCat\Internal\Support;
 use AgentCat\Internal\Logging\Log;
 
 /**
- * When AgentCat instruments and delivers. A framework bridge's configured switch decides first (plan E1 header conflict
- * 12), then `AGENTCAT_ENABLED` (D44): a false value turns AgentCat off everywhere, a true value turns it on everywhere.
- * Otherwise AgentCat is off while a test framework runs (D31) and on everywhere else.
+ * When AgentCat instruments and delivers. A framework bridge's configured switch decides first (a cached configuration
+ * hides the `.env` file), then `AGENTCAT_ENABLED` (D44): a false value turns AgentCat off everywhere, a true value
+ * turns it on everywhere. Otherwise AgentCat is off while a test framework runs (D31) and on everywhere else.
  *
  * @internal
  */
@@ -19,7 +19,7 @@ final class TestMode
 
     /**
      * A loaded class of a test runner means tests run. Pest's sequential runner does not define
-     * `PHPUNIT_COMPOSER_INSTALL`, so that constant alone is not enough (DECISIONS item 6).
+     * `PHPUNIT_COMPOSER_INSTALL`, so that constant alone is not enough.
      */
     private const array RUNNER_CLASSES = ['PHPUnit\Framework\TestCase', 'Pest\TestSuite'];
 

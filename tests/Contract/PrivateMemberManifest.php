@@ -11,7 +11,7 @@ use Mcp\Schema\Result\CallToolResult;
 use Mcp\Schema\Result\ListToolsResult;
 
 /**
- * The manifest of library internals AgentCat depends on, for Plan F's snapshot diff over `members()`: every
+ * The manifest of library internals AgentCat depends on, for the nightly snapshot diff over `members()`: every
  * #[TouchesPrivateMember] in src/<Adapter>/Internal/Access, every library class AgentCat extends, and the
  * symfony/mcp-bundle service definitions AgentCat's bundle reads at compile time.
  */

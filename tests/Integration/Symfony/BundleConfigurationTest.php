@@ -23,8 +23,8 @@ use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
 use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
- * Ruling P7: the shared client, which an application's own `AgentCat::track()` or `AgentCat::publishCustomEvent()`
- * uses, follows the `agentcat` configuration before the process environment (plan E1 header conflict 12): a value can
+ * The shared client, which an application's own `AgentCat::track()` or `AgentCat::publishCustomEvent()` uses, follows
+ * the `agentcat` configuration before the process environment: a value can
  * come from a literal in config/packages/agentcat.yaml, a parameter or a secret, which the environment does not hold.
  * `AgentCatBundle::boot()` hands each value to the core. Each test boots a kernel: 0.2 to 0.3 s measured on PHP 8.3
  * and 8.5.
@@ -44,7 +44,7 @@ final class BundleConfigurationTest extends SymfonyTestCase
     /** The diagnostics variables of the process; a test turns diagnostics on as a platform variable can. */
     private ?Environment $diagnosticsEnvironment = null;
 
-    /** The collector the configuration names for diagnostics: a closed local port (ruling P8 of Plan E1). */
+    /** The collector the configuration names for diagnostics: a closed local port, so a test fails closed. */
     private string $configuredCollector = '';
 
     #[\Override]

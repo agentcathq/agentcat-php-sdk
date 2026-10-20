@@ -39,7 +39,7 @@ use Psr\Log\NullLogger;
 /**
  * `BuilderAccess::probe()` runs at track(), before build() fills `Builder::$parts`, so it cannot check what the
  * built parts hold. When a future mcp/sdk changes them, the request path logs one compatibility line and leaves
- * the server to the library (README §4.5 rule 4): `tools/list` and `tools/call` alike.
+ * the server to the library: `tools/list` and `tools/call` alike.
  */
 #[Group('contract')]
 final class RuntimeDriftTest extends TestCase

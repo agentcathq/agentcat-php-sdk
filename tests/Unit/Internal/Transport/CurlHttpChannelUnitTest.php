@@ -18,7 +18,7 @@ use PHPUnit\Framework\TestCase;
 /** No transfer starts here: nothing is pumped, curl is "missing", or every add is refused. tests/Integration/Transport covers the transfers. */
 final class CurlHttpChannelUnitTest extends TestCase
 {
-    /** A5: at most one line per pass, with the count of that pass. */
+    /** At most one line per pass, with the count of that pass. */
     private const string FULL = 'WARN: AgentCat telemetry export queue full, dropped the oldest %d request(s)';
 
     private const string NO_CURL = 'WARN: AgentCat cannot send events, telemetry exports or diagnostics: ext-curl functions are missing or disabled (';
@@ -75,7 +75,7 @@ final class CurlHttpChannelUnitTest extends TestCase
         $this->assertSame([], $swallowed);
     }
 
-    /** A6: the waiting requests hold at most 16 MiB of bodies; the oldest go first, with the same line. */
+    /** The waiting requests hold at most 16 MiB of bodies; the oldest go first, with the same line. */
     public function testTheWaitingBodiesStayWithinTheirByteBudget(): void
     {
         $swallowed = [];
@@ -103,7 +103,7 @@ final class CurlHttpChannelUnitTest extends TestCase
         $this->assertSame([], $swallowed);
     }
 
-    /** A6: a body larger than the whole budget still waits, alone: the newest request is never dropped. */
+    /** A body larger than the whole budget still waits, alone: the newest request is never dropped. */
     public function testABodyOverTheBudgetWaitsAlone(): void
     {
         $swallowed = [];
@@ -136,7 +136,7 @@ final class CurlHttpChannelUnitTest extends TestCase
         yield 'total zero (curl: no timeout)' => [2.0, 0.0];
     }
 
-    /** M2: a timeout curl cannot take is a programming error; the queue builds the channel with the defaults. */
+    /** A timeout curl cannot take is a programming error; the queue builds the channel with the defaults. */
     #[DataProvider('badTimeouts')]
     public function testATimeoutCurlCannotTakeIsRejectedAtConstruction(float $connectTimeoutSeconds, float $totalTimeoutSeconds): void
     {
@@ -282,7 +282,7 @@ final class CurlHttpChannelUnitTest extends TestCase
         $this->assertFalse($request->background, 'an exporter request by default');
     }
 
-    /** A9 (D49): a request can carry its own timeouts (diagnostics: 250 ms and 1 s); others get the channel's 2 s and 10 s. */
+    /** D49: a request can carry its own timeouts (diagnostics: 250 ms and 1 s); others get the channel's 2 s and 10 s. */
     public function testARequestCarriesItsOwnTimeoutsOrGetsTheChannels(): void
     {
         $channel = new CurlHttpChannel();
@@ -310,7 +310,7 @@ final class CurlHttpChannelUnitTest extends TestCase
         $this->assertSame(0, $channel->pending());
     }
 
-    /** I1: `flush()` asks for the requests without the background ones (diagnostics). */
+    /** `flush()` asks for the requests without the background ones (diagnostics). */
     public function testPendingCanLeaveOutTheBackgroundRequests(): void
     {
         $channel = new CurlHttpChannel();

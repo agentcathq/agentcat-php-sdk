@@ -16,7 +16,7 @@ putenv('HOME=' . $agentcatTestHome);
 $_SERVER['HOME'] = $_ENV['HOME'] = $agentcatTestHome;
 
 // TS `src/tests/setup.ts`: no test sends diagnostics unless it clears this; subprocesses inherit it. A test that turns
-// them on points AGENTCAT_DIAGNOSTICS_ENDPOINT at its own closed port (ruling P8); this one is the fallback, so a
+// them on points AGENTCAT_DIAGNOSTICS_ENDPOINT at its own closed port; this one is the fallback, so a
 // forgotten setting fails closed instead of reaching otel.agentcat.com.
 putenv('AGENTCAT_DISABLE_DIAGNOSTICS=true');
 $_SERVER['AGENTCAT_DISABLE_DIAGNOSTICS'] = $_ENV['AGENTCAT_DISABLE_DIAGNOSTICS'] = 'true';

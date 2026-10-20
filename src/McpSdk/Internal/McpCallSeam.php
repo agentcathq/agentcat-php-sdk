@@ -108,7 +108,7 @@ final class McpCallSeam implements CallSeam
     #[\Override]
     public function replace(mixed $result, \stdClass $tree): Response|Error
     {
-        // A JSON-RPC error is never decorated (header conflict 3).
+        // A JSON-RPC error is never decorated: it reaches the client as the library built it.
         return $result instanceof Response
             ? new Response($result->getId(), new WireCallToolResult(Trees::callToolResult($result->result), $tree))
             : $result;

@@ -9,7 +9,7 @@ use Illuminate\Http\Request;
 
 /**
  * The HTTP context of the request a laravel/mcp server answers, read from that request rather than from `$_SERVER`,
- * so Octane's workers record it too (plan E1 header conflict 9).
+ * so Octane's workers record it too.
  *
  * @internal
  */

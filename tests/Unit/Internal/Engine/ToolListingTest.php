@@ -494,7 +494,7 @@ final class ToolListingTest extends TestCase
     }
 
     /**
-     * Review Focus 3: a list handler that gives the same next cursor again. The call answers; the rebuild read two
+     * A list handler that gives the same next cursor again. The call answers; the rebuild read two
      * pages and logged one line, and only a tool that no page read named gets the heuristic strip.
      */
     #[Group('ac-02-20')]
@@ -520,7 +520,7 @@ final class ToolListingTest extends TestCase
     }
 
     /**
-     * Review Focus 3: a list handler that gives a new cursor every time. The call answers; the rebuild read 100 pages
+     * A list handler that gives a new cursor every time. The call answers; the rebuild read 100 pages
      * and logged one line, and only a tool that no page read named gets the heuristic strip.
      */
     #[Group('ac-02-22')]

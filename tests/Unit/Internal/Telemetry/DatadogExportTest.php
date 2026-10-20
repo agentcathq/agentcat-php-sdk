@@ -97,7 +97,7 @@ final class DatadogExportTest extends TestCase
         yield 'metrics 500' => [[new HttpResponse(200, 'OK', ''), new HttpResponse(500, 'Internal Server Error', '')], 'Datadog logs success - Status: 200', 'Datadog metrics failed - Status: 500'];
     }
 
-    /** Spec conflict 10: TypeScript's payload building throws on a non-string tag value, before any request. */
+    /** TypeScript's payload building throws on a non-string tag value, before any request. */
     public function testANonStringTagValueSendsNothingAndRejectsWithTheTypeError(): void
     {
         $http = new RecordingHttpChannel();

@@ -40,7 +40,7 @@ final class ClientDiagnosticsTest extends TestCase
 
     private Environment $environment;
 
-    /** `AGENTCAT_DIAGNOSTICS_ENDPOINT`: a closed local port (ruling P8). */
+    /** `AGENTCAT_DIAGNOSTICS_ENDPOINT`: a closed local port, so a test fails closed. */
     private string $endpoint = '';
 
     private MemoryLogger $logger;
@@ -129,7 +129,7 @@ final class ClientDiagnosticsTest extends TestCase
         $this->assertCount(1, array_keys($this->logger->messages(), self::IGNORED, true));
     }
 
-    /** D44 and spec conflict 9: the enabled gate runs before the diagnostics setup. */
+    /** D44: the enabled gate runs before the diagnostics setup, so a disabled client sends nothing. */
     public function testADisabledClientNeverSetsDiagnosticsUp(): void
     {
         putenv('AGENTCAT_DISABLE_DIAGNOSTICS=false');
@@ -168,7 +168,7 @@ final class ClientDiagnosticsTest extends TestCase
         $this->assertFalse(Diagnostics::enabled());
     }
 
-    /** D07 over 06 AC-61 (spec conflict 2): the per-event line carries the actor ID; no other line carries user data. */
+    /** D07 over 06 AC-61: the per-event line carries the actor ID; no other line carries user data. */
     #[Group('ac-06-61')]
     #[MaximumDuration(5000)]
     public function testOnlyTheSentEventLineCarriesTheActorId(): void

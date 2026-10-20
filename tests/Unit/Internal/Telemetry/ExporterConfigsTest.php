@@ -119,7 +119,7 @@ final class ExporterConfigsTest extends TestCase
         ], $this->logger->messages());
     }
 
-    /** A config file switches an exporter off with null (plan E1 header conflict 17). */
+    /** A config file switches an exporter off with null. */
     public function testANullEntryIsSkippedWithoutALine(): void
     {
         $logger = new MemoryLogger();

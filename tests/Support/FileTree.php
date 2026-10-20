@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace AgentCat\Tests\Support;
 
-/** Removes the directories that tests make under the test HOME: the bootstrap removes only plain files there (Ruling R8). */
+/** Removes the directories that tests make under the test HOME: the bootstrap removes only plain files there. */
 final class FileTree
 {
     /** Removes a file, a link, or a directory and everything in it. A path that does not exist, or `''`, is left alone. */

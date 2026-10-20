@@ -130,7 +130,7 @@ final class HarnessTest extends RuntimeTestCase
         $this->assertContains('type=bind,source=' . realpath($out) . '/pool.conf,target=/etc/pool.conf', $command);
     }
 
-    /** PHP must not be PID 1 in a PHP CLI image (header conflict 11): its signal drain's re-raise would not end it. */
+    /** PHP must not be PID 1 in a PHP CLI image: its signal drain's re-raise would not end it. */
     #[MaximumDuration(60000)]
     public function testPhpCliImagesGetAnInitWhateverTheCallerSays(): void
     {

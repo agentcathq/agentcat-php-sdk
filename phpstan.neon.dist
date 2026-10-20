@@ -40,7 +40,7 @@ parameters:
           message: 'Reflection is for contract tests only'
           allowIn:
             - tests/Contract/*
-            # builds a cyclic `previous` chain and a corrupt trace (05 E10)
+            # builds a cyclic `previous` chain and a corrupt trace (ac-05-E10)
             - tests/Unit/Internal/Errors/ExceptionCaptureTest.php
             # reads libcurl's queue of finished transfers off the transport's multi handle: no time can show it
             - tests/Support/UnreadTransfers.php

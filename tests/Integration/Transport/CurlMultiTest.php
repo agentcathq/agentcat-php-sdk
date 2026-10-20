@@ -28,7 +28,7 @@ final class CurlMultiTest extends TestCase
     }
 
     /**
-     * I2 and the N1 ruling: a signal handler runs between two opcodes, so also inside a PHP write callback of
+     * A signal handler runs between two opcodes, so also inside a PHP write callback of
      * `curl_multi_exec()`. There libcurl answers every multi call with `CURLM_RECURSIVE_API_CALL`, and the engine must
      * leave every handle and transfer as it is: removing one there frees a handle that libcurl still uses (a segfault).
      * A refused add waits for the next `run()`. The test keeps every handle alive, so that a regression fails an
@@ -87,7 +87,7 @@ final class CurlMultiTest extends TestCase
         $this->assertSame(0, $multi->count());
     }
 
-    /** N1: PHP runs a signal that arrived during curl_multi_exec() right after it returns; a call from there works as usual. */
+    /** PHP runs a signal that arrived during curl_multi_exec() right after it returns; a call from there works as usual. */
     #[MaximumDuration(5000)]
     public function testACallRightAfterCurlMultiExecReturnsWorksAsUsual(): void
     {

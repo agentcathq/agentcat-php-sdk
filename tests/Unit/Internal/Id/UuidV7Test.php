@@ -11,7 +11,7 @@ use PHPUnit\Framework\TestCase;
 
 final class UuidV7Test extends TestCase
 {
-    /** @return iterable<string, array{string, string}> 06 §6.7, and TS outputs computed with the vendored KSUID code */
+    /** @return iterable<string, array{string, string}> TS outputs, computed with the vendored KSUID code */
     public static function vectors(): iterable
     {
         yield 'session KSUID' => ['ses_2yXlShd4ODDcHLYliGW9VgH3m1R', '01977375-f600-7179-87c6-b00767670c45'];

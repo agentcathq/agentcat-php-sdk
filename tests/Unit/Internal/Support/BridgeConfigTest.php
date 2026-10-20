@@ -9,7 +9,7 @@ use AgentCat\Internal\Support\TestMode;
 use AgentCat\Tests\Support\Environment;
 use PHPUnit\Framework\TestCase;
 
-/** The values of a bridge's configuration that every client reads before the environment (plan E1 header conflict 12). */
+/** The values of a bridge's configuration that every client reads before the environment (a cached configuration). */
 final class BridgeConfigTest extends TestCase
 {
     private Environment $environment;

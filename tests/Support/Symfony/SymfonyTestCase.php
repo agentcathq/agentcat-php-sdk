@@ -31,7 +31,7 @@ use Symfony\Component\HttpKernel\KernelInterface;
 /**
  * Symfony applications with symfony/mcp-bundle, for the bundle tests. Skipped where the bundle is not installed (the
  * mcp/sdk 0.9 leg removes it), unless a test class needs no symfony/mcp-bundle (`needsTheMcpBundle()`). Each kernel compiles its container into a directory of this test under the test HOME,
- * removed after the test (Ruling R8). The AGENTCAT_* variables of the process that runs the tests are cleared, so the
+ * removed after the test. The AGENTCAT_* variables of the process that runs the tests are cleared, so the
  * configuration decides, and the global event queue records its deliveries. A notice, warning or deprecation from a
  * file of `src/` that an error handler of the kernel takes fails the test (`SrcErrorGuard`).
  */

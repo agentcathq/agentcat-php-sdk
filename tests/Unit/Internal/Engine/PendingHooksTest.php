@@ -125,7 +125,7 @@ final class PendingHooksTest extends TestCase
         $this->assertSame(['Error: identify callback threw - RuntimeException: down'], $this->logger->messages());
     }
 
-    /** Review Focus 1. */
+    /** An `identify` hook that returns an array, not an `Identity`: one WARN line, and the event stays anonymous. */
     public function testIdentifyArrayWarnsAndStaysAnonymous(): void
     {
         $event = $this->apply(Options::fromArray(['identify' => static fn(ToolCall $c): array => ['userId' => 'x']]));
@@ -134,7 +134,7 @@ final class PendingHooksTest extends TestCase
         $this->assertSame(['WARN: identify returned array, expected AgentCat\Identity or null; the event stays anonymous'], $this->logger->messages());
     }
 
-    /** Review Focus 1. */
+    /** An `eventTags` hook that returns a string, not an array, keeps only the SDK tags, silently. */
     public function testEventTagsStringKeepsTheSdkTags(): void
     {
         $event = $this->apply(Options::fromArray(['eventTags' => static fn(ToolCall $c): string => 'abc']), 'proj_1', ['agentcat_session_id_source' => 'hook']);
@@ -164,7 +164,7 @@ final class PendingHooksTest extends TestCase
         $this->assertSame([], $this->logger->messages());
     }
 
-    /** Review Focus 1. */
+    /** An `eventProperties` hook that returns false leaves the event without properties, silently. */
     public function testEventPropertiesFalseLeavesNoProperties(): void
     {
         $event = $this->apply(new Options(eventProperties: static fn(ToolCall $c): bool => false));
@@ -173,7 +173,7 @@ final class PendingHooksTest extends TestCase
         $this->assertSame([], $this->logger->messages());
     }
 
-    /** Review Focus 1: a hook whose own return type declaration fails throws a TypeError at hook time. */
+    /** A hook whose own return type declaration fails throws a TypeError at hook time. */
     public function testReturnTypeErrorInsideAHookIsLoggedOnce(): void
     {
         // @phpstan-ignore return.type (the test needs a hook that breaks its own declared return type)

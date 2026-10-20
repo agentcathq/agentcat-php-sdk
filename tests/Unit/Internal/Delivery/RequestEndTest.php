@@ -18,7 +18,7 @@ final class RequestEndTest extends TestCase
     /** @var list<string> */
     private array $calls = [];
 
-    /** Session files of the `detect()` tests, under the test HOME (Ruling R8). */
+    /** Session files of the `detect()` tests, under the test HOME. */
     private string $sessionDir = '';
 
     /** @var array<string, string> the ini settings a test changed, with their values before it */

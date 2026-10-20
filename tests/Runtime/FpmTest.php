@@ -17,9 +17,9 @@ use PHPUnit\Framework\Attributes\Group;
 
 /**
  * PHP-FPM, talked to over FastCGI the way nginx does: the client has its answer when FPM ends the request
- * (`FCGI_END_REQUEST`), and only then does AgentCat's shutdown function run the hooks and deliver (D47, plan E1 header
- * conflicts 13 and 14). Each upper bound sits about 1 s above the measured time and about 1 s below the time the step it
- * guards would add (a 3 s hook or a 3 s collector), ruling P16.
+ * (`FCGI_END_REQUEST`), and only then does AgentCat's shutdown function run the hooks and deliver (D47). Each upper
+ * bound sits about 1 s above the measured time and about 1 s below the time the step it guards would add (a 3 s hook
+ * or a 3 s collector).
  */
 #[Group('runtime')]
 final class FpmTest extends RuntimeTestCase
@@ -70,7 +70,7 @@ final class FpmTest extends RuntimeTestCase
     }
 
     /**
-     * Review Focus 5: AgentCat writes and closes the native session before its drain, so a second request of the same
+     * AgentCat writes and closes the native session before its drain, so a second request of the same
      * session gets the lock while the first one still waits 3 s for the AgentCat API. Without that, PHP would write the
      * session after the shutdown functions, after the drain.
      */
@@ -139,7 +139,7 @@ final class FpmTest extends RuntimeTestCase
     }
 
     /**
-     * Plan E1 header conflict 6: a streamed laravel/mcp answer (two progress notifications 50 ms apart, then the result)
+     * A streamed laravel/mcp answer (two progress notifications 50 ms apart, then the result)
      * reaches the client as server-sent events, and its event comes when the stream ends, with a `duration` that covers
      * the stream.
      */
@@ -162,7 +162,7 @@ final class FpmTest extends RuntimeTestCase
     }
 
     /**
-     * Header conflict 7 (D58): under PHP-FPM `Response::send()` finishes the request, `kernel.terminate` makes one
+     * D58: under PHP-FPM `Response::send()` finishes the request, `kernel.terminate` makes one
      * non-blocking pass, and AgentCat's shutdown function delivers, so the client has its answer before the collector
      * answers 3 s later. An untimed first request compiles the container.
      */

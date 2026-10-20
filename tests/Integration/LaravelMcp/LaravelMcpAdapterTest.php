@@ -210,7 +210,7 @@ final class LaravelMcpAdapterTest extends LaravelTestCase
     }
 
     /**
-     * `createContext()` is public customer code, not a protected-member read (Task 5 review minor 3): what it throws
+     * `createContext()` is public customer code, not a protected-member read: what it throws
      * leaves the name and version unknown and logs nothing; a deprecation it triggers costs nothing.
      */
     public function testAServerInfoThatCannotBeReadIsUnknownWithoutALine(): void
@@ -256,7 +256,7 @@ final class LaravelMcpAdapterTest extends LaravelTestCase
 
     /**
      * Symfony refuses an invalid method override, which the client controls: no HTTP context, and no compatibility line
-     * (Task 5 review minor 2).
+     * (the library did not drift).
      */
     public function testARequestLaravelCannotReadHasNoHttpContextAndLogsNothing(): void
     {
@@ -294,7 +294,7 @@ final class LaravelMcpAdapterTest extends LaravelTestCase
     }
 
     /**
-     * A drifted transport costs the HTTP context, never the event: one line per server (plan E1 Task 4 carry, D32).
+     * A drifted transport costs the HTTP context, never the event: one line per server (D32).
      *
      * @param \Closure(Server): void $drift
      */

@@ -23,7 +23,7 @@ use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
- * Tracks each symfony/mcp-bundle server when the container builds its Builder (plan E2 header conflicts 2, 5, 6, 14).
+ * Tracks each symfony/mcp-bundle server when the container builds its Builder.
  * Never throws: the customer's server must come out of the container whatever AgentCat does.
  *
  * One tracker serves the container (a worker's too). At the first server, it reads the configuration, whose environment
@@ -99,8 +99,8 @@ final class ServerTracker
             $this->lines = [];
             $client = AgentCat::client();
             $context = $this->requests instanceof RequestStack ? RequestStackContext::of($this->requests) : null;
-            // A fake records every server (header conflict 6), with the request of each call, as production sends it
-            // (D41); the shared client is never replaced.
+            // A fake records every server whatever `agentcat.enabled` says, with the request of each call, as
+            // production sends it (D41); the shared client is never replaced.
             if (!FakeLog::of($client) instanceof FakeLog) {
                 $client = $this->client ??= new Client(ClientSeams::of(EventQueue::global(), EnabledGate::of($config['enabled'] ?? null), httpContext: $context));
             } elseif ($context instanceof \Closure) {

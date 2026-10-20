@@ -15,7 +15,7 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ServiceLocator;
 
 /**
- * Plan E2 header conflicts 1 and 2: the configurator the builder had runs first, then AgentCat tracks, then the
+ * The configurator the builder had runs first, then AgentCat tracks, then the
  * customer's tagged handlers are added. Each step writes a line, so their order is the order of the lines.
  */
 final class BuilderConfiguratorTest extends TestCase

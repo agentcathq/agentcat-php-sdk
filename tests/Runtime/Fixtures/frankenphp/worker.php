@@ -15,7 +15,7 @@ use Mcp\Server\Transport\StreamableHttpTransport;
 
 require dirname(__DIR__, 4) . '/vendor/autoload.php';
 
-// The worker loop Plan F documents: one server per request, AgentCat::flush() after each response. With
+// The worker loop that the README documents: one server per request, AgentCat::flush() after each response. With
 // AGENTCAT_E2E_BOOT_SERVER=1, one server is tracked and built at worker boot, outside any request, and serves every
 // request; its AgentCat API and diagnostics then come from the container's environment. Each answer carries what the
 // SDK detects in the request, read through its internal classes (hence AgentCat's namespace).

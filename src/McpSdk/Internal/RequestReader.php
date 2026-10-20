@@ -48,7 +48,7 @@ final readonly class RequestReader
             $meta[Constants::META_CLIENT_INFO_KEY] ?? null,
             $session->get('client_info'),
         );
-        // Never the session's negotiated `protocol_version` (02 §3.3): only what the call itself claims.
+        // Never the session's negotiated `protocol_version`: only what the call itself claims.
         $protocolVersion = $requestMeta instanceof RequestMeta ? $requestMeta->protocolVersion : CallTrees::claimedVersion($meta);
         $transportSessionId = $requestMeta instanceof RequestMeta ? null : (string) $session->getId(); // the Mcp-Session-Id
         $http = ($this->http)();

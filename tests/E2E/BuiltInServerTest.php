@@ -17,7 +17,7 @@ final class BuiltInServerTest extends TestCase
 {
     private const float DEADLINE_SECONDS = 5.0;
 
-    /** Markers of the hung server, under the test HOME (Ruling R8). */
+    /** Markers of the hung server, under the test HOME. */
     private string $dir = '';
 
     #[\Override]

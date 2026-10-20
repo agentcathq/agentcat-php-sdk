@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace AgentCat\Tests\Architecture;
 
+use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\View\Compilers\BladeCompiler;
 use PHPUnit\Framework\TestCase;
 
 /**
  * The files that ship next to `src/`: the changelog, the Composer metadata and the Laravel Boost guidelines, which
- * Boost loads from `resources/boost/guidelines/core.blade.php` into the AI agent of a Laravel application.
+ * Boost loads from `resources/boost/guidelines/core.blade.php` into the AI agent of a Laravel application. And the
+ * comments of every committed file state their rules: the documents the project was planned in are not public.
  */
 final class PackageFilesTest extends TestCase
 {
@@ -45,6 +47,38 @@ final class PackageFilesTest extends TestCase
     private const array PHP_KEYWORDS = ['php', 'laravel', 'symfony', 'mcp-sdk'];
 
     private const string GUIDELINE = self::ROOT . '/resources/boost/guidelines/core.blade.php';
+
+    /** The committed paths whose text must not point at the planning documents. */
+    private const array PUBLIC_PATHS = ['src', 'tests', 'config', 'resources', '.github', 'README.md', 'CHANGELOG.md', 'CONTRIBUTING.md'];
+
+    /** This file: it holds the pattern and the references that prove it. */
+    private const string SELF = 'tests/Architecture/PackageFilesTest.php';
+
+    /**
+     * A reference to a planning document: its paths, its ledgers, numbered header and spec conflicts, review focus
+     * items, numbered rulings, plan and task numbers, an appendix, numbered findings and open questions, a numbered
+     * section of an audit document, and the short IDs of review notes as references (`(C6)`, `A4:`, `N10)`). Decision
+     * IDs (`D07`), bug IDs (`B10`) and criterion IDs (`ac-05-E5`) stay: the code names them as rules. Each alternative
+     * needs a number or an ID next to its word, so ordinary words ("a plan", "the header", "a task") never match.
+     */
+    private const string PLANNING_REFERENCE = <<<'REGEX'
+        ~
+          docs/(?:audit|superpowers) | \.superpowers\b
+        | \b(?:[Pp]lan\s+[A-F][0-9]? | [A-F][0-9])\s+ledgers?\b
+        | \b(?:[Hh]eader|[Ss]pec)\s+conflicts?\s+[0-9]
+        | \b[Rr]eview[\s-]+[Ff]ocus\b
+        | \b[Rr]ulings?\s+[A-Z][0-9]+\b | \b[A-Z][0-9]+\s+ruling\b
+        | \bPlans?\s+[A-F][0-9]?\b | \bplans?\s+[A-F][0-9]\b
+        | \bTasks?\s+[0-9]+\b
+        | \b[Aa]ppendix\s+[A-Z]\b
+        | \b[Ff]indings?\s+[A-Z]?[0-9]+\b
+        | \b[Oo]pen\s+questions?\s+[A-Z]?[0-9]+\b
+        | \b[Aa]udit\s+[0-9]
+        | \bDECISIONS\b
+        | (?<![\w$\\'{}-])[ACEFIMNQ][0-9]{1,2}(?=:|\)|\s+(?:of|and|header|carry|review|ruling)\b)
+        | (?:\bREADME | \b0[0-9][a-c]? | `0[0-9][a-c]?`)\s+\x{00A7}
+        ~xu
+        REGEX;
 
     public function testTheChangelogStartsWithTheKeepAChangelogHeader(): void
     {
@@ -167,6 +201,77 @@ final class PackageFilesTest extends TestCase
         foreach ($attributes as $line) {
             $this->assertDoesNotMatchRegularExpression('#\A/?(?:CHANGELOG\.md|resources)\b#', $line, 'CHANGELOG.md and resources/ go into the dist');
         }
+    }
+
+    /** A comment states its rule: no committed file points at the documents the project was planned in. */
+    #[MaximumDuration(3000)] // reads every file of the public paths
+    public function testNoCommittedFileNamesThePlanningDocuments(): void
+    {
+        $found = [];
+        $files = 0;
+        foreach (self::PUBLIC_PATHS as $path) {
+            foreach ($this->files(self::ROOT . '/' . $path) as $file) {
+                if (str_ends_with($file, '/' . self::SELF)) {
+                    continue;
+                }
+                ++$files;
+                $text = file_get_contents($file);
+                $this->assertIsString($text, $file);
+                if (preg_match('//u', $text) !== 1) {
+                    continue; // not UTF-8 text: an image or another binary fixture
+                }
+                // A reference that wraps onto the next comment line still counts: the line breaks become spaces.
+                $joined = (string) preg_replace('~\\R[ \\t]*(?:\\*(?!/)|//|#)?[ \\t]*~u', ' ', $text);
+                if (preg_match_all(self::PLANNING_REFERENCE, $joined, $matches) > 0) {
+                    $found[] = sprintf('%s: %s', substr($file, strlen(self::ROOT) + 1), implode(', ', array_unique($matches[0])));
+                }
+            }
+        }
+
+        $this->assertGreaterThan(500, $files, 'the scan reads the public paths');
+        $this->assertSame([], $found, "These files point at planning documents; state the rule instead:\n" . implode("\n", $found));
+    }
+
+    /** The pattern finds each kind of reference, and not the IDs and words that stay. */
+    public function testThePlanningReferencePatternFindsReferencesOnly(): void
+    {
+        $references = [
+            'plan E1', 'Plan F', 'Task 13', 'header conflict 3', 'Spec conflicts 1', 'Review Focus 2',
+            'review-focus-2', 'ruling P8', 'Ruling R4', 'the E2 ledger', 'Appendix A', 'finding F1',
+            'open question Q3', 'audit 3.3', 'DECISIONS item 6', 'docs/audit/02-engine.md', '(C6)',
+            'A4: the opt-out', 'N10)', "02 \u{00A7}3.3", "README \u{00A7}4.5", "`07` \u{00A7}6.7",
+        ];
+        foreach ($references as $reference) {
+            $this->assertSame(1, preg_match(self::PLANNING_REFERENCE, $reference), $reference);
+        }
+        $kept = [
+            'D07', 'D66, B10 fixed', 'ac-05-E5', "'ac-05-C2'", "RFC 9110 \u{00A7}8.6", '$e1 = new \\Exception()',
+            "pack('C4', \$bytes)", '\\u{a1}A9\\u{5b}', 'E2E', 'a secret plan', 'the plan is pro',
+            'tasks in the queue', 'composer audit', 'the header line', 'a ruler', 'mcp/sdk 0.9.0', 'PHP 8.5',
+            'Swoole 6.2', 'a task 3 s later', 'a plan B', 'A ledger of payments', 'two header conflicts',
+            'the court ruling', 'an Apple M2 chip', 'Q3 2026', 'Task: none',
+        ];
+        foreach ($kept as $text) {
+            $this->assertSame(0, preg_match(self::PLANNING_REFERENCE, $text), $text);
+        }
+    }
+
+    /** @return list<string> the files at `$path`, recursively */
+    private function files(string $path): array
+    {
+        if (is_file($path)) {
+            return [$path];
+        }
+        $this->assertDirectoryExists($path);
+        $files = [];
+        foreach (new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($path, \FilesystemIterator::SKIP_DOTS)) as $file) {
+            if ($file instanceof \SplFileInfo && $file->isFile()) {
+                $files[] = $file->getPathname();
+            }
+        }
+        sort($files);
+
+        return $files;
     }
 
     private function guideline(): string

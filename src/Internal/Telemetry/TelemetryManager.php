@@ -61,7 +61,7 @@ final class TelemetryManager implements ExporterSink
 
     /**
      * First wins (TypeScript: process-global; here per queue, which is the process queue outside tests). Null
-     * changes nothing; a later different set logs one WARN line (09 §5.2); a sink that is not ours stays.
+     * changes nothing; a later different set logs one WARN line; a sink that is not ours stays.
      *
      * @param array<array-key, mixed>|null $configs
      */
@@ -101,7 +101,7 @@ final class TelemetryManager implements ExporterSink
     }
 
     /**
-     * Ruling P3: a set that cannot be serialized (a closure) or whose serialization warns counts as different, and
+     * A set that cannot be serialized (a closure) or whose serialization warns counts as different, and
      * nothing throws or reaches the output (D32).
      *
      * @param array<array-key, mixed> $configs

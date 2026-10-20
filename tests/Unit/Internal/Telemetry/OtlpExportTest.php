@@ -71,7 +71,7 @@ final class OtlpExportTest extends TestCase
         yield 'a network error (TS: the fetch rejection)' => [HttpResponse::failed('cURL error 7: Failed to connect'), 'Telemetry export failed for otlp: OTLP export error: cURL error 7: Failed to connect'];
     }
 
-    /** Spec conflict 1 (D15, B04): a truthy duration that is not an integer fails like BigInt() and sends nothing. */
+    /** D15, B04: a truthy duration that is not an integer fails like BigInt() and sends nothing. */
     #[DataProvider('fractionalDurations')]
     #[Group('ac-06-24')]
     public function testAFractionalDurationSendsNothingAndRejectsWithTheRangeError(float $duration, string $number): void

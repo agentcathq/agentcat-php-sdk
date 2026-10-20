@@ -68,7 +68,7 @@ final class LaravelConformanceHarness implements ConformanceHarness
     /**
      * The conformance server, tracked by `Client::track()` after an earlier one, which the client had tracked with
      * `enableTracing: false`, was freed. Asserts that the new server has the old one's object ID, so the same
-     * container keys, and that its binding replaced the old one's (plan E1 header conflict 3).
+     * container keys, and that its binding replaced the old one's.
      */
     public static function reusedObjectId(): self
     {

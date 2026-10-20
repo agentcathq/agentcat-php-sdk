@@ -33,7 +33,7 @@ final class LaravelHttpContextTest extends TestCase
         $this->assertSame('https://Example.test:8443/mcp/?b=2&a=1', LaravelHttpContext::of($request)->url);
     }
 
-    /** No `Host` header, no full URL (C15), as the SAPI reading has it; Symfony would fall back to `SERVER_NAME`. */
+    /** No `Host` header, no full URL, as the SAPI reading has it; Symfony would fall back to `SERVER_NAME`. */
     public function testARequestWithoutAHostHeaderHasNoUrl(): void
     {
         $request = new Request(server: ['REQUEST_METHOD' => 'POST', 'SERVER_NAME' => 'example.test', 'REQUEST_URI' => '/mcp']);

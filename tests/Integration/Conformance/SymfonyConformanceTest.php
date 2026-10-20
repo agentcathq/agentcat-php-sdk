@@ -79,8 +79,8 @@ final class SymfonyConformanceTest extends SymfonyTestCase
     /**
      * Library difference: the bundle serves mcp/sdk, so a handshake-era call has mcp/sdk's transport session (the
      * `Mcp-Session-Id`) in `extra`, never as the event's session (ac-02-46), as on the mcp/sdk leg. Unlike plain
-     * mcp/sdk, whose adapter reads the SAPI, the bundle gives the adapter the `RequestStack` (plan E2 header conflict
-     * 5): a request in this process has its `requestInfo`.
+     * mcp/sdk, whose adapter reads the SAPI, the bundle gives the adapter the `RequestStack`: a request in this process
+     * has its `requestInfo`.
      */
     #[Group('ac-02-43')]
     #[Group('ac-02-46')]

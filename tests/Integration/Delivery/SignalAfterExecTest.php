@@ -15,7 +15,7 @@ use Symfony\Component\Process\Exception\ProcessSignaledException;
 use Symfony\Component\Process\Process;
 
 /**
- * N1: PHP runs a SIGTERM that arrived during curl_multi_exec() right after that call returns (`signal-after-exec.php`).
+ * PHP runs a SIGTERM that arrived during curl_multi_exec() right after that call returns (`signal-after-exec.php`).
  * The drain runs there, with the default disposition after it, and must still deliver.
  */
 #[RequiresPhpExtension('pcntl')]
@@ -101,7 +101,7 @@ final class SignalAfterExecTest extends TestCase
     }
 
     /**
-     * I1: an application's own handler that throws right after curl_multi_exec() returns (five times per process). On
+     * An application's own handler that throws right after curl_multi_exec() returns (five times per process). On
      * PHP 8.3 this corrupted the frame while the exec call was nested in another call's arguments: before the fix the
      * fixture crashed in most runs (see the report). Now the server goes on, delivers every event and exits 0.
      */

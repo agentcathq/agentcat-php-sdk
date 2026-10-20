@@ -60,7 +60,7 @@ final class SentryDsnTest extends TestCase
     }
 
     /**
-     * A3: the message names the DSN with its user-info masked: the public key, and the secret of a legacy
+     * The message names the DSN with its user-info masked: the public key, and the secret of a legacy
      * `https://public:secret@host/1` DSN, never reach a log line or diagnostics. Scheme, host, port and path stay.
      * A deliberate divergence from TypeScript, which prints the whole DSN.
      */

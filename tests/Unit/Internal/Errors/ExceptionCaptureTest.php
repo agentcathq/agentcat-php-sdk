@@ -457,7 +457,6 @@ final class ExceptionCaptureTest extends TestCase
     }
 
     /** TS `JSON.stringify` gives the JSON text: each bad byte becomes U+FFFD and a non-finite number `null`. */
-    #[Group('review-focus-1')]
     #[DataProvider('jsonStringifyProvider')]
     public function testNonThrowableIsStringifiedLikeJsonStringify(mixed $value, string $message): void
     {
@@ -660,7 +659,6 @@ final class ExceptionCaptureTest extends TestCase
     }
 
     #[DataProvider('legacyMessageProvider')]
-    #[Group('review-focus-2')]
     public function testNonStringMessageUnderAThrowingErrorHandler(mixed $message, string $expected): void
     {
         $error = self::legacyError($message);
@@ -691,7 +689,6 @@ final class ExceptionCaptureTest extends TestCase
         $this->assertSame(['message' => $expected, 'type' => LegacyMessageException::class, 'platform' => 'php'], get_object_vars($data));
     }
 
-    #[Group('review-focus-1')]
     public function testInvalidUtf8MessageIsKeptRawAndEncodesWithReplacementCharacters(): void
     {
         $message = "Incorrect string value: '\xE9t\xE9'";

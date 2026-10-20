@@ -90,7 +90,7 @@ final readonly class OtlpPayload
 
     /**
      * TS `start + BigInt(duration) * 1e6` when the duration is truthy. Exact in integers while the end fits an int;
-     * beyond that float arithmetic (spec conflict 7).
+     * beyond that float arithmetic.
      *
      * @throws JsError a truthy duration that is not an integer
      */

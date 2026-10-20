@@ -842,7 +842,6 @@ final class TruncatorTest extends TestCase
      *
      * @param \Closure(int): mixed $build
      */
-    #[Group('review-focus-3')]
     #[DataProvider('cloneNestingProvider')]
     #[MaximumDuration(2000)]
     public function testLastResortCloneIsCappedAtFiveHundredTwelve(\Closure $build): void

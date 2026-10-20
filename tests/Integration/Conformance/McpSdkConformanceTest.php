@@ -100,8 +100,8 @@ final class McpSdkConformanceTest extends TestCase
 
     /**
      * Library difference: a handshake-era call has mcp/sdk's transport session in `extra`, never as the event's session
-     * (ac-02-46); laravel/mcp 1.x has no sessions (plan E1 header conflict 8). The adapter reads the HTTP request from
-     * the SAPI (`$_SERVER`, plan C1 conflict 8), which a request in this process does not set: no `requestInfo`.
+     * (ac-02-46); laravel/mcp 1.x has no sessions. The adapter reads the HTTP request from the SAPI (`$_SERVER`), which
+     * a request in this process does not set: no `requestInfo`.
      */
     #[Group('ac-02-46')]
     public function testExtraHasTheTransportSessionOfTheHandshakeAndNoRequestInfoInProcess(): void

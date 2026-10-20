@@ -15,7 +15,7 @@ use Mcp\Server\Builder;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
-/** How mcp/sdk's error answers become error events (plan header conflict 3, D16). */
+/** How mcp/sdk's error answers become error events (D16); a JSON-RPC error is never decorated. */
 final class CallErrorsTest extends TestCase
 {
     private TrackingFixture $fixture;
@@ -82,7 +82,7 @@ final class CallErrorsTest extends TestCase
 
         $this->assertEquals((object) ['code' => Error::INTERNAL_ERROR, 'message' => 'Error while executing tool'], $answer->error);
         $this->assertEquals($twin->error, $answer->error);
-        $this->assertObjectNotHasProperty('result', $answer, 'no mint-back on a JSON-RPC error (header conflict 3)');
+        $this->assertObjectNotHasProperty('result', $answer, 'no mint-back on a JSON-RPC error');
         $event = $this->fixture->event();
         $this->assertTrue($event->isError);
         $this->assertSame('RuntimeException', JsonAssert::at($event->error, 'type'));

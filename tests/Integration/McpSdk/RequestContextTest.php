@@ -64,7 +64,7 @@ final class RequestContextTest extends TestCase
     {
         $harness = $this->tracked();
 
-        // C2: mcp/sdk rejects a handshake call whose claim differs from its MCP-Protocol-Version header.
+        // mcp/sdk rejects a handshake call whose claim differs from its MCP-Protocol-Version header.
         $harness->callTool('echo', ['msg' => 'hi'], [Constants::META_PROTOCOL_VERSION_KEY => '2025-06-18']);
         $harness->callTool('echo', ['msg' => 'hi']);
         $harness->callToolModern('echo', ['msg' => 'hi']);
@@ -213,7 +213,7 @@ final class RequestContextTest extends TestCase
         $this->assertNull($read(20250618));
     }
 
-    /** N7: `authInfo` exists when the session holds an access token (mcp/sdk main), read by duck typing. */
+    /** `authInfo` exists when the session holds an access token (mcp/sdk main), read by duck typing. */
     public function testExtraCarriesTheAccessTokenAsAuthInfo(): void
     {
         $session = new Session(new InMemorySessionStore());

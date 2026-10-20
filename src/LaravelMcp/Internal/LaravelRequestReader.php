@@ -14,7 +14,7 @@ use Laravel\Mcp\Server\ServerContext;
 use Laravel\Mcp\Transport\JsonRpcRequest;
 
 /**
- * Reads what an event records and the hooks see from a laravel/mcp `tools/call` request (plan E1 header conflict 8):
+ * Reads what an event records and the hooks see from a laravel/mcp `tools/call` request:
  * the client from the call's `_meta`, else from the legacy handshake of the same server; the protocol version only
  * from the call's `_meta`. laravel/mcp 1.x has no transport session and no MCP-level auth object.
  *

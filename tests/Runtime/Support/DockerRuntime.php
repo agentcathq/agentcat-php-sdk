@@ -8,8 +8,7 @@ use AgentCat\Internal\Constants;
 use Symfony\Component\Process\Process;
 
 /**
- * A container of the runtime tests, and the `docker run` lines that start one (header conflicts 10 and 11, rulings
- * P14 and P15).
+ * A container of the runtime tests, and the `docker run` lines that start one.
  *
  * Every container uses host networking and reaches only 127.0.0.1: its environment must point `AGENTCAT_API_URL` and
  * `AGENTCAT_DIAGNOSTICS_ENDPOINT` there (`RuntimeTestCase::env()`), so a fixture that forgets its collector fails
@@ -126,7 +125,7 @@ final class DockerRuntime
      * @param array<string, string>  $mounts   host path (in the output directory) => container path
      * @param bool                   $init     `--init`; `Images::cli()` and `Images::swoole()` always get it
      * @param float                  $timeout  how long the port may take to accept a connection
-     * @param bool                   $remove   false keeps a stopped container for `logs()` until `stop()` (ruling P16)
+     * @param bool                   $remove   false keeps a stopped container for `logs()` until `stop()`
      * @param float                  $lifetime how long the container may run at most: longer than any runtime test
      */
     public static function start(
@@ -217,7 +216,7 @@ final class DockerRuntime
 
     /**
      * Makes everything under `$dir` writable for everyone, so the test can remove what a container wrote there as
-     * root or www-data (ruling P14). The container sees only `$dir`, at `/out`, and no network.
+     * root or www-data. The container sees only `$dir`, at `/out`, and no network.
      */
     public static function makeRemovable(string $dir): void
     {

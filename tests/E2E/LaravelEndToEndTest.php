@@ -23,7 +23,7 @@ use PHPUnit\Framework\TestCase;
  * with laravel/mcp's `conformance-server`: served over HTTP by `php -S` through Laravel's own front-controller steps
  * (`Laravel/http.php`), and over stdio by `php artisan mcp:start` (`Laravel/artisan.php`). Under `php -S` every request
  * is a fresh PHP request with a fresh application, like PHP-FPM, and AgentCat's shutdown function delivers its event
- * within the 5 s budget (plan E1 header conflict 13). A stdio server is one process for the whole MCP session, like a
+ * within the 5 s budget. A stdio server is one process for the whole MCP session, like a
  * server that an MCP host starts; it delivers at stdin EOF and at SIGTERM.
  */
 final class LaravelEndToEndTest extends TestCase
@@ -32,7 +32,7 @@ final class LaravelEndToEndTest extends TestCase
 
     private const string HANDSHAKE_PROTOCOL_VERSION = '2025-06-18';
 
-    /** How long a test waits for its event at the collector (ruling P8). */
+    /** How long a test waits for its event at the collector. */
     private const float COLLECTOR_DEADLINE_SECONDS = 5.0;
 
     /** The hook sleeps first, then the delivery has its usual time. */
@@ -47,7 +47,7 @@ final class LaravelEndToEndTest extends TestCase
 
     private static ?BuiltInServer $http = null;
 
-    /** The directory of this class under the test HOME (Ruling R8): one HOME per server, each with its application. */
+    /** The directory of this class under the test HOME: one HOME per server, each with its application. */
     private static string $dir = '';
 
     /** The HOME of the `php -S` server: its application, with AgentCat's log, and the hook's marker. */
