@@ -17,6 +17,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# The collector and the probe talk to 127.0.0.1 only: no proxy may intercept them.
+unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
+export no_proxy=127.0.0.1,localhost NO_PROXY=127.0.0.1,localhost
+
 rm -rf "$root" && mkdir -p "$dist" "$project" "$home"
 
 # 1. The dist.
@@ -28,8 +32,8 @@ fail=0
 require() { if [ ! -e "$dist/$1" ]; then echo "dist: missing $1" >&2; fail=1; fi; }
 forbid() { if compgen -G "$dist/$1" >/dev/null; then echo "dist: must not contain $1" >&2; fail=1; fi; }
 for path in src config composer.json README.md LICENSE; do require "$path"; done
-# TODO(Task 13): CHANGELOG.md and resources/boost/guidelines/core.blade.php are expected only while git tracks them.
-# Task 13 makes both strict: delete the git ls-files conditions below, or set PROBE_STRICT_DIST=1 to try it now.
+# CHANGELOG.md and the Boost guideline (resources/boost/guidelines/core.blade.php) are required once git tracks them.
+# Set PROBE_STRICT_DIST=1 to require both whatever git tracks.
 for path in CHANGELOG.md resources/boost/guidelines/core.blade.php; do
   if [ "${PROBE_STRICT_DIST:-}" = 1 ] || [ -n "$(git ls-files -- "$path")" ]; then require "$path"; fi
 done
@@ -62,10 +66,16 @@ log="$root/collector.log"
 port="$(free_port)"
 AGENTCAT_PROBE_COLLECTOR_LOG="$log" php -S "127.0.0.1:$port" "$root/router.php" >"$root/collector.out" 2>&1 &
 collector_pid=$!
+listening=0
 for _ in $(seq 1 50); do
-  if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then break; fi
+  if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then listening=1; break; fi
   sleep 0.1
 done
+if [ "$listening" = 0 ]; then
+  echo "collector: nothing accepted a connection on 127.0.0.1:$port within 5 s" >&2
+  cat "$root/collector.out" >&2
+  exit 1
+fi
 closed_port="$(free_port)" # nothing listens on it
 
 # 5. The probe, with every URL local and a fresh HOME.

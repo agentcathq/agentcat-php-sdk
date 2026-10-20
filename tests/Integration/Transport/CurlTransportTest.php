@@ -413,9 +413,12 @@ final class CurlTransportTest extends TestCase
         $transport->start(new Delivery("http://127.0.0.1/\0", '{}', 'evt_x', 'summary'));
 
         $this->assertSame(0, $transport->inFlight());
-        $this->assertSame(
-            [self::GAVE_UP . 'ValueError: curl_setopt_array(): cURL option must not contain any null bytes'],
-            $this->logger->messages(),
+        $messages = $this->logger->messages();
+        $this->assertCount(1, $messages);
+        // PHP 8.6 names the option ("cURL option CURLOPT_URL must not …"); 8.3 to 8.5 do not.
+        $this->assertMatchesRegularExpression(
+            '~^' . preg_quote(self::GAVE_UP . 'ValueError: curl_setopt_array(): cURL option ', '~') . '.*must not contain any null bytes$~',
+            $messages[0],
         );
     }
 

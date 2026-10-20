@@ -3,9 +3,6 @@ includes:
 parameters:
     level: max
     paths: [src, tests]
-    excludePaths:
-        # Runs in a fresh project with its own vendor/ (tests/bin/package-probe.sh), not in this repository.
-        - tests/Fixtures/package-probe
     tmpDir: .cache/phpstan
     checkMissingCallableSignature: true
     checkUninitializedProperties: true
@@ -18,6 +15,13 @@ parameters:
     # analysed), and it has no Eloquent models.
     noEnvCallsOutsideOfConfig: false
     checkModelProperties: false
+    ignoreErrors:
+        -
+            # The probe runs in a fresh project (tests/bin/package-probe.sh) whose vendor/ does not exist in this repository.
+            message: '#^Path in require\(\) .* is not a file or it does not exist\.$#'
+            identifier: require.fileNotFound
+            path: tests/Fixtures/package-probe/probe.php
+            count: 1
     type_coverage:
         return: 100
         param: 100

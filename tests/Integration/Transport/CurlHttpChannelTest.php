@@ -461,8 +461,12 @@ final class CurlHttpChannelTest extends TestCase
         $this->assertSame(1, $channel->inTransfer(), 'the next request started in the same pass');
         $this->assertTrue($this->drain($channel, 2.0));
         $this->assertCount(3, $responses);
-        $nul = 'ValueError: curl_setopt_array(): cURL option must not contain any null bytes';
-        $this->assertSame([$nul, $nul, null], array_map(static fn(HttpResponse $response): ?string => $response->error, $responses));
+        $errors = array_map(static fn(HttpResponse $response): ?string => $response->error, $responses);
+        // PHP 8.6 names the option ("cURL option CURLOPT_URL must not …"); 8.3 to 8.5 do not.
+        $nul = '~^ValueError: curl_setopt_array\(\): cURL option .*must not contain any null bytes$~';
+        $this->assertMatchesRegularExpression($nul, (string) $errors[0]);
+        $this->assertMatchesRegularExpression($nul, (string) $errors[1]);
+        $this->assertNull($errors[2]);
         $this->assertSame(202, $responses[2]->status);
         $this->assertCount(1, $this->collector()->requests($url));
     }

@@ -55,21 +55,21 @@ file_put_contents($serverScript, <<<'PHP'
     exit($builder->build()->run(new StdioTransport()));
     PHP);
 
-$process = proc_open(
-    [PHP_BINARY, $serverScript],
-    [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-    $pipes,
-    __DIR__,
-);
+$descriptors = [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
+$process = proc_open([PHP_BINARY, $serverScript], $descriptors, $pipes, __DIR__);
 if (!is_resource($process)) {
     fail('the server did not start');
+}
+[$stdin, $stdout, $stderrPipe] = [$pipes[0] ?? null, $pipes[1] ?? null, $pipes[2] ?? null];
+if (!is_resource($stdin) || !is_resource($stdout) || !is_resource($stderrPipe)) {
+    fail('the server pipes did not open');
 }
 
 $deadline = microtime(true) + PROBE_TIMEOUT_SECONDS;
 $buffer = '';
 
 /** Reads stdout until the answer to request $id arrives. */
-$receive = static function (int $id) use (&$pipes, &$buffer, $deadline): stdClass {
+$receive = static function (int $id) use ($stdout, &$buffer, $deadline): stdClass {
     while (true) {
         while (($newline = strpos($buffer, "\n")) !== false) {
             $line = substr($buffer, 0, $newline);
@@ -83,11 +83,11 @@ $receive = static function (int $id) use (&$pipes, &$buffer, $deadline): stdClas
         if ($remaining <= 0) {
             fail("no answer to request {$id} before the deadline");
         }
-        $read = [$pipes[1]];
+        $read = [$stdout];
         $write = null;
         $except = null;
         if (stream_select($read, $write, $except, 0, (int) min(500_000, $remaining * 1_000_000)) === 1) {
-            $chunk = fread($pipes[1], 65536);
+            $chunk = fread($stdout, 65536);
             if ($chunk === '' || $chunk === false) {
                 fail('the server closed stdout before it answered request ' . $id);
             }
@@ -95,8 +95,9 @@ $receive = static function (int $id) use (&$pipes, &$buffer, $deadline): stdClas
         }
     }
 };
-$send = static function (array $message) use (&$pipes): void {
-    fwrite($pipes[0], json_encode($message, JSON_THROW_ON_ERROR) . "\n");
+/** @param array<string, mixed> $message */
+$send = static function (array $message) use ($stdin): void {
+    fwrite($stdin, json_encode($message, JSON_THROW_ON_ERROR) . "\n");
 };
 
 $send(['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => [
@@ -112,28 +113,36 @@ $send(['jsonrpc' => '2.0', 'method' => 'notifications/initialized']);
 $send(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/call', 'params' => ['name' => 'echo', 'arguments' => ['msg' => 'probe']]]);
 $call = $receive(2);
 // The first call of a session also carries AgentCat's session_id block, so look for the tool's own block.
-$texts = array_map(static fn(mixed $block): mixed => $block->text ?? null, $call->result->content ?? []);
+$result = $call->result ?? null;
+$blocks = $result instanceof stdClass && is_array($result->content ?? null) ? $result->content : [];
+$texts = [];
+foreach ($blocks as $block) {
+    if ($block instanceof stdClass && is_string($block->text ?? null)) {
+        $texts[] = $block->text;
+    }
+}
 if (!in_array('echo: probe', $texts, true)) {
     fail('tools/call did not answer "echo: probe": ' . json_encode($call));
 }
 
 // stdin EOF ends the server; AgentCat delivers the queued event at shutdown.
-fclose($pipes[0]);
-$status = null;
-while (($status = proc_get_status($process))['running']) {
+fclose($stdin);
+while (proc_get_status($process)['running']) {
     if (microtime(true) > $deadline) {
         proc_terminate($process);
         fail('the server did not exit after stdin closed');
     }
     usleep(20_000);
 }
-$stderr = stream_get_contents($pipes[2]);
+$stderr = stream_get_contents($stderrPipe);
 proc_close($process);
 
 $events = [];
-foreach (is_file($logFile) ? (file($logFile, FILE_IGNORE_NEW_LINES) ?: []) : [] as $line) {
+$lines = is_file($logFile) ? file($logFile, FILE_IGNORE_NEW_LINES) : false;
+foreach ($lines === false ? [] : $lines as $line) {
     $request = json_decode($line, true);
-    $body = is_array($request) && is_string($request['body'] ?? null) ? json_decode($request['body'], true) : null;
+    $rawBody = is_array($request) ? ($request['body'] ?? null) : null;
+    $body = is_string($rawBody) ? json_decode($rawBody, true) : null;
     if (is_array($body) && isset($body['resource_name'])) {
         $events[] = $body;
     }
