@@ -15,7 +15,9 @@ use AgentCat\Internal\Transport\Delivery;
 use AgentCat\Tests\Integration\Support\MockCollector;
 use AgentCat\Tests\Support\Environment;
 use AgentCat\Tests\Support\FileTree;
+use AgentCat\Tests\Support\GlobalHandlers;
 use AgentCat\Tests\Support\RecordingTransport;
+use AgentCat\Tests\Support\SrcErrorGuard;
 use AgentCat\Tests\Support\Symfony\Streaming\ProgressTool;
 use AgentCat\Tests\Support\ToolCalls;
 use AgentCat\Tests\Support\WarmUp;
@@ -29,7 +31,8 @@ use Symfony\Component\HttpKernel\KernelInterface;
  * Symfony applications with symfony/mcp-bundle, for the bundle tests. Skipped where the bundle is not installed (the
  * mcp/sdk 0.9 leg removes it), unless a test class needs no symfony/mcp-bundle (`needsTheMcpBundle()`). Each kernel compiles its container into a directory of this test under the test HOME,
  * removed after the test (Ruling R8). The AGENTCAT_* variables of the process that runs the tests are cleared, so the
- * configuration decides, and the global event queue records its deliveries.
+ * configuration decides, and the global event queue records its deliveries. A notice, warning or deprecation from a
+ * file of `src/` that an error handler of the kernel takes fails the test (`SrcErrorGuard`).
  */
 abstract class SymfonyTestCase extends TestCase
 {
@@ -45,6 +48,9 @@ abstract class SymfonyTestCase extends TestCase
     private array $kernels = [];
 
     private ?Environment $environment = null;
+
+    /** The error and exception handler stacks before the first kernel, put back after the test. */
+    private ?GlobalHandlers $handlers = null;
 
     /** Whether this process ran its warm-up kernel (`setUpBeforeClass()`). */
     private static bool $warm = false;
@@ -92,6 +98,7 @@ abstract class SymfonyTestCase extends TestCase
     #[\Override]
     protected function setUp(): void
     {
+        $this->handlers = GlobalHandlers::save();
         if ($this->needsTheMcpBundle() && !class_exists(McpBundle::class)) {
             self::markTestSkipped('symfony/mcp-bundle is not installed');
         }
@@ -133,6 +140,8 @@ abstract class SymfonyTestCase extends TestCase
 
         $this->environment?->restore();
         FileTree::remove($this->directory);
+        $this->handlers?->restore(); // the guard goes, and any handler that a kernel left
+        SrcErrorGuard::assertNone($this);
     }
 
     /**
@@ -155,7 +164,7 @@ abstract class SymfonyTestCase extends TestCase
         return $kernel;
     }
 
-    /** Boots a kernel of this test, which shuts it down after the test. */
+    /** Boots a kernel of this test, which shuts it down after the test. The guard goes in front of its error handler. */
     protected function boot(KernelInterface $kernel): void
     {
         $this->kernels[] = $kernel;
@@ -164,6 +173,7 @@ abstract class SymfonyTestCase extends TestCase
         if ($this->exceptionHandler() !== $handler) {
             restore_exception_handler(); // FrameworkBundle::boot() leaves Symfony's handler with symfony/error-handler 7.3
         }
+        SrcErrorGuard::install();
     }
 
     /** This test's directory under the test HOME, removed after the test. */

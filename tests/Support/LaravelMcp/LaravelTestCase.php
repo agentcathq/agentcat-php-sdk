@@ -13,6 +13,8 @@ use AgentCat\Internal\Support\BridgeConfig;
 use AgentCat\Internal\Support\TestMode;
 use AgentCat\Tests\Support\Environment;
 use AgentCat\Tests\Support\FileTree;
+use AgentCat\Tests\Support\GlobalHandlers;
+use AgentCat\Tests\Support\SrcErrorGuard;
 use AgentCat\Tests\Support\ToolCalls;
 use AgentCat\Tests\Support\WarmUp;
 use Illuminate\Foundation\Application;
@@ -23,7 +25,9 @@ use Orchestra\Testbench\TestCase;
  * A Laravel application with laravel/mcp, for the adapter and bridge tests. `app.debug` is false, like production.
  * Every file Laravel writes (the package and service manifests, the caches, storage, the log, the environment file
  * and published configuration) goes to a directory of this test under the test HOME, removed after the test: none
- * goes into vendor/ (Ruling R8).
+ * goes into vendor/ (Ruling R8). A notice, warning or deprecation from a file of `src/` that Laravel's error handler
+ * takes (it logs a deprecation and turns any other issue into an exception, which a request answers with an error)
+ * fails the test (`SrcErrorGuard`).
  */
 abstract class LaravelTestCase extends TestCase
 {
@@ -44,6 +48,9 @@ abstract class LaravelTestCase extends TestCase
     private static bool $warm = false;
 
     private ?Environment $environment = null;
+
+    /** The error and exception handler stacks before the application, put back after the test. */
+    private ?GlobalHandlers $handlers = null;
 
     /**
      * The first Laravel application of a PHP process is slow: PHP compiles the framework's files then (about 0.07 s on
@@ -86,6 +93,7 @@ abstract class LaravelTestCase extends TestCase
     #[\Override]
     protected function setUp(): void
     {
+        $this->handlers = GlobalHandlers::save();
         $home = getenv('HOME');
         if (!is_string($home) || $home === '') {
             throw new \LogicException('tests/bootstrap.php sets HOME to the test HOME');
@@ -103,6 +111,14 @@ abstract class LaravelTestCase extends TestCase
             $_ENV[$name] = $_SERVER[$name] = $value;
         }
         parent::setUp();
+    }
+
+    /** Each new application (`setUp()`, or a test's own refresh) installs its error handler: the guard goes in front. */
+    #[\Override]
+    protected function refreshApplication(): void
+    {
+        parent::refreshApplication();
+        SrcErrorGuard::install();
     }
 
     /** @return list<class-string> */
@@ -147,5 +163,7 @@ abstract class LaravelTestCase extends TestCase
         parent::tearDown();
         $this->environment?->restore();
         FileTree::remove($this->laravelDirectory);
+        $this->handlers?->restore(); // Laravel's flushState() emptied both stacks and put PHPUnit's handler back
+        SrcErrorGuard::assertNone($this);
     }
 }
