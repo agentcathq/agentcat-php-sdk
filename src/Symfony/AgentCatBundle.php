@@ -9,6 +9,8 @@ use AgentCat\Symfony\Internal\AnswerLength;
 use AgentCat\Symfony\Internal\DependencyInjection\TrackBuildersPass;
 use AgentCat\Symfony\Internal\ServerTracker;
 use AgentCat\Symfony\Internal\TerminateListener;
+use Symfony\Component\Config\Definition\Builder\NodeDefinition;
+use Symfony\Component\Config\Definition\Builder\ParentNodeDefinitionInterface;
 use Symfony\Component\Config\Definition\Configurator\DefinitionConfigurator;
 use Symfony\Component\DependencyInjection\Argument\ServiceClosureArgument;
 use Symfony\Component\DependencyInjection\Compiler\PassConfig;
@@ -40,11 +42,12 @@ final class AgentCatBundle extends AbstractBundle
     #[\Override]
     public function configure(DefinitionConfigurator $definition): void
     {
-        $children = $definition->rootNode()->children();
+        $children = $this->parent($definition->rootNode())->children();
         $children->scalarNode('enabled')->defaultValue('%env(default::AGENTCAT_ENABLED)%')->info('On or off for every MCP server and every AgentCat call: true or false. Unset: on, except while your tests run.')->end();
         $children->scalarNode('project_id')->defaultValue('%env(default::AGENTCAT_PROJECT_ID)%')->info('Your AgentCat project ID (proj_…). Unset: no events go to AgentCat; exporters still run.')->end();
         $children->variableNode('exclude_servers')->defaultValue([])->info('Servers AgentCat never tracks: names of mcp.servers entries; a string is one name. Names written here are read when the container compiles, names from environment variables when each server is built.')->end();
-        $children->arrayNode('projects')->info('Another project for some servers: mcp.servers name => project ID. A null project is project_id.')->useAttributeAsKey('server')->scalarPrototype()->end()->defaultValue([])->end();
+        $projects = $children->arrayNode('projects')->info('Another project for some servers: mcp.servers name => project ID. A null project is project_id.')->useAttributeAsKey('server')->defaultValue([]);
+        $projects->scalarPrototype()->end(); // symfony/config 7.3 types the prototype's end() as any parent
         $children->scalarNode('logger')->defaultNull()->info('The service ID of a PSR-3 logger for AgentCat\'s own lines, for example monolog.logger.mcp, written here, not in an environment variable. Unset: their own file, agentcat.log in the log directory.')->end();
         $children->scalarNode('api_url')->defaultValue('%env(default::AGENTCAT_API_URL)%')->info('The AgentCat API. Unset: AgentCat\'s. MCPCAT_API_URL, the TypeScript SDK\'s name, is read too.')->end();
         foreach (self::BOOLS as $key => $default) {
@@ -106,6 +109,19 @@ final class AgentCatBundle extends AbstractBundle
             ->addTag('kernel.event_listener', ['event' => KernelEvents::TERMINATE, 'priority' => TerminateListener::PRIORITY]);
         // D62: boot() makes it a kernel.response listener where responses end with the script.
         $builder->register(AnswerLength::SERVICE, AnswerLength::class)->setArguments([new Reference('agentcat.server_tracker')])->setPublic(true);
+    }
+
+    /**
+     * The tree's root, of the default type array. symfony/config 7.3 types `rootNode()` as any node, and 7.4 as a
+     * generic array node, so the root is narrowed here, from a native type.
+     */
+    private function parent(NodeDefinition $root): ParentNodeDefinitionInterface
+    {
+        if (!$root instanceof ParentNodeDefinitionInterface) {
+            throw new \LogicException('The agentcat configuration tree has no array root.');
+        }
+
+        return $root;
     }
 
     /** Whether a value of the configuration holds an environment variable, which resolves at runtime only. */
