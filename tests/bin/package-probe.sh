@@ -27,18 +27,18 @@ rm -rf "$root" && mkdir -p "$dist" "$project" "$home"
 cd "$repo"
 git archive --format=tar HEAD | tar -x -C "$dist"
 
-# 2. The dist file list.
+# 2. The dist file list, strict: exactly these top-level entries, and the files that a customer's install reads.
+# Anything else at the top (tests, docs, the recipe, CONTRIBUTING.md, a tool's configuration) needs export-ignore.
 fail=0
-require() { if [ ! -e "$dist/$1" ]; then echo "dist: missing $1" >&2; fail=1; fi; }
-forbid() { if compgen -G "$dist/$1" >/dev/null; then echo "dist: must not contain $1" >&2; fail=1; fi; }
-for path in src config composer.json README.md LICENSE; do require "$path"; done
-# CHANGELOG.md and the Boost guideline (resources/boost/guidelines/core.blade.php) are required once git tracks them.
-# Set PROBE_STRICT_DIST=1 to require both whatever git tracks.
-for path in CHANGELOG.md resources/boost/guidelines/core.blade.php; do
-  if [ "${PROBE_STRICT_DIST:-}" = 1 ] || [ -n "$(git ls-files -- "$path")" ]; then require "$path"; fi
-done
-for path in tests docs recipe .github 'phpstan*.neon*' rector.php infection.json5 phpunit.xml.dist composer-dependency-analyser.php; do
-  forbid "$path"
+expected='CHANGELOG.md LICENSE README.md composer.json config resources src'
+actual="$(find "$dist" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort | tr '\n' ' ')"
+actual="${actual% }"
+if [ "$actual" != "$expected" ]; then
+  echo "dist: the top-level entries are \"$actual\", not \"$expected\"" >&2
+  fail=1
+fi
+for path in src/AgentCat.php config/agentcat.php resources/boost/guidelines/core.blade.php; do
+  if [ ! -f "$dist/$path" ]; then echo "dist: missing $path" >&2; fail=1; fi
 done
 [ "$fail" = 0 ] || exit 1
 

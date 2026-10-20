@@ -1,6 +1,6 @@
 {
     "name": "agentcat/sdk",
-    "description": "Analytics for MCP (Model Context Protocol) servers: session replay, intent, and telemetry for PHP MCP servers.",
+    "description": "Analytics tool for MCP (Model Context Protocol) servers and AI agents - tracks tool usage patterns and provides insights",
     "license": "MIT",
     "type": "library",
     "keywords": [
@@ -9,7 +9,26 @@
         "analytics",
         "agentcat",
         "ai",
-        "llm"
+        "llm",
+        "authentication",
+        "observability",
+        "ai-agents",
+        "ai-platform",
+        "ai-agent",
+        "mcps",
+        "aiagents",
+        "ai-agent-tools",
+        "mcp-servers",
+        "mcp-server",
+        "mcp-tools",
+        "agent-runtime",
+        "mcp-framework",
+        "mcp-analytics",
+        "agentcat-analytics",
+        "php",
+        "laravel",
+        "symfony",
+        "mcp-sdk"
     ],
     "authors": [
         {
