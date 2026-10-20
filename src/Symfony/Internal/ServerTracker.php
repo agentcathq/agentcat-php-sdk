@@ -30,7 +30,7 @@ use Symfony\Component\HttpFoundation\RequestStack;
  * variables resolve then, so each bad value logs once, at the first server it tracks. A server that `exclude_servers`
  * names through an environment variable is left as it is: the pass removes only the servers named in the configuration
  * itself. A configuration that cannot be read (a variable without a default that is not set) logs one line for each
- * server, which then answers untracked.
+ * server, which then answers untracked; a custom event for such a server logs a line too, as after any failed track().
  *
  * @internal
  */
@@ -114,6 +114,7 @@ final class ServerTracker
                 $this->tracked[$server] = true; // a server that AgentCat did not track (off, or failed) keeps its answers
             }
         } catch (\Throwable $e) {
+            TrackedServers::markIncomplete(); // as Client::track(): publishCustomEvent() for the server then logs (D32)
             $this->adoptLogger(null);
             Log::write('Warning: Failed to track server - ' . ErrorText::of($e));
         }

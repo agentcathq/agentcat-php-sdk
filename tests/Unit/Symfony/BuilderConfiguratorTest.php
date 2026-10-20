@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AgentCat\Tests\Unit\Symfony;
 
+use AgentCat\Internal\Engine\TrackedServers;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Symfony\Internal\BuilderConfigurator;
 use AgentCat\Symfony\Internal\ServerTracker;
@@ -31,6 +32,7 @@ final class BuilderConfiguratorTest extends TestCase
     protected function tearDown(): void
     {
         Log::reset();
+        TrackedServers::resetIncomplete(); // the tracker's failure marks the process
     }
 
     public function testThePreviousConfiguratorRunsFirstThenTheTrackerThenTheHandlers(): void

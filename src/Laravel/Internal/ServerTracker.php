@@ -72,6 +72,7 @@ final class ServerTracker
                 AnswerLength::mark($server); // D59; a server that AgentCat did not track (off, or failed) keeps its answer
             }
         } catch (\Throwable $e) {
+            TrackedServers::markIncomplete(); // as Client::track(): publishCustomEvent() for the server then logs (D32)
             Log::write('Warning: Failed to track server - ' . ErrorText::of($e));
         }
     }

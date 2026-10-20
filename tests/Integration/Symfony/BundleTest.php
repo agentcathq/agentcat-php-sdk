@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AgentCat\Tests\Integration\Symfony;
 
 use AgentCat\AgentCat;
+use AgentCat\CustomEvent;
 use AgentCat\Internal\Constants;
 use AgentCat\Internal\Delivery\EventQueue;
 use AgentCat\Internal\Diagnostics\Diagnostics;
@@ -23,6 +24,7 @@ use AgentCat\Tests\Support\Symfony\SymfonyTestCase;
 use AgentCat\Tests\Support\Symfony\TestKernel;
 use AgentCat\Tests\Support\ToolCalls;
 use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
+use Mcp\Server;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
@@ -611,6 +613,29 @@ final class BundleTest extends SymfonyTestCase
         $this->assertIsArray($tools);
         $this->assertSame('own', JsonAssert::at(end($tools), 'name'));
         $this->assertSame(['Warning: Failed to track server - Symfony\Component\DependencyInjection\Exception\EnvNotFoundException: Environment variable not found: "AGENTCAT_UNSET_PROJECT_ID".'], $this->agentCatLines($kernel));
+    }
+
+    /**
+     * D32: after a configuration that cannot be read, a custom event for the server, as a tool publishes it, logs one
+     * line instead of throwing into the tool: the tracker marks the process, as `Client::track()` does on its own
+     * failures.
+     */
+    #[MaximumDuration(1000)]
+    public function testACustomEventForTheServerOfAConfigurationThatCannotBeReadLogsALine(): void
+    {
+        putenv('AGENTCAT_ENABLED=true'); // the shared client publishes: the configuration that would say so cannot be read
+        $kernel = $this->kernel(agentcat: [...self::ON, 'project_id' => '%env(AGENTCAT_UNSET_PROJECT_ID)%']);
+        $this->http($kernel)->listTools();
+        $server = $kernel->getContainer()->get('mcp.server.conformance');
+        $this->assertInstanceOf(Server::class, $server); // the server a customer's tool gets
+
+        AgentCat::publishCustomEvent($server, self::PROJECT, new CustomEvent(message: 'from a tool'));
+
+        $this->assertSame([
+            'Warning: Failed to track server - Symfony\Component\DependencyInjection\Exception\EnvNotFoundException: Environment variable not found: "AGENTCAT_UNSET_PROJECT_ID".',
+            'Warning: Failed to publish custom event - the server is not tracked (see the earlier AgentCat log line)',
+        ], $this->agentCatLines($kernel));
+        $this->assertFalse(EventQueue::global()->hasWork());
     }
 
     /** Review Focus 3, ruling P9: mistyped and unset values; the container compiles and the request answers. */
