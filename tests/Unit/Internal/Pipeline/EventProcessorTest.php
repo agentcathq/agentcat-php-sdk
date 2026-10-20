@@ -149,7 +149,7 @@ final class EventProcessorTest extends TestCase
     }
 
     #[Group('ac-05-P6')]
-    #[Group('ac-08-5')]
+    #[Group('ac-05-P1')]
     public function testPendingFailureSkipsTheRestButTheEventContinues(): void
     {
         $hookRan = false;

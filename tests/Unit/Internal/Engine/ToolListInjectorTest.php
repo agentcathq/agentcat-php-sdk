@@ -399,6 +399,7 @@ final class ToolListInjectorTest extends TestCase
 
     #[DataProvider('nonObjectSchemas')]
     #[Group('ac-04-25')]
+    #[Group('ac-02-12')]
     public function testNonObjectInputSchemaIsListedUnmodified(string $schema): void
     {
         $bad = '{"name":"bad","inputSchema":' . $schema . '}';
@@ -563,6 +564,7 @@ final class ToolListInjectorTest extends TestCase
         $this->assertSame(['dup' => []], $result->registry);
     }
 
+    #[Group('ac-02-12')]
     public function testInvalidUtf8ToolIsListedUnmodified(): void
     {
         $tool = (object) ['name' => 'bin', 'description' => "\xB1", 'inputSchema' => (object) ['type' => 'object']];
@@ -577,6 +579,26 @@ final class ToolListInjectorTest extends TestCase
         $this->assertSame([
             'WARN: Handle injection failed for tool "bin"; listing it unmodified - the tool cannot be encoded as JSON',
             'WARN: Context injection failed for tool "bin"; listing it unmodified - the tool cannot be encoded as JSON',
+        ], $this->logger->messages());
+    }
+
+    #[Group('ac-02-12')]
+    public function testASelfReferencingToolIsListedUnmodified(): void
+    {
+        $schema = (object) ['type' => 'object', 'properties' => new \stdClass()];
+        $schema->properties->loop = $schema;
+        $tool = (object) ['name' => 'loop', 'inputSchema' => $schema];
+        $before = serialize($tool);
+
+        $result = $this->inject([$tool, $this->decode('{"name":"ok"}')]);
+
+        $this->assertSame($tool, $result->tools[0] ?? null);
+        $this->assertSame($before, serialize($tool));
+        $this->assertSame($this->expand('{"name":"ok","inputSchema":' . self::INJECTED_ONLY . '}'), $this->toolJson($result, 1));
+        $this->assertSame(['ok' => ['session_id', 'context'], 'loop' => []], $result->registry);
+        $this->assertSame([
+            'WARN: Handle injection failed for tool "loop"; listing it unmodified - the tool cannot be encoded as JSON',
+            'WARN: Context injection failed for tool "loop"; listing it unmodified - the tool cannot be encoded as JSON',
         ], $this->logger->messages());
     }
 
@@ -803,6 +825,7 @@ final class ToolListInjectorTest extends TestCase
         $this->assertNotSame($tool->inputSchema, $listed->inputSchema);
     }
 
+    #[Group('ac-02-13')]
     public function testWholePipelineFailureServesTheOriginalList(): void
     {
         $hostile = new class extends \stdClass {

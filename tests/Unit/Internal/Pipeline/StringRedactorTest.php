@@ -42,6 +42,7 @@ final class StringRedactorTest extends TestCase
 
     #[Group('ac-05-R2')]
     #[Group('ac-01-48')]
+    #[Group('ac-01-47')]
     public function testProtectedFieldsAreNeverRedacted(): void
     {
         $calls = 0;

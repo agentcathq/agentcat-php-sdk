@@ -82,6 +82,7 @@ final class CallInterceptorTest extends TestCase
     }
 
     #[Group('ac-02-16')]
+    #[Group('ac-01-79')]
     public function testASuppliedSessionStripsTheRegistryNamesAndRecordsTheCall(): void
     {
         $arguments = ['msg' => 'hi', 'context' => 'why', 'session_id' => $this->supplied()];
@@ -337,6 +338,7 @@ final class CallInterceptorTest extends TestCase
 
     #[Group('ac-02-36')]
     #[Group('ac-04-39')]
+    #[Group('ac-04-43')]
     public function testADeclaredOutputSchemaGetsTheStructuredMirror(): void
     {
         $seam = $this->seam('structured');
@@ -346,7 +348,12 @@ final class CallInterceptorTest extends TestCase
         $returned = $this->interceptor->intercept($this->server(), $seam);
 
         $this->assertSame(['mcp_session', 'echoed'], $this->keys(JsonAssert::at($returned, 'structuredContent')));
-        $this->assertEquals((object) ['echoed' => 'x'], JsonAssert::at($this->onlyEvent()->response, 'structuredContent'));
+        $block = JsonAssert::at($returned, 'content', 0, 'text');
+        $this->assertIsString($block);
+        $this->assertStringStartsWith(Constants::MINT_BACK_HEADER_ISSUED, $block);
+        $event = $this->onlyEvent();
+        $this->assertEquals((object) ['echoed' => 'x'], JsonAssert::at($event->response, 'structuredContent'));
+        $this->assertEquals($this->tree(self::STRUCTURED_RESULT), $event->response, 'the original result: no block, no mcp_session');
     }
 
     #[Group('ac-04-41')]

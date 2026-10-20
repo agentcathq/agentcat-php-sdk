@@ -41,6 +41,7 @@ final class RequestContextTest extends TestCase
     }
 
     #[Group('ac-02-44')]
+    #[Group('ac-01-81')]
     public function testClientInfoInMetaBeatsTheHandshakeFieldByField(): void
     {
         $harness = $this->tracked();

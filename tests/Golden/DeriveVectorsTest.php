@@ -11,6 +11,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 #[Group('ac-04-6')]
+#[Group('ac-03-22')]
 final class DeriveVectorsTest extends TestCase
 {
     /**

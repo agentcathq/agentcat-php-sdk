@@ -52,6 +52,7 @@ final class CallErrorsTest extends TestCase
         $this->assertNotSame([], JsonAssert::at($event->error, 'frames'), 'the stashed exception wins over the result text');
     }
 
+    #[Group('ac-01-80')]
     public function testAnErrorResultWithoutAnExceptionIsAnErrorEvent(): void
     {
         $twin = HttpHarness::result($this->fixture->harness($this->builder())->callTool('refuses', []));
@@ -70,6 +71,8 @@ final class CallErrorsTest extends TestCase
     #[Group('ac-02-24')]
     #[Group('ac-02-25')]
     #[Group('ac-05-E5')]
+    #[Group('ac-01-80')]
+    #[Group('ac-04-44')]
     public function testAnUncaughtToolExceptionGivesTheLibrarysErrorAndAnEventWithTheException(): void
     {
         $twin = $this->fixture->harness($this->builder())->callTool('boom', []);
@@ -120,6 +123,7 @@ final class CallErrorsTest extends TestCase
     }
 
     #[Group('ac-05-E7')]
+    #[Group('ac-01-80')]
     public function testASuccessfulCallHasNoError(): void
     {
         $harness = $this->tracked();

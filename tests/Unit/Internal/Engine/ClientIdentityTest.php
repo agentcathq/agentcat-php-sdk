@@ -10,6 +10,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 #[Group('ac-02-44')]
+#[Group('ac-01-81')]
 final class ClientIdentityTest extends TestCase
 {
     public function testFirstCandidateWins(): void
