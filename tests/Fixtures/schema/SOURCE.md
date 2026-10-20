@@ -1,7 +1,7 @@
 # publish-event-request.json
 
 - Source: https://api.agentcat.com/v1/schema/public/?format=json (OpenAPI 3.0.3)
-- Fetched: 2026-10-17
+- Fetched: 2026-10-20
 - JSON pointer: `/paths/~1v1~1public~1events~1/post/requestBody/content/application~1json/schema`
 - Command:
 
@@ -10,8 +10,8 @@ php -r '$d = json_decode(file_get_contents("https://api.agentcat.com/v1/schema/p
 sha256sum tests/Fixtures/schema/publish-event-request.json
 ```
 
-- Digest (6353 bytes):
+- Digest (6388 bytes):
 
 ```
-9dac28d9ce0fed0f108ec28d2bd1c2b2e8b894a606bd6ff79a235d1876e5ab56  tests/Fixtures/schema/publish-event-request.json
+ef2e2f996f1fbe55d81225869a129c754faa00c9d0cd3a98794305ceb4ec054d  tests/Fixtures/schema/publish-event-request.json
 ```
