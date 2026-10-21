@@ -13,7 +13,8 @@ use AgentCat\Internal\Tools\GetMoreTools;
 
 /**
  * Port of the TypeScript `buildInjectedList`: adds `session_id`, `agent_id` and `context` to each listed tool's
- * input schema, appends get_more_tools to the last page (D66), and declares `mcp_session` in output schemas.
+ * input schema, appends get_more_tools to the last page (D66) unless a page names the customer's own, and declares
+ * `mcp_session` in output schemas.
  *
  * @internal
  */
@@ -23,7 +24,11 @@ final class ToolListInjector
 
     private const string UNKNOWN_TOOL = 'unknown';
 
-    private const string SHADOW_WARNING = 'WARN: This server registers its own "get_more_tools" tool, which is shadowed by AgentCat\'s report-missing tool: calls to it are answered by AgentCat and never reach your handler. Rename your tool, or set enableReportMissing: false to keep yours reachable.';
+    /**
+     * TypeScript's line, and the PHP case of a paged listing: a process that has not read the page with the customer's
+     * tool cannot know it, so it appends AgentCat's to the last page.
+     */
+    private const string SHADOW_WARNING = 'WARN: This server registers its own "get_more_tools" tool, which is shadowed by AgentCat\'s report-missing tool: calls to it are answered by AgentCat and never reach your handler. Rename your tool, or set enableReportMissing: false to keep yours reachable. If your tool is not on the last page of tools/list, AgentCat\'s get_more_tools is listed too, on the last page, by every process that has not read your tool\'s page (under PHP-FPM, every request), so clients see two tools of that name: rename your tool.';
 
     private const string CONFLICT_ERROR = 'ERROR: Tool "%s" already declares a \'session_id\' parameter. AgentCat will not inject its own, and calls to this tool are published without a session, so they cannot be correlated. Your parameter is untouched and still reaches your handler. If you already manage sessions, pass a resolveSessionId hook to track() — AgentCat will derive its session from your identifier and stop injecting session_id entirely.';
 
@@ -94,14 +99,15 @@ final class ToolListInjector
         foreach ($tools as $tool) {
             if ($this->nameOf($tool) === GetMoreTools::NAME) {
                 // The customer's tool stays listed, but AgentCat answers its calls, on whichever page it is.
-                if ($this->state->warnShadowOnce()) {
+                if ($this->state->markCustomerGetMoreTools()) {
                     Log::write(self::SHADOW_WARNING);
                 }
 
                 return $tools;
             }
         }
-        if ($this->lastPage) {
+        // A page that this server read named the customer's tool: the last page gets no second get_more_tools.
+        if ($this->lastPage && !$this->state->hasCustomerGetMoreTools()) {
             $tools[] = GetMoreTools::descriptor();
         }
 

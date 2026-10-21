@@ -9,7 +9,7 @@ final class ListingLines
 {
     public const string REBUILT = 'Rebuilt injection registries on demand (tools/call before tools/list on this instance)';
 
-    public const string SHADOWED = 'WARN: This server registers its own "get_more_tools" tool, which is shadowed by AgentCat\'s report-missing tool: calls to it are answered by AgentCat and never reach your handler. Rename your tool, or set enableReportMissing: false to keep yours reachable.';
+    public const string SHADOWED = 'WARN: This server registers its own "get_more_tools" tool, which is shadowed by AgentCat\'s report-missing tool: calls to it are answered by AgentCat and never reach your handler. Rename your tool, or set enableReportMissing: false to keep yours reachable. If your tool is not on the last page of tools/list, AgentCat\'s get_more_tools is listed too, on the last page, by every process that has not read your tool\'s page (under PHP-FPM, every request), so clients see two tools of that name: rename your tool.';
 
     public const string MISSING_TOOL_REPORTED = 'Missing tool reported (context length: %d)';
 

@@ -17,6 +17,7 @@ use AgentCat\Internal\Tools\GetMoreTools;
 use AgentCat\McpSdk\McpSdkAdapter;
 use AgentCat\Options;
 use AgentCat\Tests\Support\JsonAssert;
+use AgentCat\Tests\Support\ListingLines;
 use AgentCat\Tests\Support\McpSdk\CustomerHandler;
 use AgentCat\Tests\Support\McpSdk\HttpHarness;
 use AgentCat\Tests\Support\McpSdk\RecordingTool;
@@ -139,6 +140,35 @@ final class ListToolsTest extends TestCase
         $this->assertSame($twin->nextCursor, $first->nextCursor);
         $this->assertSame(['b', GetMoreTools::NAME], $this->names($second));
         $this->assertObjectNotHasProperty('nextCursor', $second);
+    }
+
+    /**
+     * A customer's own get_more_tools on page 1: the process that served page 1 lists no second get_more_tools on the
+     * last page. A process that did not serve it (every request under PHP-FPM) lists AgentCat's there too.
+     */
+    #[Group('ac-02-8')]
+    #[Group('ac-02-14')]
+    public function testACustomerGetMoreToolsOnAnEarlierPageIsTheOnlyOneTheProcessThatServedItLists(): void
+    {
+        $build = function (): HttpHarness {
+            $builder = $this->builder()->setPaginationLimit(1)
+                ->add(self::tool(GetMoreTools::NAME, 'Mine'), new RecordingTool())
+                ->add(self::tool('b'), new RecordingTool());
+            $this->track($builder);
+
+            return $this->harness($builder);
+        };
+        $harness = $build();
+
+        $first = $harness->listTools();
+        $this->assertIsString($first->nextCursor);
+        $second = $harness->listTools($first->nextCursor);
+        $elsewhere = $build()->listTools($first->nextCursor);
+
+        $this->assertSame([GetMoreTools::NAME], $this->names($first));
+        $this->assertSame(['b'], $this->names($second));
+        $this->assertSame(['b', GetMoreTools::NAME], $this->names($elsewhere));
+        $this->assertSame([ListingLines::SHADOWED], array_values(array_filter($this->logger->messages(), static fn(string $line): bool => str_contains($line, 'shadowed'))));
     }
 
     #[Group('ac-02-9')]

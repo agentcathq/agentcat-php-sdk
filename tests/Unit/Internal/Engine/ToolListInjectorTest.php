@@ -22,7 +22,7 @@ final class ToolListInjectorTest extends TestCase
 {
     private const string CONFLICT_ERROR = 'ERROR: Tool "own" already declares a \'session_id\' parameter. AgentCat will not inject its own, and calls to this tool are published without a session, so they cannot be correlated. Your parameter is untouched and still reaches your handler. If you already manage sessions, pass a resolveSessionId hook to track() — AgentCat will derive its session from your identifier and stop injecting session_id entirely.';
 
-    private const string SHADOW_WARN = 'WARN: This server registers its own "get_more_tools" tool, which is shadowed by AgentCat\'s report-missing tool: calls to it are answered by AgentCat and never reach your handler. Rename your tool, or set enableReportMissing: false to keep yours reachable.';
+    private const string SHADOW_WARN = 'WARN: This server registers its own "get_more_tools" tool, which is shadowed by AgentCat\'s report-missing tool: calls to it are answered by AgentCat and never reach your handler. Rename your tool, or set enableReportMissing: false to keep yours reachable. If your tool is not on the last page of tools/list, AgentCat\'s get_more_tools is listed too, on the last page, by every process that has not read your tool\'s page (under PHP-FPM, every request), so clients see two tools of that name: rename your tool.';
 
     private const string INJECTED_ONLY = '{"type":"object","properties":{"session_id":"@SID","context":"@CTX"},"required":["session_id","context"]}';
 
@@ -106,8 +106,10 @@ final class ToolListInjectorTest extends TestCase
         $this->assertFalse($state->reportConflictOnce('a'));
         $this->assertTrue($state->reportConflictOnce('b'));
 
-        $this->assertTrue($state->warnShadowOnce());
-        $this->assertFalse($state->warnShadowOnce());
+        $this->assertFalse($state->hasCustomerGetMoreTools());
+        $this->assertTrue($state->markCustomerGetMoreTools());
+        $this->assertFalse($state->markCustomerGetMoreTools());
+        $this->assertTrue($state->hasCustomerGetMoreTools());
     }
 
     /**
@@ -355,6 +357,40 @@ final class ToolListInjectorTest extends TestCase
         $this->assertSame(['b', 'get_more_tools'], $this->names($last));
         $this->assertSame(['get_more_tools'], $this->names($shadowing)); // listed once, with no second copy
         $this->assertSame([self::SHADOW_WARN], $this->logger->messages());
+    }
+
+    /**
+     * A customer's own get_more_tools on a page before the last: the last page of the same server gets no second one. A
+     * server that never read that page (a new process under PHP-FPM) appends AgentCat's, and the warning says so.
+     */
+    #[Group('ac-02-14')]
+    #[Group('ac-04-24')]
+    public function testACustomerGetMoreToolsOnAnEarlierPageKeepsAgentCatsOffTheLastPage(): void
+    {
+        $state = new InjectionState();
+        $customer = $this->decode('{"name":"get_more_tools","inputSchema":{"type":"object","properties":{}}}');
+
+        $first = ToolListInjector::inject([$customer, $this->decode('{"name":"a"}')], new InjectionConfig(), $state, lastPage: false);
+        $last = ToolListInjector::inject([$this->decode('{"name":"b"}')], new InjectionConfig(), $state, lastPage: true);
+        $elsewhere = ToolListInjector::inject([$this->decode('{"name":"b"}')], new InjectionConfig(), new InjectionState(), lastPage: true);
+
+        $this->assertSame(['get_more_tools', 'a'], $this->names($first));
+        $this->assertSame(['b'], $this->names($last));
+        $this->assertSame(['b' => ['session_id', 'context']], $last->registry);
+        $this->assertSame(['b', 'get_more_tools'], $this->names($elsewhere));
+        $this->assertSame([self::SHADOW_WARN], $this->logger->messages());
+    }
+
+    /** With report-missing off, a customer's get_more_tools is an ordinary tool: nothing is recorded for the last page. */
+    public function testWithReportMissingOffACustomerGetMoreToolsIsNotRecorded(): void
+    {
+        $state = new InjectionState();
+        $customer = $this->decode('{"name":"get_more_tools","inputSchema":{"type":"object","properties":{}}}');
+
+        ToolListInjector::inject([$customer], new InjectionConfig(enableReportMissing: false), $state, lastPage: false);
+
+        $this->assertFalse($state->hasCustomerGetMoreTools());
+        $this->assertSame([], $this->logger->messages());
     }
 
     #[Group('ac-04-48')]
