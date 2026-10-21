@@ -61,7 +61,10 @@ final class RepeatedFailureTest extends TestCase
             }
 
             #[\Override]
-            public function waitForActivity(float $deadline): void {}
+            public function waitForActivity(float $deadline): bool
+            {
+                return true;
+            }
 
             #[\Override]
             public function drain(float $deadline): bool

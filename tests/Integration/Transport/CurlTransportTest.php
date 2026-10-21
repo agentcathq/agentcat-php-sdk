@@ -38,6 +38,12 @@ final class CurlTransportTest extends TestCase
     /** Seconds; every blocking call in these tests has a deadline. */
     private const float DEADLINE = 5.0;
 
+    /** The line of a host without `usleep()` and `time_nanosleep()`. */
+    private const string NO_SLEEP = 'WARN: AgentCat cannot wait for the retry of a failed event: usleep and time_nanosleep are disabled; a delivery ends at the first retry that is not due yet; remove one of them from disable_functions';
+
+    /** The sleep functions of a waiting transport. */
+    private const array SLEEP_FUNCTIONS = ['usleep', 'time_nanosleep'];
+
     private static ?MockCollector $collector = null;
 
     private MemoryLogger $logger;
@@ -858,12 +864,78 @@ final class CurlTransportTest extends TestCase
         $this->pumpUntil($transport, fn(): bool => $this->failures() === 1);
         $started = hrtime(true);
 
-        $transport->waitForActivity(INF); // the clock is frozen: the retry is due in 0.05 s of real sleep
+        $waited = $transport->waitForActivity(INF); // the clock is frozen: the retry is due in 0.05 s of real sleep
 
         $elapsed = (hrtime(true) - $started) / 1e9;
+        $this->assertTrue($waited);
         $this->assertGreaterThanOrEqual(0.045, $elapsed);
         $this->assertLessThan(0.5, $elapsed);
         $this->assertSame(1, $this->failures(), 'waitForActivity() does no work');
+    }
+
+    /**
+     * A host that disables `usleep()` and `time_nanosleep()`: a drain cannot wait for a retry, so it ends at once (one
+     * line per transport) instead of spinning until its deadline. The retry stays scheduled for a later pump.
+     */
+    #[Group('hardened-host')]
+    #[MaximumDuration(2000)]
+    public function testWithoutASleepFunctionADrainEndsAtTheFirstRetryThatIsNotDue(): void
+    {
+        $transport = new CurlTransport(new RetryPolicy([5.0]), functionExists: static fn(string $function): bool => !in_array($function, self::SLEEP_FUNCTIONS, true));
+        $started = hrtime(true);
+
+        $settled = $transport->send($this->delivery(MockCollector::closedPortUrl()), $transport->now() + 1.0);
+        $again = $transport->drain($transport->now() + 1.0);
+
+        $this->assertLessThan(0.5, (hrtime(true) - $started) / 1e9, 'no spin until the deadline');
+        $this->assertFalse($settled);
+        $this->assertFalse($again);
+        $this->assertSame(1, $transport->inFlight(), 'the retry waits for a later pump');
+        $this->assertSame(1, $this->failures());
+        $this->assertSame([self::NO_SLEEP], array_values(array_filter($this->logger->messages(), static fn(string $line): bool => str_contains($line, 'sleep'))));
+    }
+
+    /** Without a sleep function, a retry that is due already needs no wait: the drain goes on and starts it. */
+    #[Group('hardened-host')]
+    #[MaximumDuration(2000)]
+    public function testWithoutASleepFunctionAnOverdueRetryNeedsNoWait(): void
+    {
+        $now = 100.0;
+        $clock = static function () use (&$now): float {
+            return $now;
+        };
+        $transport = new CurlTransport(new RetryPolicy([0.05]), clock: $clock, functionExists: static fn(string $function): bool => !in_array($function, self::SLEEP_FUNCTIONS, true));
+        $transport->start($this->delivery(MockCollector::closedPortUrl()));
+        $this->pumpUntil($transport, fn(): bool => $this->failures() === 1);
+        $now = 101.0; // the retry was due at 100.05
+
+        $this->assertTrue($transport->waitForActivity(INF));
+        $this->assertTrue($transport->waitForActivity($now - 1.0), 'a passed deadline needs no wait either');
+        $this->assertSame(1, $this->failures(), 'waitForActivity() does no work');
+        $this->assertCount(1, $this->logger->messages());
+    }
+
+    /** Without `usleep()`, a wait for a retry sleeps with `time_nanosleep()`. */
+    #[Group('hardened-host')]
+    #[MaximumDuration(1000)]
+    public function testWithoutUsleepAWaitSleepsWithTimeNanosleep(): void
+    {
+        $now = 100.0;
+        $clock = static function () use (&$now): float {
+            return $now;
+        };
+        $transport = new CurlTransport(new RetryPolicy([0.05]), clock: $clock, functionExists: static fn(string $function): bool => $function !== 'usleep');
+        $transport->start($this->delivery(MockCollector::closedPortUrl()));
+        $this->pumpUntil($transport, fn(): bool => $this->failures() === 1);
+        $started = hrtime(true);
+
+        $waited = $transport->waitForActivity(INF);
+
+        $elapsed = (hrtime(true) - $started) / 1e9;
+        $this->assertTrue($waited);
+        $this->assertGreaterThanOrEqual(0.045, $elapsed);
+        $this->assertLessThan(0.5, $elapsed);
+        $this->assertCount(1, $this->logger->messages(), 'no line: the wait works');
     }
 
     #[MaximumDuration(1000)]

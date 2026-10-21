@@ -35,7 +35,10 @@ final readonly class InstantTransport implements Transport
     public function pump(): void {}
 
     #[\Override]
-    public function waitForActivity(float $deadline): void {}
+    public function waitForActivity(float $deadline): bool
+    {
+        return true;
+    }
 
     #[\Override]
     public function drain(float $deadline): bool

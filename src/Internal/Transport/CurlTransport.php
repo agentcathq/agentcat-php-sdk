@@ -8,12 +8,15 @@ use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Logging\RepeatedLines;
 use AgentCat\Internal\Support\Clock;
 use AgentCat\Internal\Support\ErrorText;
+use AgentCat\Internal\Support\Sleep;
 
 /**
  * One `POST` per event over ext-curl: `curl_multi` transfers, at most five at once, with TypeScript's retry
  * policy scheduled by time (`pump()` never sleeps) and connect/total timeouts. Nothing reaches STDOUT/STDERR.
  * The multi handle starts with the first delivery. When a curl function it calls is missing or disabled, every
- * delivery is dropped, and one line per process says so (`CurlSupport`, D32).
+ * delivery is dropped, and one line per process says so (`CurlSupport`, D32). A wait for a retry sleeps with `usleep()`
+ * or `time_nanosleep()` (`Sleep`); where both are disabled, a wait for a retry that is not due ends the delivery, with
+ * one line, instead of spinning until its deadline.
  *
  * @internal
  */
@@ -29,6 +32,9 @@ final class CurlTransport implements Transport
 
     /** Upper bound of one wait, so a waiting caller re-checks its state at least once a second. */
     private const float MAX_WAIT_SECONDS = 1.0;
+
+    /** The line of a host without a function that sleeps. */
+    private const string NO_SLEEP = 'WARN: AgentCat cannot wait for the retry of a failed event: usleep and time_nanosleep are disabled; a delivery ends at the first retry that is not due yet; remove one of them from disable_functions';
 
     /** The ext-curl check, made at the first delivery. */
     private readonly CurlSupport $curl;
@@ -49,11 +55,17 @@ final class CurlTransport implements Transport
     /** @var list<array{delivery: Delivery, attempt: int, due: float}> retries waiting for their time */
     private array $scheduled = [];
 
+    /** @var \Closure(string): bool */
+    private readonly \Closure $functionExists;
+
+    /** @var (\Closure(float): void)|false|null the sleep of a wait for a retry, made at the first one (`Sleep`); false on a host without one */
+    private \Closure|false|null $sleep = null;
+
     /**
      * @param (\Closure(): float)|null          $clock          monotonic seconds (tests); must not throw. Default `Clock::monotonic()`.
      * @param (\Closure(string, int): int)|null $multiStatus    tests only: receives the function name and the CURLM code of each
      *                                                          `curl_multi_add_handle()` and `curl_multi_exec()` call, returns the code to act on
-     * @param (\Closure(string): bool)|null     $functionExists tests only: tells whether a curl function exists. Default `function_exists()`.
+     * @param (\Closure(string): bool)|null     $functionExists tests only: tells whether a curl or sleep function exists. Default `function_exists()`.
      *
      * @throws \InvalidArgumentException for a timeout curl cannot take (`CurlSupport::timeoutMilliseconds()`)
      */
@@ -68,7 +80,8 @@ final class CurlTransport implements Transport
         $this->connectTimeoutMs = CurlSupport::timeoutMilliseconds($connectTimeoutSeconds);
         $this->totalTimeoutMs = CurlSupport::timeoutMilliseconds($totalTimeoutSeconds);
         $this->clock = $clock ?? Clock::monotonic();
-        $this->curl = new CurlSupport($functionExists);
+        $this->functionExists = $functionExists ?? function_exists(...);
+        $this->curl = new CurlSupport($this->functionExists);
         $this->multi = new CurlMulti($multiStatus);
     }
 
@@ -121,9 +134,10 @@ final class CurlTransport implements Transport
     }
 
     #[\Override]
-    public function waitForActivity(float $deadline): void
+    public function waitForActivity(float $deadline): bool
     {
-        $this->guarded(function () use ($deadline): void {
+        $waited = true;
+        $this->guarded(function () use ($deadline, &$waited): void {
             if ($this->ready !== [] && $this->multi->count() < self::MAX_CONCURRENT) {
                 return; // a waiting attempt can start now (a slot freed up after the last launch)
             }
@@ -139,8 +153,10 @@ final class CurlTransport implements Transport
 
                 return;
             }
-            usleep((int) ($timeout * 1e6));
+            $waited = $timeout === 0.0 || $this->sleep($timeout);
         });
+
+        return $waited;
     }
 
     #[\Override]
@@ -154,10 +170,9 @@ final class CurlTransport implements Transport
                 if ($this->inFlight() === 0) {
                     return true;
                 }
-                if ($this->now() >= $deadline) {
+                if ($this->now() >= $deadline || !$this->waitForActivity($deadline)) {
                     return false;
                 }
-                $this->waitForActivity($deadline);
             }
         } catch (\Throwable $error) {
             Log::write(self::GAVE_UP . ErrorText::of($error));
@@ -219,6 +234,26 @@ final class CurlTransport implements Transport
         } finally {
             restore_error_handler();
         }
+    }
+
+    /**
+     * Sleeps `$seconds`. False on a host without a sleep function. The first call checks the functions once, and logs
+     * NO_SLEEP when there is none.
+     */
+    private function sleep(float $seconds): bool
+    {
+        if ($this->sleep === null) {
+            $this->sleep = Sleep::closure($this->functionExists) ?? false;
+            if ($this->sleep === false) {
+                Log::write(self::NO_SLEEP);
+            }
+        }
+        if ($this->sleep === false) {
+            return false;
+        }
+        ($this->sleep)($seconds);
+
+        return true;
     }
 
     /** Starts waiting attempts while slots are free; the next collect() runs their first curl_multi_exec(). */

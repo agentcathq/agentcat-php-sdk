@@ -479,6 +479,22 @@ final class EventQueueTest extends TestCase
         $this->assertCount(1, $transport->deliveries);
     }
 
+    /** A transport that cannot wait (no sleep function) ends the delivery: no pass spins until the deadline. */
+    #[Group('hardened-host')]
+    public function testAFlushEndsWhenTheTransportCannotWait(): void
+    {
+        $transport = new RecordingTransport(complete: false, canWait: false);
+        $queue = new EventQueue(transport: $transport);
+        $queue->add(new QueuedEvent($this->event()));
+
+        $this->assertFalse($queue->flush(1.0));
+        $this->assertSame(1, $transport->waits);
+        $this->assertSame(['queueLength' => 0, 'activeRequests' => 1], $queue->stats());
+
+        $queue->shutdown();
+        $this->assertSame(2, $transport->waits, 'the shutdown ends at the first wait too');
+    }
+
     public function testFlushWaitsWhileAllSlotsAreBusy(): void
     {
         $transport = new RecordingTransport(complete: false);

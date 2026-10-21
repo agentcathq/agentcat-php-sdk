@@ -14,13 +14,15 @@ use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Process\Process;
 
 /**
  * Hosts that disable process, signal, curl multi and clock functions (`disable_functions`: on PHP 8 a disabled
  * function does not exist). A tracked stdio server answers as it would without AgentCat and ends cleanly at stdin EOF;
  * AgentCat logs at most one line for each function it misses, a function whose absence turns a feature off is named in
  * exactly one line (a pcntl function only where ext-pcntl is loaded), and diagnostics, on as outside tests, still reach
- * their collector while ext-curl is whole.
+ * their collector while ext-curl is whole. The sleep functions get a script of their own, because mcp/sdk's stdio
+ * server sleeps with `usleep()`: the delivery at the end of the script waits for its retries, or ends at once.
  */
 final class HardenedHostTest extends TestCase
 {
@@ -39,6 +41,12 @@ final class HardenedHostTest extends TestCase
     private const array DELIVERY = ['curl_multi_init', 'curl_multi_exec', 'curl_multi_add_handle', 'curl_multi_select'];
 
     private const string SIGNAL_LINE = 'AgentCat cannot send waiting events at SIGTERM or SIGINT';
+
+    /** The line of a host without a function that sleeps. */
+    private const string NO_SLEEP = 'WARN: AgentCat cannot wait for the retry of a failed event: usleep and time_nanosleep are disabled; a delivery ends at the first retry that is not due yet; remove one of them from disable_functions';
+
+    /** One failed attempt of the shutdown delivery. */
+    private const string RETRYING = 'Failed to send event ';
 
     private static ?MockCollector $collector = null;
 
@@ -145,6 +153,50 @@ final class HardenedHostTest extends TestCase
         }
     }
 
+    /** @return iterable<string, array{string, int, bool}> the disabled functions, the failed attempts, and whether a line names them */
+    public static function sleepLists(): iterable
+    {
+        // time_nanosleep() waits for the retries: attempts at 0, 1 and 3 s of the 5 s budget.
+        yield 'no usleep' => ['usleep', 3, false];
+        // Nothing can wait: the delivery ends at the first retry, at once.
+        yield 'no sleep function' => ['usleep,time_nanosleep', 1, true];
+    }
+
+    /**
+     * The delivery at the end of a process, with the event API down: it waits for each retry with whatever sleep function
+     * exists, and without one it ends at once, with one line, instead of spinning through the 5 s budget.
+     */
+    #[DataProvider('sleepLists')]
+    #[Group('hardened-host')]
+    #[MaximumDuration(10000)]
+    public function testTheShutdownDeliveryWaitsForARetryOnlyWithASleepFunction(string $functions, int $attempts, bool $named): void
+    {
+        $process = new Process(
+            [PHP_BINARY, '-d', 'disable_functions=' . $functions, '-d', 'display_errors=stderr', '-d', 'log_errors=0', __DIR__ . '/../Fixtures/hardened-shutdown.php'],
+            null,
+            ['HOME' => $this->home, 'AGENTCAT_ENABLED' => 'true', 'AGENTCAT_API_URL' => MockCollector::closedPortUrl(), 'AGENTCAT_DISABLE_DIAGNOSTICS' => 'true'],
+        );
+        $process->setTimeout(self::EOF_EXIT_SECONDS + 2.0);
+        $started = hrtime(true);
+
+        $process->run();
+
+        $elapsed = (hrtime(true) - $started) / 1e9;
+        $this->assertSame(0, $process->getExitCode(), $process->getErrorOutput());
+        $this->assertSame('', $process->getErrorOutput(), 'no error, warning or deprecation');
+        $entries = $this->logEntries();
+        $log = implode('', $entries);
+        $this->assertSame([], preg_grep('/Call to undefined function/', $entries), 'AgentCat calls no disabled function: ' . $log);
+        $this->assertCount($attempts, $this->matching('/' . preg_quote(self::RETRYING, '/') . '/', $entries), 'the failed attempts: ' . $log);
+        $this->assertCount($named ? 1 : 0, $this->matching('/' . preg_quote(self::NO_SLEEP, '/') . '/', $entries), 'the line of a host that cannot wait: ' . $log);
+        $this->assertCount($named ? 1 : 0, $this->matching('/\btime_nanosleep\b/', $entries), 'time_nanosleep is named in that line only: ' . $log);
+        if ($named) {
+            $this->assertLessThan(2.0, $elapsed, 'no spin through the 5 s budget');
+        } else {
+            $this->assertGreaterThan(2.5, $elapsed, 'the delivery waited for its retries');
+        }
+    }
+
     /**
      * Starts the fixture server with `$functions` disabled. The event API is a closed local port; diagnostics are on, as
      * they are by default outside tests, and go to this test's collector scenario.
@@ -193,6 +245,19 @@ final class HardenedHostTest extends TestCase
         $this->assertIsArray($content);
 
         return array_map(static fn(mixed $block): mixed => JsonAssert::at($block, 'text'), array_values($content));
+    }
+
+    /**
+     * @param list<string> $entries
+     *
+     * @return array<mixed> the entries that match `$pattern`
+     */
+    private function matching(string $pattern, array $entries): array
+    {
+        $matching = preg_grep($pattern, $entries);
+        $this->assertIsArray($matching);
+
+        return $matching;
     }
 
     /** @return list<string> the entries of the server's agentcat.log, each starting at its timestamp */

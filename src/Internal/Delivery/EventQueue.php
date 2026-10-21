@@ -381,9 +381,10 @@ final class EventQueue
                 if ($this->transport->now() >= $until) {
                     return false;
                 }
-                // Slots freed by the last pump are refilled at once; waiting would sleep with idle slots.
-                if ($this->queued() === 0 || $this->transport->inFlight() >= self::CONCURRENCY) {
-                    $this->wait($until);
+                // Slots freed by the last pump are refilled at once; waiting would sleep with idle slots. A transport
+                // that cannot wait (a host without a sleep function) ends the delivery: no pass spins to the deadline.
+                if (($this->queued() === 0 || $this->transport->inFlight() >= self::CONCURRENCY) && !$this->wait($until)) {
+                    return false;
                 }
             }
         } catch (\Throwable $e) {
@@ -399,17 +400,18 @@ final class EventQueue
     /**
      * Waits on the transport alone, or, while side requests are pending, a slice on each that never ends past `$until`.
      * `$until` is never NaN. The time left goes through `CurlSupport::waitSeconds()`: within 0 and the slice, and 0 for
-     * the NaN of INF - INF (a test clock that jumped to an INF deadline).
+     * the NaN of INF - INF (a test clock that jumped to an INF deadline). False when the transport alone would wait and
+     * cannot (`Transport::waitForActivity()`); while side requests are pending, their transfers block the slice.
      */
-    private function wait(float $until): void
+    private function wait(float $until): bool
     {
         if ($this->channel->pending() === 0) {
-            $this->transport->waitForActivity($until);
-
-            return;
+            return $this->transport->waitForActivity($until);
         }
         $this->transport->waitForActivity(min($until, $this->transport->now() + self::SLICE_SECONDS));
         $this->channel->waitForActivity(CurlSupport::waitSeconds($until - $this->transport->now(), self::SLICE_SECONDS));
+
+        return true;
     }
 
     /**
