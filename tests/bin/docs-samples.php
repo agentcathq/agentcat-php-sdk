@@ -11,9 +11,10 @@ declare(strict_types=1);
 //
 // A sample that starts with <?php is a whole file. Any other sample is a fragment, and the checker adds the opening tag
 // and declare(strict_types=1) before it. Unless the fragment declares a namespace, the checker also adds
-// `$builder = Mcp\Server::builder();`: the fragments track that Builder. PHPStan errors about classes that it cannot
-// find in the App\ namespace are ignored: those classes belong to the reader's own application. Tests\TestCase, the base
-// test case of every Laravel application, is declared for PHPStan as Laravel's skeleton declares it.
+// `$builder = Mcp\Server::builder();`: the fragments track that Builder. The samples also name classes of the reader's
+// own application (App\…) and Tests\TestCase, the base test case of every Laravel application. The checker declares
+// those for PHPStan (STUB_CLASSES), so that every other unknown class, a missing `use` line included, fails the check.
+// A sample that names a new application class needs its stub here.
 //
 // Exits 0 when every sample passes both checks, 1 when a sample fails one of them, and 2 on a usage or setup error.
 
@@ -25,10 +26,88 @@ const STUB_CLASSES = <<<'PHP'
 
     declare(strict_types=1);
 
-    namespace Tests;
+    // The application classes that the docs samples name without declaring them.
+
+    namespace App {
+        final class Accounts
+        {
+            public static function byApiKey(string $apiKey): mixed
+            {
+                return null;
+            }
+        }
+
+        final class FeatureFlags
+        {
+            /** @return list<string> */
+            public static function active(): array
+            {
+                return [];
+            }
+        }
+
+        final class Users
+        {
+            public static function forToolCall(\AgentCat\ToolCall $call): mixed
+            {
+                return null;
+            }
+        }
+    }
+
+    namespace App\Auth {
+        final class TokenVerifier
+        {
+            public static function userFor(string $token): mixed
+            {
+                return null;
+            }
+        }
+    }
+
+    namespace App\Billing {
+        final class Payments
+        {
+            public static function chargeOpenInvoices(): void {}
+        }
+    }
+
+    namespace App\Mcp {
+        use Mcp\Schema\JsonRpc\Error;
+        use Mcp\Schema\JsonRpc\Request;
+        use Mcp\Schema\JsonRpc\Response;
+        use Mcp\Server\Handler\Request\RequestHandlerInterface;
+        use Mcp\Server\Session\SessionInterface;
+
+        /** @implements RequestHandlerInterface<mixed> */
+        final class AuditedToolCallHandler implements RequestHandlerInterface
+        {
+            public function supports(Request $request): bool
+            {
+                return false;
+            }
+
+            public function handle(Request $request, SessionInterface $session): Response|Error
+            {
+                return Error::forMethodNotFound('');
+            }
+        }
+    }
+
+    namespace App\Mcp\Servers {
+        final class InternalServer extends \Laravel\Mcp\Server {}
+
+        final class WeatherServer extends \Laravel\Mcp\Server {}
+    }
+
+    namespace App\Mcp\Tools {
+        final class CurrentWeatherTool extends \Laravel\Mcp\Server\Tool {}
+    }
 
     // The base test case of a Laravel application, as Laravel's application skeleton declares it.
-    abstract class TestCase extends \Illuminate\Foundation\Testing\TestCase {}
+    namespace Tests {
+        abstract class TestCase extends \Illuminate\Foundation\Testing\TestCase {}
+    }
 
     PHP;
 const FRAGMENT_PRELUDE = "<?php\n\ndeclare(strict_types=1);\n\n";
@@ -114,7 +193,6 @@ function phpstanConfiguration(): string
             scanFiles:
                 - '%currentWorkingDirectory%/.cache/docs-samples/stubs.php'
             tmpDir: '%currentWorkingDirectory%/.cache/phpstan-docs-samples'
-            reportUnmatchedIgnoredErrors: false
             strictRules:
                 allRules: false
             type_coverage:
@@ -123,10 +201,6 @@ function phpstanConfiguration(): string
                 property: 0
                 constant: 0
             noEnvCallsOutsideOfConfig: false
-            ignoreErrors:
-                -
-                    identifier: class.notFound
-                    message: '#\\bApp\\\\#'
         NEON;
 }
 
