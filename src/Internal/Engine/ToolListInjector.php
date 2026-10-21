@@ -97,16 +97,12 @@ final class ToolListInjector
             return $tools;
         }
         foreach ($tools as $tool) {
-            if ($this->nameOf($tool) === GetMoreTools::NAME) {
-                // The customer's tool stays listed, but AgentCat answers its calls, on whichever page it is.
-                if ($this->state->markCustomerGetMoreTools()) {
-                    Log::write(self::SHADOW_WARNING);
-                }
-
-                return $tools;
+            // The customer's tool stays listed, but AgentCat answers its calls, on whichever page it is.
+            if ($this->nameOf($tool) === GetMoreTools::NAME && $this->state->markCustomerGetMoreTools()) {
+                Log::write(self::SHADOW_WARNING);
             }
         }
-        // A page that this server read named the customer's tool: the last page gets no second get_more_tools.
+        // A page that this server read named the customer's tool, this one or an earlier one: no second get_more_tools.
         if ($this->lastPage && !$this->state->hasCustomerGetMoreTools()) {
             $tools[] = GetMoreTools::descriptor();
         }
