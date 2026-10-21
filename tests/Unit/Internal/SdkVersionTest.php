@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AgentCat\Tests\Unit\Internal;
 
 use AgentCat\Internal\SdkVersion;
+use Composer\InstalledVersions;
 use PHPUnit\Framework\TestCase;
 
 final class SdkVersionTest extends TestCase
@@ -24,6 +25,15 @@ final class SdkVersionTest extends TestCase
         $this->assertSame('1.2.3', SdkVersion::resolve(static fn(): string => '1.2.3'));
     }
 
+    /** The `v` of a tag name (`v1.0.0`) is not part of the version: the TypeScript SDK and the backend name `1.0.0`. */
+    public function testResolveDropsTheLeadingVOfATag(): void
+    {
+        $this->assertSame('1.0.0', SdkVersion::resolve(static fn(): string => 'v1.0.0'));
+        $this->assertSame('dev-main', SdkVersion::resolve(static fn(): string => 'dev-main'));
+        $this->assertSame('1.x-dev', SdkVersion::resolve(static fn(): string => '1.x-dev'));
+        $this->assertSame('dev', SdkVersion::resolve(static fn(): string => 'v'), 'never an empty version');
+    }
+
     public function testResolveFallsBackOnNull(): void
     {
         $this->assertSame('dev', SdkVersion::resolve(static fn(): ?string => null));
@@ -39,6 +49,17 @@ final class SdkVersionTest extends TestCase
         $version = SdkVersion::installed('mcp/sdk');
         $this->assertIsString($version);
         $this->assertNotSame('', $version);
+    }
+
+    /** Composer's pretty version of a tag keeps the tag's `v` (`v0.8.1`); the log prefix and diagnostics name `0.8.1`. */
+    public function testInstalledDropsTheLeadingVOfATag(): void
+    {
+        $pretty = InstalledVersions::getPrettyVersion('mcp/sdk');
+        $this->assertIsString($pretty);
+
+        $this->assertSame(str_starts_with($pretty, 'v') ? substr($pretty, 1) : $pretty, SdkVersion::installed('mcp/sdk'));
+        $this->assertStringStartsNotWith('v', (string) SdkVersion::installed('mcp/sdk'));
+        $this->assertStringStartsNotWith('v', (string) SdkVersion::installed('symfony/console'));
     }
 
     public function testInstalledReturnsNullForAPackageThatIsNotInstalled(): void
