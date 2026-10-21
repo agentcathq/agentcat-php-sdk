@@ -51,7 +51,7 @@ final readonly class BridgeKeys
     {
         $value = $this->config[$key] ?? $default;
         if (is_string($value) && trim($value) === '') {
-            ($this->warn)(sprintf(self::WRONG_TYPE, $key, 'array or non-empty string', 'empty string')); // names no server
+            ($this->warn)(sprintf(self::WRONG_TYPE, $key, 'array or non-empty string', $value === '' ? 'empty string' : 'a blank string')); // names no server
 
             return $default;
         }

@@ -53,10 +53,10 @@ final class BridgeKeysTest extends TestCase
         $this->assertSame(['WARN: AgentCat option "agentcat.exclude" must be array or non-empty string, got empty string; the default is used'], $this->lines->getArrayCopy());
     }
 
-    public function testABlankStringIsTreatedLikeTheEmptyOne(): void
+    public function testABlankStringIsTreatedLikeTheEmptyOneAndNamedAsBlank(): void
     {
         $this->assertSame(self::DEFAULT, $this->keys(['exclude' => " \t\n"])->strings('exclude', self::DEFAULT));
-        $this->assertSame(['WARN: AgentCat option "agentcat.exclude" must be array or non-empty string, got empty string; the default is used'], $this->lines->getArrayCopy());
+        $this->assertSame(['WARN: AgentCat option "agentcat.exclude" must be array or non-empty string, got a blank string; the default is used'], $this->lines->getArrayCopy());
     }
 
     public function testAListOfAnotherTypeIsTheDefaultWithOneLine(): void
