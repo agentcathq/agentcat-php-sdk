@@ -50,7 +50,7 @@ final class SnapshotTest extends TestCase
 
     public function testAVersionWithoutASnapshotIsComparedWithTheNewestLowerOne(): void
     {
-        $directory = sys_get_temp_dir() . '/agentcat-snapshots-' . bin2hex(random_bytes(4));
+        $directory = getenv('HOME') . '/snapshots-' . bin2hex(random_bytes(4));
         mkdir($directory);
 
         try {
@@ -200,7 +200,7 @@ final class SnapshotTest extends TestCase
     /** @param Snapshot $snapshot */
     private function directoryWith(string $library, string $version, array $snapshot): string
     {
-        $directory = sys_get_temp_dir() . '/agentcat-snapshots-' . bin2hex(random_bytes(4));
+        $directory = getenv('HOME') . '/snapshots-' . bin2hex(random_bytes(4));
         mkdir($directory);
         file_put_contents($directory . '/' . str_replace('/', '-', $library) . '-' . $version . '.json', MemberSnapshot::toJson($snapshot));
 

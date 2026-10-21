@@ -17,7 +17,7 @@ final class MemberSnapshotCliTest extends TestCase
     #[\Override]
     protected function setUp(): void
     {
-        $this->directory = sys_get_temp_dir() . '/agentcat-snapshot-cli-' . bin2hex(random_bytes(4));
+        $this->directory = getenv('HOME') . '/snapshot-cli-' . bin2hex(random_bytes(4));
         mkdir($this->directory);
     }
 
