@@ -16,7 +16,7 @@
         "agentcat/sdk": "*@dev",
         "mcp/sdk": "__MCP_SDK__"
     },
-    "minimum-stability": "dev",
+    "minimum-stability": "__STABILITY__",
     "prefer-stable": true,
     "config": {
         "allow-plugins": {},

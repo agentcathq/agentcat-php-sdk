@@ -46,8 +46,14 @@ for path in src/AgentCat.php config/agentcat.php resources/boost/guidelines/core
 done
 [ "$fail" = 0 ] || exit 1
 
-# 3. A fresh project. The probe files are copied in: /tests is export-ignored, so the dist does not hold them.
-sed -e "s#__DIST__#$dist#" -e "s#__MCP_SDK__#$constraint#" tests/Fixtures/package-probe/composer.json.tpl >"$project/composer.json"
+# 3. A fresh project. The probe files are copied in: /tests is export-ignored, so the dist does not hold them. A
+# customer's project takes stable releases only (agentcat/sdk's own *@dev flag admits the dist); the dev-main leg
+# takes dev for the branch's dependencies too.
+case "$constraint" in
+  *dev-*) stability=dev ;;
+  *) stability=stable ;;
+esac
+sed -e "s#__DIST__#$dist#" -e "s#__MCP_SDK__#$constraint#" -e "s#__STABILITY__#$stability#" tests/Fixtures/package-probe/composer.json.tpl >"$project/composer.json"
 cp tests/Fixtures/package-probe/probe.php "$project/probe.php"
 (cd "$project" && composer install --no-interaction --no-progress)
 
@@ -64,6 +70,7 @@ http_response_code(202);
 header('Content-Type: application/json');
 echo '{"status":"accepted"}';
 PHP
+# shellcheck disable=SC2016 # the single quotes hold PHP code, whose $ is not the shell's
 free_port() { php -r '$s = stream_socket_server("tcp://127.0.0.1:0"); echo parse_url(stream_socket_get_name($s, false), PHP_URL_PORT);'; }
 log="$root/collector.log"
 : >"$log"
