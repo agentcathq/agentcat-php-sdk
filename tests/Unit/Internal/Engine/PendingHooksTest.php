@@ -153,7 +153,7 @@ final class PendingHooksTest extends TestCase
         yield 'empty array' => [[]];
     }
 
-    /** `01` AC-45: a falsy eventTags result keeps only the SDK tags, silently. */
+    /** ac-01-45: a falsy eventTags result keeps only the SDK tags, silently. */
     #[DataProvider('falsyTags')]
     #[Group('ac-01-45')]
     public function testFalsyEventTagsKeepTheSdkTags(mixed $tags): void

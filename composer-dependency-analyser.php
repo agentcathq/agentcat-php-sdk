@@ -12,7 +12,7 @@ return (new Configuration())
     ->ignoreErrorsOnExtensionAndPath('ext-tokenizer', __DIR__ . '/tests/Architecture/TraceabilityTest.php', [ErrorType::SHADOW_DEPENDENCY])
     // Test fixture functions, loaded with require_once by ExceptionCaptureTest (not autoloadable).
     ->ignoreUnknownFunctionsRegex('~^AgentCat\\\\Tests\\\\Fixtures\\\\Errors\\\\~')
-    // mcp/sdk is optional (01 AC-90): a dev dependency and a suggestion, used only by the adapter.
+    // mcp/sdk is optional (ac-01-90): a dev dependency and a suggestion, used only by the adapter.
     ->ignoreErrorsOnPackageAndPath('mcp/sdk', __DIR__ . '/src/McpSdk', [ErrorType::DEV_DEPENDENCY_IN_PROD])
     // AgentCatFake asserts with PHPUnit only when the class is loaded (class_exists()); phpunit stays a dev dependency.
     ->ignoreErrorsOnPackageAndPath('phpunit/phpunit', __DIR__ . '/src/Testing', [ErrorType::DEV_DEPENDENCY_IN_PROD])
@@ -22,7 +22,7 @@ return (new Configuration())
     ->ignoreErrorsOnPackageAndPath('psr/event-dispatcher', __DIR__ . '/tests/Support/McpSdk/RecordingDispatcher.php', [ErrorType::SHADOW_DEPENDENCY])
     // Http\Discovery\Psr17Factory arrives with mcp/sdk; the HTTP fixtures build their request from the globals with it, like a customer.
     ->ignoreErrorsOnPackageAndPaths('php-http/discovery', [__DIR__ . '/tests/E2E/Fixtures', __DIR__ . '/tests/Runtime/Fixtures'], [ErrorType::SHADOW_DEPENDENCY])
-    // laravel/mcp and Laravel are optional (01 AC-90): dev dependencies used only by the Laravel adapter and bridge.
+    // laravel/mcp and Laravel are optional (ac-01-90): dev dependencies used only by the Laravel adapter and bridge.
     ->ignoreErrorsOnPackageAndPath('laravel/mcp', __DIR__ . '/src/LaravelMcp', [ErrorType::DEV_DEPENDENCY_IN_PROD])
     ->ignoreErrorsOnPackageAndPath('laravel/mcp', __DIR__ . '/src/Laravel', [ErrorType::DEV_DEPENDENCY_IN_PROD])
     ->ignoreErrorsOnPackageAndPath('laravel/framework', __DIR__ . '/src/LaravelMcp', [ErrorType::DEV_DEPENDENCY_IN_PROD])
@@ -30,7 +30,7 @@ return (new Configuration())
     // False positives: the analyser reads AgentCat's own `Env::get()` and `new Event(` as Laravel's global env() and
     // event() helpers. PHPat keeps Laravel out of these files (LayeringTest).
     ->ignoreErrorsOnPackageAndPaths('laravel/framework', [__DIR__ . '/src/Internal/Support/TestMode.php', __DIR__ . '/src/Internal/Support/BridgeConfig.php', __DIR__ . '/src/Client.php'], [ErrorType::DEV_DEPENDENCY_IN_PROD])
-    // Symfony is optional (01 AC-90): dev dependencies used only by the Symfony bundle.
+    // Symfony is optional (ac-01-90): dev dependencies used only by the Symfony bundle.
     ->ignoreErrorsOnPackagesAndPaths(['symfony/config', 'symfony/dependency-injection', 'symfony/http-foundation', 'symfony/http-kernel'], [__DIR__ . '/src/Symfony'], [ErrorType::DEV_DEPENDENCY_IN_PROD])
     // The bundle configures the Mcp\Server\Builder services of symfony/mcp-bundle, which requires mcp/sdk.
     ->ignoreErrorsOnPackageAndPath('mcp/sdk', __DIR__ . '/src/Symfony', [ErrorType::DEV_DEPENDENCY_IN_PROD])

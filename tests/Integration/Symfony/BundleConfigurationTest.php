@@ -24,10 +24,9 @@ use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
  * The shared client, which an application's own `AgentCat::track()` or `AgentCat::publishCustomEvent()` uses, follows
- * the `agentcat` configuration before the process environment: a value can
- * come from a literal in config/packages/agentcat.yaml, a parameter or a secret, which the environment does not hold.
- * `AgentCatBundle::boot()` hands each value to the core. Each test boots a kernel: 0.2 to 0.3 s measured on PHP 8.3
- * and 8.5.
+ * the `agentcat` configuration before the process environment: a value can come from a literal in
+ * config/packages/agentcat.yaml, a parameter or a secret, which the environment does not hold. `AgentCatBundle::boot()`
+ * hands each value to the core. Each test boots a kernel: 0.2 to 0.3 s measured on PHP 8.3 and 8.5.
  */
 final class BundleConfigurationTest extends SymfonyTestCase
 {

@@ -16,8 +16,8 @@ use AgentCat\Internal\Json\JsonTree;
 final class CallTrees
 {
     /**
-     * The protocol version the call claims in its `_meta`: never a version the session negotiated. Null
-     * when the claim is not a non-empty string.
+     * The protocol version the call claims in its `_meta`: never a version the session negotiated. Null when the claim
+     * is not a non-empty string.
      *
      * @param array<array-key, mixed>|null $meta
      */

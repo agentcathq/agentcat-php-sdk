@@ -18,11 +18,11 @@ use AgentCat\Tests\Support\Symfony\SymfonyTestCase;
 use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
 
 /**
- * A customer's Symfony functional tests with AgentCat's bundle registered (D31): a
- * kernel booted by the test, requests sent to the MCP route, and the `agentcat` configuration empty, as the Flex recipe
- * leaves it in the test environment. As a customer's `KernelBrowser` does, each request ends with the kernel's terminate
- * phase, where AgentCat's `kernel.terminate` listener runs. Each test boots its kernels, which compile a container:
- * about 0.3 s each, measured on PHP 8.3 and 8.5.
+ * A customer's Symfony functional tests with AgentCat's bundle registered (D31): a kernel booted by the test, requests
+ * sent to the MCP route, and the `agentcat` configuration empty, as the Flex recipe leaves it in the test environment.
+ * As a customer's `KernelBrowser` does, each request ends with the kernel's terminate phase, where AgentCat's
+ * `kernel.terminate` listener runs. Each test boots its kernels, which compile a container: about 0.3 s each, measured
+ * on PHP 8.3 and 8.5.
  */
 final class CustomerTestSuiteTest extends SymfonyTestCase
 {
@@ -62,8 +62,8 @@ final class CustomerTestSuiteTest extends SymfonyTestCase
     }
 
     /**
-     * D41: the fake records what production sends, the HTTP request of each call included: an
-     * `identify` service reads the call's `X-User` header, and the event carries the request's headers and URL.
+     * D41: the fake records what production sends, the HTTP request of each call included: an `identify` service reads
+     * the call's `X-User` header, and the event carries the request's headers and URL.
      */
     #[MaximumDuration(2000)]
     public function testAFakeRecordsTheRequestOfEachCallAsProductionSendsIt(): void

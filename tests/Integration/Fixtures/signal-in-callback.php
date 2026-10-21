@@ -17,10 +17,10 @@ require dirname(__DIR__, 3) . '/vendor/autoload.php';
 // A CLI server whose side channel downloads large answers while SIGTERM arrives every 200 µs (a forked child sends it).
 // A signal handler runs between two opcodes, so also inside a write callback of curl_multi_exec(). Each SIGTERM that
 // lands there runs AgentCat's drain (SignalDrain::onSignal()), then the server's own handler, which only counts and
-// returns (a graceful-stop flag): the process goes on. Before the fix, such a drain re-entered the
-// multi handle, and PHP crashed when the callback returned (exit 139). A SIGTERM elsewhere calls only the server's
-// handler: a drain there would send the side requests itself while the next signals wait, so few would land inside a
-// callback. (AgentCat installs its drain once per process; the fixture runs it on every signal of the case under test.)
+// returns (a graceful-stop flag): the process goes on. Before the fix, such a drain re-entered the multi handle, and
+// PHP crashed when the callback returned (exit 139). A SIGTERM elsewhere calls only the server's handler: a drain there
+// would send the side requests itself while the next signals wait, so few would land inside a callback. (AgentCat
+// installs its drain once per process; the fixture runs it on every signal of the case under test.)
 // Usage: signal-in-callback.php <events-url> <side-url> <rounds>
 // Prints: "survived signals=<n> nested=<drains inside curl_multi_exec()> done=<side requests answered> errors=<failed ones>"
 $eventsUrl = $argv[1] ?? '';

@@ -460,7 +460,7 @@ final class PublishCustomEventTest extends TestCase
         $this->assertSame('ses_1', JsonAssert::at($this->body(), 'session_id'));
     }
 
-    /** `01` AC-69: the server built from a tracked Builder is accepted too. */
+    /** ac-01-69: the server built from a tracked Builder is accepted too. */
     #[Group('ac-01-69')]
     public function testTheServerBuiltFromATrackedBuilderIsAccepted(): void
     {
@@ -495,8 +495,8 @@ final class PublishCustomEventTest extends TestCase
     }
 
     /**
-     * After a track() that AgentCat could not complete (it logged why), a server it cannot find logs a
-     * warning instead of throwing into the customer's code, for example after an mcp/sdk upgrade.
+     * After a track() that AgentCat could not complete (it logged why), a server it cannot find logs a warning instead
+     * of throwing into the customer's code, for example after an mcp/sdk upgrade.
      *
      * @param \Closure(Client, Builder): void $fail
      */

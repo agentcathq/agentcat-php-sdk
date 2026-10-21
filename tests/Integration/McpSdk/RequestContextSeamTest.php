@@ -23,8 +23,8 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
- * The HTTP request of an mcp/sdk call from a framework bridge instead of `$_SERVER`: a
- * worker that serves many requests in one process, where `$_SERVER` is stale, records each request's own.
+ * The HTTP request of an mcp/sdk call from a framework bridge instead of `$_SERVER`: a worker that serves many requests
+ * in one process, where `$_SERVER` is stale, records each request's own.
  */
 final class RequestContextSeamTest extends TestCase
 {

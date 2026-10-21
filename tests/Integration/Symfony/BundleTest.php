@@ -86,8 +86,8 @@ final class BundleTest extends SymfonyTestCase
     }
 
     /**
-     * Booting, and a console command that builds no MCP server, track nothing, so
-     * they get no diagnostics and no signal handlers, as Laravel's `artisan list`.
+     * Booting, and a console command that builds no MCP server, track nothing, so they get no diagnostics and no signal
+     * handlers, as Laravel's `artisan list`.
      */
     #[MaximumDuration(1000)]
     public function testBootingAndACommandTrackNothing(): void
@@ -180,9 +180,9 @@ final class BundleTest extends SymfonyTestCase
     }
 
     /**
-     * With a compiled container, an `addRequestHandlers` call of another shape stays where it is. The
-     * customer's handler still answers; it comes before AgentCat's, which still tracks the server (its listing), but
-     * no longer sees the calls that the customer's handler answers.
+     * With a compiled container, an `addRequestHandlers` call of another shape stays where it is. The customer's
+     * handler still answers; it comes before AgentCat's, which still tracks the server (its listing), but no longer
+     * sees the calls that the customer's handler answers.
      *
      * @param (\Closure(TaggedIteratorArgument): array<array-key, mixed>)|null $shape
      */
@@ -257,9 +257,9 @@ final class BundleTest extends SymfonyTestCase
     }
 
     /**
-     * A name written in the configuration leaves the builder's definition as it is (no
-     * configurator), one from an environment variable reaches the configurator, which leaves the server untracked. An
-     * entry that is no name never fails the compile.
+     * A name written in the configuration leaves the builder's definition as it is (no configurator), one from an
+     * environment variable reaches the configurator, which leaves the server untracked. An entry that is no name never
+     * fails the compile.
      *
      * @param array<string, mixed> $configurators
      */

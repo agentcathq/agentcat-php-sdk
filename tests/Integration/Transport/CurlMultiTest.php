@@ -28,11 +28,11 @@ final class CurlMultiTest extends TestCase
     }
 
     /**
-     * A signal handler runs between two opcodes, so also inside a PHP write callback of
-     * `curl_multi_exec()`. There libcurl answers every multi call with `CURLM_RECURSIVE_API_CALL`, and the engine must
-     * leave every handle and transfer as it is: removing one there frees a handle that libcurl still uses (a segfault).
-     * A refused add waits for the next `run()`. The test keeps every handle alive, so that a regression fails an
-     * assertion instead of crashing PHPUnit.
+     * A signal handler runs between two opcodes, so also inside a PHP write callback of `curl_multi_exec()`. There
+     * libcurl answers every multi call with `CURLM_RECURSIVE_API_CALL`, and the engine must leave every handle and
+     * transfer as it is: removing one there frees a handle that libcurl still uses (a segfault). A refused add waits
+     * for the next `run()`. The test keeps every handle alive, so that a regression fails an assertion instead of
+     * crashing PHPUnit.
      */
     #[MaximumDuration(5000)]
     public function testACallFromInsideATransferCallbackLeavesEveryTransferAsItIs(): void

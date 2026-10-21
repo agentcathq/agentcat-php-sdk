@@ -197,8 +197,8 @@ final class StdioEndToEndTest extends TestCase
     }
 
     /**
-     * Stdin closes while the collector holds every delivery. The pump at each handler entry starts at
-     * most 5 deliveries, so 2 of the 7 events still wait when the 5 s shutdown budget ends.
+     * Stdin closes while the collector holds every delivery. The pump at each handler entry starts at most 5
+     * deliveries, so 2 of the 7 events still wait when the 5 s shutdown budget ends.
      */
     #[Group('ac-03-9')]
     #[MaximumDuration(15000)]
@@ -244,7 +244,7 @@ final class StdioEndToEndTest extends TestCase
     }
 
     /**
-     * 06 AC-62 in a real process: stdin EOF posts the diagnostics buffer exactly once, with the setup beacons and the
+     * ac-06-62 in a real process: stdin EOF posts the diagnostics buffer exactly once, with the setup beacons and the
      * per-event line logged during the EOF drain.
      */
     #[Group('ac-06-62')]

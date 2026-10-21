@@ -14,8 +14,8 @@ use Laravel\Mcp\Transport\JsonRpcResponse;
 
 /**
  * laravel/mcp's `CallTool`, whose tool invoker also keeps the tool's own exception for the request: a copy of
- * `CallTool::handle()` (laravel/mcp 1.0.0 to 1.1.0) with `CapturingToolInvoker`. The contract
- * test `ExtendedClassesTest` keeps both answers equal.
+ * `CallTool::handle()` (laravel/mcp 1.0.0 to 1.1.0) with `CapturingToolInvoker`. The contract test
+ * `ExtendedClassesTest` keeps both answers equal.
  *
  * @internal
  */

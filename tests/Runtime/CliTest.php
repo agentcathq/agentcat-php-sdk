@@ -47,7 +47,7 @@ final class CliTest extends RuntimeTestCase
     }
 
     /**
-     * `03` AC-10 and AC-37: the signal drain delivers the queued event, then raises SIGTERM again with the default
+     * ac-03-10 and ac-03-37: the signal drain delivers the queued event, then raises SIGTERM again with the default
      * disposition, so the container ends with 128 + 15; stdout carries only the JSON-RPC answers. Under Symfony's
      * `mcp:server` the drain chains to the handler that Symfony Console registered, which dispatches its signal event
      * (exit code 0 by default) and calls `exit(0)`: the code is Console's own, 0, and AgentCat never raises the signal.
@@ -84,9 +84,9 @@ final class CliTest extends RuntimeTestCase
     }
 
     /**
-     * ext-swoole stops its workers with C-level signal handlers that PHP cannot see or
-     * chain, so the first event installs no SIGTERM handler there; the same script in the CLI image installs one. Both
-     * images have ext-pcntl, so the guard, not a missing extension, keeps the handler out.
+     * ext-swoole stops its workers with C-level signal handlers that PHP cannot see or chain, so the first event
+     * installs no SIGTERM handler there; the same script in the CLI image installs one. Both images have ext-pcntl, so
+     * the guard, not a missing extension, keeps the handler out.
      */
     #[MaximumDuration(60000)]
     public function testNoSignalHandlerIsInstalledUnderSwoole(): void

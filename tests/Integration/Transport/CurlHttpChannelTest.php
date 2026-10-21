@@ -241,11 +241,11 @@ final class CurlHttpChannelTest extends TestCase
     }
 
     /**
-     * A signal handler (the SIGTERM drain) that runs inside a callback pumps, waits on and posts
-     * to the channel it interrupted. In the `header` callback the seam clears the busy flag first, as at PHP 8.4+'s
-     * callback entry: the nested pump's add and run are refused, the refusal marks the channel busy, and the request
-     * waits. In the `write` callback the channel is busy already. Either way: nothing pending, no wait, nothing failed,
-     * and every request completes.
+     * A signal handler (the SIGTERM drain) that runs inside a callback pumps, waits on and posts to the channel it
+     * interrupted. In the `header` callback the seam clears the busy flag first, as at PHP 8.4+'s callback entry: the
+     * nested pump's add and run are refused, the refusal marks the channel busy, and the request waits. In the `write`
+     * callback the channel is busy already. Either way: nothing pending, no wait, nothing failed, and every request
+     * completes.
      */
     #[MaximumDuration(5000)]
     public function testAPumpFromInsideATransferCallbackLeavesTheChannelAlone(): void

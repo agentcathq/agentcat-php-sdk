@@ -20,8 +20,8 @@ use PHPUnit\Framework\TestCase;
  * pass without running them.
  *
  * Each class has one mock collector on 127.0.0.1 (`self::$collector`). After each test and each class, every container
- * of this process is removed, also when the test failed. A test's output directory (`out()`, mounted at
- * `/out`) lives under the test HOME and is removed after the test.
+ * of this process is removed, also when the test failed. A test's output directory (`out()`, mounted at `/out`) lives
+ * under the test HOME and is removed after the test.
  *
  * PHPUnit does not inherit groups: every subclass carries `#[Group('runtime')]` itself, or the class fails in
  * `setUpBeforeClass()`.

@@ -10,9 +10,9 @@ use Mcp\Capability\Registry\ReferenceHandlerInterface;
 use Mcp\Capability\Registry\ToolReference;
 
 /**
- * The inner tap: runs every tool, prompt and resource through the reference handler the
- * Builder would use, and stashes a tool's exception for the request it ran for before mcp/sdk catches it. It
- * changes nothing else: the arguments and the result pass unchanged, and the exception is rethrown.
+ * The inner tap: runs every tool, prompt and resource through the reference handler the Builder would use, and stashes
+ * a tool's exception for the request it ran for before mcp/sdk catches it. It changes nothing else: the arguments and
+ * the result pass unchanged, and the exception is rethrown.
  *
  * @internal
  */

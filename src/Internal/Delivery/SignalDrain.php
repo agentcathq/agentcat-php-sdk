@@ -138,8 +138,8 @@ final class SignalDrain
     }
 
     /**
-     * Shuts the queue down, then calls the earlier handler (`03` AC-11: the process keeps running) or raises the
-     * signal again (`03` AC-10).
+     * Shuts the queue down, then calls the earlier handler (ac-03-11: the process keeps running) or raises the
+     * signal again (ac-03-10).
      *
      * @param mixed $previous the handler before ours: a callable, or `SIG_DFL`
      * @param mixed $siginfo  PHP's second handler argument (an array), passed on to `$previous` unchanged

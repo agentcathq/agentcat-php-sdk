@@ -210,8 +210,8 @@ final class LaravelMcpAdapterTest extends LaravelTestCase
     }
 
     /**
-     * `createContext()` is public customer code, not a protected-member read: what it throws
-     * leaves the name and version unknown and logs nothing; a deprecation it triggers costs nothing.
+     * `createContext()` is public customer code, not a protected-member read: what it throws leaves the name and
+     * version unknown and logs nothing; a deprecation it triggers costs nothing.
      */
     public function testAServerInfoThatCannotBeReadIsUnknownWithoutALine(): void
     {

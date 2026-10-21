@@ -15,7 +15,7 @@ use Laravel\Mcp\Transport\JsonRpcResponse;
 /**
  * Answers `tools/list` (TS listWrap): the handler the server's entry named before AgentCat's lists, then AgentCat
  * injects its parameters into every page and appends get_more_tools to the last one (D66). Streams, JSON-RPC errors,
- * exceptions and answers without a tool list pass unchanged (02 AC-10).
+ * exceptions and answers without a tool list pass unchanged (ac-02-10).
  *
  * @internal
  */
@@ -28,7 +28,7 @@ final readonly class TrackedListTools implements Method
     public function handle(JsonRpcRequest $request, ServerContext $context): iterable|JsonRpcResponse
     {
         $this->publisher->pump(); // stdio servers deliver between requests
-        $response = Delegate::handle($this->original, $request, $context); // throws pass unchanged (02 AC-10)
+        $response = Delegate::handle($this->original, $request, $context); // throws pass unchanged (ac-02-10)
         if (!$response instanceof JsonRpcResponse || array_key_exists('error', $response->content)) {
             return $response; // a stream or a JSON-RPC error passes unchanged, like the mcp/sdk adapter's
         }

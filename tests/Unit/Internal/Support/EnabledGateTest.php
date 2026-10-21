@@ -75,8 +75,8 @@ final class EnabledGateTest extends TestCase
     }
 
     /**
-     * `AGENTCAT_ENABLED=maybe` gives `agentcat.enabled` the same word. The default is the test-mode
-     * default: reading the variable again would log a second line for the same value.
+     * `AGENTCAT_ENABLED=maybe` gives `agentcat.enabled` the same word. The default is the test-mode default: reading
+     * the variable again would log a second line for the same value.
      */
     public function testAnUnknownWordThatIsAlsoTheEnvironmentLogsOneLine(): void
     {

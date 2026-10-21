@@ -15,8 +15,8 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ServiceLocator;
 
 /**
- * The configurator the builder had runs first, then AgentCat tracks, then the
- * customer's tagged handlers are added. Each step writes a line, so their order is the order of the lines.
+ * The configurator the builder had runs first, then AgentCat tracks, then the customer's tagged handlers are added.
+ * Each step writes a line, so their order is the order of the lines.
  */
 final class BuilderConfiguratorTest extends TestCase
 {

@@ -27,8 +27,8 @@ use Laravel\Mcp\Server\Transport\FakeTransporter;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
- * A customer's Laravel test suite with AgentCat installed (D31): laravel/mcp's
- * `Server::tool()` and `Server::tools()` helpers, with `agentcat.enabled` unset as in the published configuration.
+ * A customer's Laravel test suite with AgentCat installed (D31): laravel/mcp's `Server::tool()` and `Server::tools()`
+ * helpers, with `agentcat.enabled` unset as in the published configuration.
  */
 final class CustomerTestSuiteTest extends BridgeTestCase
 {

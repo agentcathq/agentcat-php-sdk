@@ -7,6 +7,7 @@ namespace AgentCat\Tests\Architecture;
 use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\View\Compilers\BladeCompiler;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -48,36 +49,51 @@ final class PackageFilesTest extends TestCase
 
     private const string GUIDELINE = self::ROOT . '/resources/boost/guidelines/core.blade.php';
 
-    /** The committed paths whose text must not point at the planning documents. */
-    private const array PUBLIC_PATHS = ['src', 'tests', 'config', 'resources', '.github', 'README.md', 'CHANGELOG.md', 'CONTRIBUTING.md'];
+    /** The committed paths whose text must not point at the planning documents: every directory and root file. */
+    private const array PUBLIC_PATHS = [
+        'src', 'tests', 'config', 'resources', 'recipe', '.github', 'README.md', 'CHANGELOG.md', 'CONTRIBUTING.md',
+        'composer.json', 'composer-dependency-analyser.php', 'phpstan.neon.dist', 'phpstan.no-bundle.neon',
+        'phpstan.php85.neon', 'rector.php', 'infection.json5', 'phpunit.xml.dist', '.php-cs-fixer.dist.php',
+        '.gitattributes', '.gitignore', '.editorconfig',
+    ];
 
-    /** This file: it holds the pattern and the references that prove it. */
+    /** This file: it holds the pattern and the texts that prove it. */
     private const string SELF = 'tests/Architecture/PackageFilesTest.php';
 
     /**
-     * A reference to a planning document: its paths, its ledgers, numbered header and spec conflicts, review focus
-     * items, numbered rulings, plan and task numbers, an appendix, numbered findings and open questions, a numbered
-     * section of an audit document, and the short IDs of review notes as references (`(C6)`, `A4:`, `N10)`). Decision
-     * IDs (`D07`), bug IDs (`B10`) and criterion IDs (`ac-05-E5`) stay: the code names them as rules. Each alternative
-     * needs a number or an ID next to its word, so ordinary words ("a plan", "the header", "a task") never match.
+     * A reference to a planning document, in any case. Decision IDs (`D07`), bug IDs (`B10`) and criterion IDs in the
+     * spelling of `tests/Traceability/criteria.php` (`ac-05-E5`) stay: the code names them as rules. The words of the
+     * planning process match alone; a plan, task, finding, question, appendix or audit section matches with its number
+     * or ID, so "a plan" or "Finding 3 items" does not. Phrases that look like a reference but are ordinary are
+     * `ALLOWED_PHRASES`.
      */
     private const string PLANNING_REFERENCE = <<<'REGEX'
         ~
-          docs/(?:audit|superpowers) | \.superpowers\b
-        | \b(?:[Pp]lan\s+[A-F][0-9]? | [A-F][0-9])\s+ledgers?\b
-        | \b(?:[Hh]eader|[Ss]pec)\s+conflicts?\s+[0-9]
-        | \b[Rr]eview[\s-]+[Ff]ocus\b
-        | \b[Rr]ulings?\s+[A-Z][0-9]+\b | \b[A-Z][0-9]+\s+ruling\b
-        | \bPlans?\s+[A-F][0-9]?\b | \bplans?\s+[A-F][0-9]\b
-        | \bTasks?\s+[0-9]+\b
-        | \b[Aa]ppendix\s+[A-Z]\b
-        | \b[Ff]indings?\s+[A-Z]?[0-9]+\b
-        | \b[Oo]pen\s+questions?\s+[A-Z]?[0-9]+\b
-        | \b[Aa]udit\s+[0-9]
-        | \bDECISIONS\b
-        | (?<![\w$\\'{}-])[ACEFIMNQ][0-9]{1,2}(?=:|\)|\s+(?:of|and|header|carry|review|ruling)\b)
-        | (?:\bREADME | \b0[0-9][a-c]? | `0[0-9][a-c]?`)\s+\x{00A7}
-        ~xu
+          docs/(?:audit|superpowers)\b | \.superpowers\b
+        | \bledgers?\b | \brulings?\b | \breview[\s-]+focus\b | \b(?:header|spec)\s+conflicts?\b
+        | \bplans?\s+(?:[a-f][0-9]\b | [c-f]\b(?!\.\w))        # Plan C1, plan E2, Plan F; "plan A", "plan B" are idioms
+        | \btasks?\s+[0-9]+\b                                  # Task 13; the ordinary phrases are ALLOWED_PHRASES
+        | \bappendix\s+[a-z]\b | \bfindings?\s+[a-z][0-9]+\b | \bopen\s+questions?\s+[a-z]?[0-9]+\b
+        | \baudit\s+[0-9]+\.[0-9] | (?-i:\bDECISIONS\b)
+        | (?:\breadme | \b0[0-9][a-c]? | `0[0-9][a-c]?`)\s+\x{00A7}   # a section of an audit document: 02 §3.3
+        | (?:\b|`)0[0-9]`?\s+ac-[0-9]+                                 # a criterion in the audit's spelling: 03 AC-11
+        | \((?:[^()\n]*?[\s,])?[acefimn][0-9]{1,2}[,)]                 # a review note in parentheses: (C6), (B16, N10)
+        | (?-i:(?<![\w$\\'{}:-])[ACEFIMNQ][0-9]{1,2}:\s)               # a review note that leads a comment: A4: …
+        ~xui
+        REGEX;
+
+    /**
+     * Ordinary phrases that `PLANNING_REFERENCE` would flag, removed before it runs. MCP's own tasks feature numbers a
+     * task within its set ("task 2 of an MCP server", "Task 1 of the queue") or says what the task does ("task 2 is
+     * cancelled"); another document has its own appendices ("Appendix B of RFC 9110"). A comment that needs another
+     * ordinary phrase adds it here, with its reason.
+     */
+    private const string ALLOWED_PHRASES = <<<'REGEX'
+        ~
+          \btasks?\s+[0-9]+\s+of\s+(?!plan\b)
+        | \btasks?\s+[0-9]+\s+(?:is|was|stays|runs|completes|completed|fails|failed|ends|ended|gets|returns|has)\b
+        | \bappendix\s+[a-z]\s+of\s+(?!(?:the|this)\s+plan\b)
+        ~xui
         REGEX;
 
     public function testTheChangelogStartsWithTheKeepAChangelogHeader(): void
@@ -221,9 +237,9 @@ final class PackageFilesTest extends TestCase
                     continue; // not UTF-8 text: an image or another binary fixture
                 }
                 // A reference that wraps onto the next comment line still counts: the line breaks become spaces.
-                $joined = (string) preg_replace('~\\R[ \\t]*(?:\\*(?!/)|//|#)?[ \\t]*~u', ' ', $text);
-                if (preg_match_all(self::PLANNING_REFERENCE, $joined, $matches) > 0) {
-                    $found[] = sprintf('%s: %s', substr($file, strlen(self::ROOT) + 1), implode(', ', array_unique($matches[0])));
+                $references = $this->references((string) preg_replace('~\R[ \t]*(?:\*(?!/)|//|#)?[ \t]*~u', ' ', $text));
+                if ($references !== []) {
+                    $found[] = sprintf('%s: %s', substr($file, strlen(self::ROOT) + 1), implode(', ', $references));
                 }
             }
         }
@@ -232,28 +248,64 @@ final class PackageFilesTest extends TestCase
         $this->assertSame([], $found, "These files point at planning documents; state the rule instead:\n" . implode("\n", $found));
     }
 
-    /** The pattern finds each kind of reference, and not the IDs and words that stay. */
-    public function testThePlanningReferencePatternFindsReferencesOnly(): void
+    /** @return iterable<string, array{string, bool}> a text, and whether it points at a planning document */
+    public static function planningTexts(): iterable
     {
         $references = [
-            'plan E1', 'Plan F', 'Task 13', 'header conflict 3', 'Spec conflicts 1', 'Review Focus 2',
-            'review-focus-2', 'ruling P8', 'Ruling R4', 'the E2 ledger', 'Appendix A', 'finding F1',
-            'open question Q3', 'audit 3.3', 'DECISIONS item 6', 'docs/audit/02-engine.md', '(C6)',
-            'A4: the opt-out', 'N10)', "02 \u{00A7}3.3", "README \u{00A7}4.5", "`07` \u{00A7}6.7",
+            // the families, in any case
+            'plan E1', 'Plan F', 'PLAN F', 'plan f', 'PLAN E1', 'plan e1', 'Plans C1 and C2', 'Plan E1 Task 6 parity',
+            'Task 13', 'task 13', 'TASK 13', 'Task 4 review M2', 'Task 2',
+            'ledger', 'the E2 ledger', 'E2 LEDGER', 'A ledger of payments', 'ruling', 'ruling P8', 'Ruling R4',
+            'RULING R4', 'ruling r4', 'the court ruling', 'Review Focus 2', 'REVIEW FOCUS', 'review-focus-2',
+            'header conflict 3', 'HEADER CONFLICT 3', 'two header conflicts', 'Spec conflicts 1',
+            'docs/audit/02-engine.md', 'DOCS/AUDIT/', 'Docs/Audit/x', 'docs/superpowers/plans', '.superpowers/sdd',
+            'Appendix A', 'appendix a', 'Appendix A of the plan', 'finding F1', 'finding f1', 'open question Q3',
+            'audit 3.3', 'AUDIT 3.3', 'DECISIONS item 6',
+            // audit sections and the audit's spelling of a criterion
+            "02 \u{00A7}3.3", "README \u{00A7}4.5", "`07` \u{00A7}6.7", '03 AC-11', '`03` AC-11', 'D07 over 06 AC-61',
+            // review-note IDs as references
+            '(C6)', '(c6)', '(B16, N10)', '(C6, README', 'A4: the opt-out', 'M3: every bool key', 'Q3: no timer',
         ];
-        foreach ($references as $reference) {
-            $this->assertSame(1, preg_match(self::PLANNING_REFERENCE, $reference), $reference);
+        foreach ($references as $text) {
+            yield 'reference: ' . $text => [$text, true];
         }
-        $kept = [
-            'D07', 'D66, B10 fixed', 'ac-05-E5', "'ac-05-C2'", "RFC 9110 \u{00A7}8.6", '$e1 = new \\Exception()',
-            "pack('C4', \$bytes)", '\\u{a1}A9\\u{5b}', 'E2E', 'a secret plan', 'the plan is pro',
-            'tasks in the queue', 'composer audit', 'the header line', 'a ruler', 'mcp/sdk 0.9.0', 'PHP 8.5',
-            'Swoole 6.2', 'a task 3 s later', 'a plan B', 'A ledger of payments', 'two header conflicts',
-            'the court ruling', 'an Apple M2 chip', 'Q3 2026', 'Task: none',
+        $ordinary = [
+            // IDs that stay
+            'D07', 'D66, B10 fixed', '(D16)', '(D47, D58)', 'ac-05-E5', "'ac-05-C2'", 'ac-03-11',
+            "RFC 9110 \u{00A7}8.6",
+            // code and data
+            '$e1 = new \Exception()', "pack('C4', \$bytes)", '\u{a1}A9\u{5b}', 'E2E', 'A1:A5', 'C4)', 'mcp/sdk 0.9.0',
+            'PHP 8.5', 'Swoole 6.2', 'Q3 2026', '(released in Q3)', 'an Apple M2 chip',
+            // ordinary words
+            'a secret plan', 'the plan is pro', 'a plan B', 'Plan B', 'Plan A is faster', 'a plan, e.g. a fallback',
+            'a plan e.g. for B10', 'tasks in the queue', 'Task: none', 'composer audit', 'Audit 2 users',
+            'the header line', 'a ruler', 'Finding 3 items', 'Appendix B of RFC 9110',
+            // MCP's own tasks feature
+            'tasks/list', 'mcp:tasks/cancel', 'notifications/tasks/status', 'a test about task 2 of an MCP server',
+            'Task 1 of the queue', 'task 1 of 3', 'task 2 is cancelled',
         ];
-        foreach ($kept as $text) {
-            $this->assertSame(0, preg_match(self::PLANNING_REFERENCE, $text), $text);
+        foreach ($ordinary as $text) {
+            yield 'ordinary: ' . $text => [$text, false];
         }
+    }
+
+    /**
+     * Every example of the review: a bare task number counts as a plan reference, as the plan wrote it ("Task 4:",
+     * "(Task 6 review)"); MCP's tasks have string IDs, and an ordinal names its set ("task 2 of an MCP server").
+     */
+    #[DataProvider('planningTexts')]
+    public function testThePlanningReferencePatternFindsReferencesOnly(string $text, bool $reference): void
+    {
+        $this->assertSame($reference, $this->references($text) !== [], implode(', ', $this->references($text)));
+    }
+
+    /** @return list<string> the references to planning documents in `$text`, each once */
+    private function references(string $text): array
+    {
+        $text = (string) preg_replace(self::ALLOWED_PHRASES, ' ', $text);
+        preg_match_all(self::PLANNING_REFERENCE, $text, $matches);
+
+        return array_values(array_unique($matches[0]));
     }
 
     /** @return list<string> the files at `$path`, recursively */
@@ -262,7 +314,7 @@ final class PackageFilesTest extends TestCase
         if (is_file($path)) {
             return [$path];
         }
-        $this->assertDirectoryExists($path);
+        $this->assertDirectoryExists($path, 'a public path is a file or a directory of the repository');
         $files = [];
         foreach (new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($path, \FilesystemIterator::SKIP_DOTS)) as $file) {
             if ($file instanceof \SplFileInfo && $file->isFile()) {

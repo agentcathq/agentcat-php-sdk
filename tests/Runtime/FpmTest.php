@@ -70,9 +70,9 @@ final class FpmTest extends RuntimeTestCase
     }
 
     /**
-     * AgentCat writes and closes the native session before its drain, so a second request of the same
-     * session gets the lock while the first one still waits 3 s for the AgentCat API. Without that, PHP would write the
-     * session after the shutdown functions, after the drain.
+     * AgentCat writes and closes the native session before its drain, so a second request of the same session gets the
+     * lock while the first one still waits 3 s for the AgentCat API. Without that, PHP would write the session after
+     * the shutdown functions, after the drain.
      */
     #[MaximumDuration(30000)]
     public function testTheSessionLockIsReleasedBeforeTheDrain(): void
@@ -139,9 +139,8 @@ final class FpmTest extends RuntimeTestCase
     }
 
     /**
-     * A streamed laravel/mcp answer (two progress notifications 50 ms apart, then the result)
-     * reaches the client as server-sent events, and its event comes when the stream ends, with a `duration` that covers
-     * the stream.
+     * A streamed laravel/mcp answer (two progress notifications 50 ms apart, then the result) reaches the client as
+     * server-sent events, and its event comes when the stream ends, with a `duration` that covers the stream.
      */
     #[Group('ac-02-54')]
     #[MaximumDuration(40000)]
@@ -162,9 +161,9 @@ final class FpmTest extends RuntimeTestCase
     }
 
     /**
-     * D58: under PHP-FPM `Response::send()` finishes the request, `kernel.terminate` makes one
-     * non-blocking pass, and AgentCat's shutdown function delivers, so the client has its answer before the collector
-     * answers 3 s later. An untimed first request compiles the container.
+     * D58: under PHP-FPM `Response::send()` finishes the request, `kernel.terminate` makes one non-blocking pass, and
+     * AgentCat's shutdown function delivers, so the client has its answer before the collector answers 3 s later. An
+     * untimed first request compiles the container.
      */
     #[MaximumDuration(40000)]
     public function testSymfonyAnswersBeforeTheShutdownDelivery(): void

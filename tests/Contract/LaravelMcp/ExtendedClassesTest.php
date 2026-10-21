@@ -20,9 +20,8 @@ use PHPUnit\Framework\Attributes\Group;
 
 /**
  * AgentCat answers laravel/mcp's `tools/call` with `CapturingCallTool`, a copy of `CallTool::handle()` whose invoker
- * overrides `ToolInvoker::toErrorResponse()` to keep the tool's own exception. A future
- * laravel/mcp that makes either parent or method final or private, changes their signatures, or answers differently
- * breaks it.
+ * overrides `ToolInvoker::toErrorResponse()` to keep the tool's own exception. A future laravel/mcp that makes either
+ * parent or method final or private, changes their signatures, or answers differently breaks it.
  */
 #[Group('contract')]
 final class ExtendedClassesTest extends LaravelTestCase

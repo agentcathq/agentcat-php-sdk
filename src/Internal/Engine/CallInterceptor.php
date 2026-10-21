@@ -18,8 +18,8 @@ use AgentCat\Internal\Tokens\TokenEstimator;
 use AgentCat\Internal\Tools\GetMoreTools;
 
 /**
- * Port of the TypeScript tools/call wrapper (callWrap.ts). One event per traced call;
- * customer hooks never run here (D04). Rethrows the library's exceptions unchanged and adds none of its own (D32).
+ * Port of the TypeScript tools/call wrapper (callWrap.ts). One event per traced call; customer hooks never run here
+ * (D04). Rethrows the library's exceptions unchanged and adds none of its own (D32).
  *
  * @internal
  */

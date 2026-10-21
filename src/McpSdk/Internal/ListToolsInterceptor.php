@@ -16,7 +16,7 @@ use Mcp\Server\Session\SessionInterface;
 
 /**
  * Answers `tools/list` first (TS listWrap): the next handler lists, then AgentCat injects its parameters into the page
- * and appends get_more_tools to the last one (D66). Errors, exceptions and other answers pass unchanged (02 AC-10).
+ * and appends get_more_tools to the last one (D66). Errors, exceptions and other answers pass unchanged (ac-02-10).
  *
  * @implements RequestHandlerInterface<mixed>
  *
@@ -46,7 +46,7 @@ final readonly class ListToolsInterceptor implements RequestHandlerInterface
         if (!$delegate instanceof RequestHandlerInterface) {
             return Delegates::notFound($request);
         }
-        $response = $delegate->handle($request, $session); // throws and JSON-RPC errors pass unchanged (02 AC-10)
+        $response = $delegate->handle($request, $session); // throws and JSON-RPC errors pass unchanged (ac-02-10)
         if (!$response instanceof Response) {
             return $response;
         }

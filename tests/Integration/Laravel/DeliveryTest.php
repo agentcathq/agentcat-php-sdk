@@ -35,8 +35,8 @@ use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Delivery after each request of a Laravel application whose process outlives the request, as in an Octane worker
- * (D58). Each request goes through Laravel's HTTP kernel to `Mcp::web()`,
- * and Laravel's test client runs `$kernel->terminate()` after it, as a server does after it sent the response.
+ * (D58). Each request goes through Laravel's HTTP kernel to `Mcp::web()`, and Laravel's test client runs
+ * `$kernel->terminate()` after it, as a server does after it sent the response.
  */
 final class DeliveryTest extends BridgeTestCase
 {
@@ -276,9 +276,9 @@ final class DeliveryTest extends BridgeTestCase
     }
 
     /**
-     * A hook that reads the container, and an AgentCat API that backs up. The first five deliveries
-     * stay in flight, so the sixth event waits for a free slot past its own request. Its hook still runs before that
-     * request's wait returns, in that request: the payload alone waits for the transport.
+     * A hook that reads the container, and an AgentCat API that backs up. The first five deliveries stay in flight, so
+     * the sixth event waits for a free slot past its own request. Its hook still runs before that request's wait
+     * returns, in that request: the payload alone waits for the transport.
      *
      * @param class-string $hook
      */

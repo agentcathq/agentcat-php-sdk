@@ -27,8 +27,8 @@ use Illuminate\Container\Container;
 use Orchestra\Testbench\Attributes\DefineEnvironment;
 
 /**
- * An application with `php artisan config:cache`: the configuration holds what `.env`
- * gave when the cache was made, and the process holds none of it.
+ * An application with `php artisan config:cache`: the configuration holds what `.env` gave when the cache was made, and
+ * the process holds none of it.
  */
 final class CachedConfigurationTest extends BridgeTestCase
 {

@@ -5,12 +5,11 @@ declare(strict_types=1);
 namespace AgentCat\Internal\Delivery;
 
 /**
- * How long a framework's request-end hook waits for delivery (D58). A process that
- * outlives the request — Octane on Swoole or RoadRunner, a Symfony Runtime worker, FrankenPHP worker mode — waits at
- * most `WORKER_SECONDS`, so the worker is soon free for the next request. Anywhere else the hook only starts the
- * delivery (0: one non-blocking pass): a per-request SAPI runs AgentCat's shutdown function after the hook, and a
- * console command ends with the process; both deliver within the queue's one `EventQueue::SHUTDOWN_TIMEOUT_SECONDS`
- * deadline (D47).
+ * How long a framework's request-end hook waits for delivery (D58). A process that outlives the request — Octane on
+ * Swoole or RoadRunner, a Symfony Runtime worker, FrankenPHP worker mode — waits at most `WORKER_SECONDS`, so the
+ * worker is soon free for the next request. Anywhere else the hook only starts the delivery (0: one non-blocking pass):
+ * a per-request SAPI runs AgentCat's shutdown function after the hook, and a console command ends with the process;
+ * both deliver within the queue's one `EventQueue::SHUTDOWN_TIMEOUT_SECONDS` deadline (D47).
  *
  * The wait is `EventQueue::flush()`: a window of its own that fixes no shutdown deadline, keeps the queue open, ticks
  * the companions without finishing them, and waits for events and exporter requests but not for diagnostics. A wait of

@@ -22,8 +22,8 @@ use Illuminate\Contracts\Container\Container;
 use Laravel\Mcp\Server;
 
 /**
- * Tracks each laravel/mcp server the container resolves. Never throws: the
- * customer's server must come out of the container whatever AgentCat does.
+ * Tracks each laravel/mcp server the container resolves. Never throws: the customer's server must come out of the
+ * container whatever AgentCat does.
  *
  * One tracker serves the application (an Octane worker too): it builds its client and the options from
  * config/agentcat.php at the first server it tracks, so each bad value logs once, and it reads `exclude` and

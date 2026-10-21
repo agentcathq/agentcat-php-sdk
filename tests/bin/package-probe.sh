@@ -31,7 +31,11 @@ git archive --format=tar HEAD | tar -x -C "$dist"
 # Anything else at the top (tests, docs, the recipe, CONTRIBUTING.md, a tool's configuration) needs export-ignore.
 fail=0
 expected='CHANGELOG.md LICENSE README.md composer.json config resources src'
-actual="$(find "$dist" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort | tr '\n' ' ')"
+# Bash globs, not GNU find's -printf: the probe also runs on macOS.
+actual="$(
+  shopt -s dotglob nullglob
+  for entry in "$dist"/*; do printf '%s\n' "${entry##*/}"; done | LC_ALL=C sort | tr '\n' ' '
+)"
 actual="${actual% }"
 if [ "$actual" != "$expected" ]; then
   echo "dist: the top-level entries are \"$actual\", not \"$expected\"" >&2

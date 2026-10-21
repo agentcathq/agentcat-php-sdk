@@ -179,9 +179,9 @@ final class HttpEndToEndTest extends TestCase
     }
 
     /**
-     * The tool result does not wait for the hooks. The fixture's `identify` sleeps 3 s and then
-     * writes the marker; it runs in the shutdown delivery, after the response. The 2 s bound leaves room for a slow
-     * runner; the marker proves the order.
+     * The tool result does not wait for the hooks. The fixture's `identify` sleeps 3 s and then writes the marker; it
+     * runs in the shutdown delivery, after the response. The 2 s bound leaves room for a slow runner; the marker proves
+     * the order.
      */
     #[Group('ac-01-37')]
     #[Group('ac-02-48')]
@@ -291,9 +291,9 @@ final class HttpEndToEndTest extends TestCase
     }
 
     /**
-     * D47: under `php -S`, like PHP-FPM, each request posts its own diagnostics once, at its end,
-     * after its response. Each POST is tied to its request by the session in its `Successfully sent event` line: each
-     * call mints its own session.
+     * D47: under `php -S`, like PHP-FPM, each request posts its own diagnostics once, at its end, after its response.
+     * Each POST is tied to its request by the session in its `Successfully sent event` line: each call mints its own
+     * session.
      */
     #[Group('ac-06-62')]
     #[MaximumDuration(15000)]

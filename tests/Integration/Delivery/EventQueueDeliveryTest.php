@@ -154,10 +154,10 @@ final class EventQueueDeliveryTest extends TestCase
     }
 
     /**
-     * An exporter endpoint that hangs, on a server whose AgentCat API works. `pump()` returns at once,
-     * the event is delivered, and `shutdown()` waits for the export only until its budget, then abandons it. The export
-     * goes to a local server that never answers, not to the mock collector: a collector worker that took both
-     * connections would serve the event after the slow export.
+     * An exporter endpoint that hangs, on a server whose AgentCat API works. `pump()` returns at once, the event is
+     * delivered, and `shutdown()` waits for the export only until its budget, then abandons it. The export goes to a
+     * local server that never answers, not to the mock collector: a collector worker that took both connections would
+     * serve the event after the slow export.
      */
     #[Group('ac-06-63')]
     #[MaximumDuration(5000)]

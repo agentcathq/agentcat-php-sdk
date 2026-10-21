@@ -494,8 +494,8 @@ final class ToolListingTest extends TestCase
     }
 
     /**
-     * A list handler that gives the same next cursor again. The call answers; the rebuild read two
-     * pages and logged one line, and only a tool that no page read named gets the heuristic strip.
+     * A list handler that gives the same next cursor again. The call answers; the rebuild read two pages and logged one
+     * line, and only a tool that no page read named gets the heuristic strip.
      */
     #[Group('ac-02-20')]
     #[Group('ac-04-30')]
@@ -520,8 +520,8 @@ final class ToolListingTest extends TestCase
     }
 
     /**
-     * A list handler that gives a new cursor every time. The call answers; the rebuild read 100 pages
-     * and logged one line, and only a tool that no page read named gets the heuristic strip.
+     * A list handler that gives a new cursor every time. The call answers; the rebuild read 100 pages and logged one
+     * line, and only a tool that no page read named gets the heuristic strip.
      */
     #[Group('ac-02-22')]
     public function testARebuildStopsAfterOneHundredPages(): void

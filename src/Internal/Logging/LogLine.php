@@ -15,7 +15,7 @@ final class LogLine
 {
     private static ?string $prefix = null;
 
-    /** `[<versions()>]` for this process, resolved once (03 AC-38). */
+    /** `[<versions()>]` for this process, resolved once (ac-03-38). */
     public static function prefix(): string
     {
         return self::$prefix ??= '[' . self::versions(SdkVersion::get(), PHP_VERSION, SdkVersion::installed('mcp/sdk'), SdkVersion::installed('laravel/mcp')) . ']';

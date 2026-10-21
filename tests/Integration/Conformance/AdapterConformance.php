@@ -14,8 +14,8 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 /**
- * The adapter conformance suite: the same calls and the same expected events on every MCP library
- * AgentCat supports. A library leg implements the factories; the library's own tests cover what only it can do.
+ * The adapter conformance suite: the same calls and the same expected events on every MCP library AgentCat supports. A
+ * library leg implements the factories; the library's own tests cover what only it can do.
  *
  * @phpstan-require-extends TestCase
  */

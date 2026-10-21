@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace AgentCat\Internal\Delivery;
 
 /**
- * What the last shutdown pass does on a web SAPI before it delivers (D57): it
- * writes and closes an active native session, so its lock is not held while AgentCat delivers; it gives the drain its
- * own time limit, so a request that used most of `max_execution_time` does not end the drain with a fatal error; and,
- * without a finish-request function, it sends the output buffers, so a response that carries a Content-Length
- * reaches the client before hooks and delivery run, unless PHP cannot ignore an aborted client. Nothing runs on the
- * command line. Every step is guarded: a failing step skips only itself.
+ * What the last shutdown pass does on a web SAPI before it delivers (D57): it writes and closes an active native
+ * session, so its lock is not held while AgentCat delivers; it gives the drain its own time limit, so a request that
+ * used most of `max_execution_time` does not end the drain with a fatal error; and, without a finish-request function,
+ * it sends the output buffers, so a response that carries a Content-Length reaches the client before hooks and delivery
+ * run, unless PHP cannot ignore an aborted client. Nothing runs on the command line. Every step is guarded: a failing
+ * step skips only itself.
  *
  * @internal
  */

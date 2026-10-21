@@ -10,8 +10,8 @@ use Mcp\Server\Handler\Request\RequestHandlerInterface;
 /**
  * The configurator of one symfony/mcp-bundle server builder (`TrackBuildersPass`). The container calls it after every
  * method call of the builder's definition, so AgentCat tracks a Builder that has its logger, its reference handler and
- * its container, when the container builds it: an MCP request, `mcp:server`, the profiler.
- * Booting the kernel tracks nothing.
+ * its container, when the container builds it: an MCP request, `mcp:server`, the profiler. Booting the kernel tracks
+ * nothing.
  *
  * @internal
  */

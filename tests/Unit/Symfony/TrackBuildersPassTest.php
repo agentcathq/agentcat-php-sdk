@@ -19,8 +19,8 @@ use Symfony\Component\DependencyInjection\Reference;
 final class TrackBuildersPassTest extends TestCase
 {
     /**
-     * AgentCat's handlers go first, the customer's tagged ones after them, in the configurator. The
-     * bundle's other calls with a tagged iterator, the notification handlers and the loaders, stay where they are.
+     * AgentCat's handlers go first, the customer's tagged ones after them, in the configurator. The bundle's other
+     * calls with a tagged iterator, the notification handlers and the loaders, stay where they are.
      */
     public function testTheTaggedHandlersMoveIntoAConfiguratorThatRunsAfterTheOtherCalls(): void
     {
@@ -111,8 +111,8 @@ final class TrackBuildersPassTest extends TestCase
     }
 
     /**
-     * A call whose single argument is not a tagged iterator, as a later bundle release can write it,
-     * stays where it is, untouched. Its handlers then come before AgentCat's, which still tracks the builder.
+     * A call whose single argument is not a tagged iterator, as a later bundle release can write it, stays where it is,
+     * untouched. Its handlers then come before AgentCat's, which still tracks the builder.
      *
      * @param array<array-key, mixed> $arguments
      */

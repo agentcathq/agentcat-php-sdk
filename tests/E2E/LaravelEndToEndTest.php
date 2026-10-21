@@ -23,8 +23,8 @@ use PHPUnit\Framework\TestCase;
  * with laravel/mcp's `conformance-server`: served over HTTP by `php -S` through Laravel's own front-controller steps
  * (`Laravel/http.php`), and over stdio by `php artisan mcp:start` (`Laravel/artisan.php`). Under `php -S` every request
  * is a fresh PHP request with a fresh application, like PHP-FPM, and AgentCat's shutdown function delivers its event
- * within the 5 s budget. A stdio server is one process for the whole MCP session, like a
- * server that an MCP host starts; it delivers at stdin EOF and at SIGTERM.
+ * within the 5 s budget. A stdio server is one process for the whole MCP session, like a server that an MCP host
+ * starts; it delivers at stdin EOF and at SIGTERM.
  */
 final class LaravelEndToEndTest extends TestCase
 {

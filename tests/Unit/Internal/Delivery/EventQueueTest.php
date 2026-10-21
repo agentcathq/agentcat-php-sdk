@@ -677,7 +677,7 @@ final class EventQueueTest extends TestCase
     }
 
     /**
-     * A SIGTERM during a hook, with an earlier handler that keeps the process running (`03` AC-11): the signal drain
+     * A SIGTERM during a hook, with an earlier handler that keeps the process running (ac-03-11): the signal drain
      * (`finalShutdown()`) delivers the whole queue in the middle of the pass. The pass then stops at the empty queue,
      * logs nothing, and still pumps the transport, so the event whose hook ran completes too.
      */

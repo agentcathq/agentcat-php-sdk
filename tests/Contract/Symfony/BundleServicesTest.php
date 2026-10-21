@@ -16,10 +16,10 @@ use Symfony\Component\Routing\RouterInterface;
 
 /**
  * AgentCat's bundle finds each symfony/mcp-bundle server by these service definitions, read at compile time: the
- * builder's service ID, its tag and `server` attribute, the `addRequestHandlers` method call
- * with the tagged request handlers as its single argument, and no configurator of the bundle's own. A bundle release that changes one of them
- * breaks the tracking of every bundle server. The route of each HTTP server names the server's controller, by which
- * the bundle finds a server's answers at runtime (D62).
+ * builder's service ID, its tag and `server` attribute, the `addRequestHandlers` method call with the tagged request
+ * handlers as its single argument, and no configurator of the bundle's own. A bundle release that changes one of them
+ * breaks the tracking of every bundle server. The route of each HTTP server names the server's controller, by which the
+ * bundle finds a server's answers at runtime (D62).
  */
 #[Group('contract')]
 final class BundleServicesTest extends SymfonyTestCase

@@ -7,7 +7,7 @@ namespace AgentCat\Internal\Telemetry;
 use AgentCat\Internal\Wire\WireValue;
 
 /**
- * `JSON.stringify` for exporter and diagnostics bodies: shortest round-trip floats whatever php.ini says (06 AC-64),
+ * `JSON.stringify` for exporter and diagnostics bodies: shortest round-trip floats whatever php.ini says (ac-06-64),
  * no escaped slashes or Unicode, U+FFFD for invalid UTF-8. On a host that disables `ini_set()` or `ini_get()`
  * (`disable_functions`), floats follow php.ini's `serialize_precision` (PHP's default, -1, is the shortest round trip).
  *
@@ -41,7 +41,7 @@ final class ExportJson
         }
     }
 
-    /** An empty PHP array in a map position is `{}` (06 AC-46). */
+    /** An empty PHP array in a map position is `{}` (ac-06-46). */
     public static function map(mixed $value): mixed
     {
         return $value === [] ? new \stdClass() : $value;

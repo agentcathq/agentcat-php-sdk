@@ -16,13 +16,12 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
- * FrankenPHP (thread-safe PHP inside a Go server, `max_execution_time` 2), in classic mode and in worker mode.
- * Classic mode is a per-request SAPI with `frankenphp_finish_request()`: the client has its answer before
- * AgentCat's shutdown function delivers, and the drain gets its own time limit, which under ZTS counts wall time.
- * In worker mode, shutdown functions run only when the worker stops: the raw
- * `frankenphp_handle_request()` loop calls `AgentCat::flush()` after each request, which waits at most 1 s (D58), and
- * the worker's stop delivers the rest. Each upper bound sits about 1 s above the measured time and about 1 s below the
- * time its failure mode takes.
+ * FrankenPHP (thread-safe PHP inside a Go server, `max_execution_time` 2), in classic mode and in worker mode. Classic
+ * mode is a per-request SAPI with `frankenphp_finish_request()`: the client has its answer before AgentCat's shutdown
+ * function delivers, and the drain gets its own time limit, which under ZTS counts wall time. In worker mode, shutdown
+ * functions run only when the worker stops: the raw `frankenphp_handle_request()` loop calls `AgentCat::flush()` after
+ * each request, which waits at most 1 s (D58), and the worker's stop delivers the rest. Each upper bound sits about 1 s
+ * above the measured time and about 1 s below the time its failure mode takes.
  */
 #[Group('runtime')]
 final class FrankenPhpTest extends RuntimeTestCase
@@ -93,10 +92,10 @@ final class FrankenPhpTest extends RuntimeTestCase
     }
 
     /**
-     * Under ZTS, `max_execution_time` counts wall time, so a request that used most of its
-     * 2 s would be killed during the drain. The drain sets its own limit: it waits for the collector past the 2 s,
-     * logs the delivery and then posts its diagnostics, the last step of the shutdown. The collector records a request
-     * after its delay also when the drain dies, so the diagnostics POST is the proof.
+     * Under ZTS, `max_execution_time` counts wall time, so a request that used most of its 2 s would be killed during
+     * the drain. The drain sets its own limit: it waits for the collector past the 2 s, logs the delivery and then
+     * posts its diagnostics, the last step of the shutdown. The collector records a request after its delay also when
+     * the drain dies, so the diagnostics POST is the proof.
      */
     #[MaximumDuration(40000)]
     public function testTheDrainHasItsOwnTimeLimitUnderZts(): void
@@ -165,10 +164,10 @@ final class FrankenPhpTest extends RuntimeTestCase
     }
 
     /**
-     * The first `track()` decides the diagnostics window, at worker boot (outside any request:
-     * FrankenPHP sets `FRANKENPHP_WORKER` in `$_SERVER` and the environment) or in the first request (only the
-     * environment has it). The worker is detected either way, so its queue passes post the lines once they are 2 s
-     * old, while the worker still runs. A worker detected as classic would post nothing until it stops.
+     * The first `track()` decides the diagnostics window, at worker boot (outside any request: FrankenPHP sets
+     * `FRANKENPHP_WORKER` in `$_SERVER` and the environment) or in the first request (only the environment has it). The
+     * worker is detected either way, so its queue passes post the lines once they are 2 s old, while the worker still
+     * runs. A worker detected as classic would post nothing until it stops.
      *
      * @param array<string, string> $env
      */

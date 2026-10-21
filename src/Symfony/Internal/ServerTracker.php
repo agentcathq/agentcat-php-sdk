@@ -23,8 +23,8 @@ use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
- * Tracks each symfony/mcp-bundle server when the container builds its Builder.
- * Never throws: the customer's server must come out of the container whatever AgentCat does.
+ * Tracks each symfony/mcp-bundle server when the container builds its Builder. Never throws: the customer's server must
+ * come out of the container whatever AgentCat does.
  *
  * One tracker serves the container (a worker's too). At the first server, it reads the configuration, whose environment
  * variables resolve then, so each bad value logs once, at the first server it tracks. A server that `exclude_servers`

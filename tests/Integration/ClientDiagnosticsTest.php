@@ -168,7 +168,7 @@ final class ClientDiagnosticsTest extends TestCase
         $this->assertFalse(Diagnostics::enabled());
     }
 
-    /** D07 over 06 AC-61: the per-event line carries the actor ID; no other line carries user data. */
+    /** D07 over ac-06-61: the per-event line carries the actor ID; no other line carries user data. */
     #[Group('ac-06-61')]
     #[MaximumDuration(5000)]
     public function testOnlyTheSentEventLineCarriesTheActorId(): void

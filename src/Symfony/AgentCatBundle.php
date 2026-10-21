@@ -150,10 +150,10 @@ final class AgentCatBundle extends AbstractBundle
 
     /**
      * `agentcat.enabled` and every other name AgentCat reads decide for every client, the shared one too, before the
-     * environment: a literal, a parameter or a secret of the configuration is not in the
-     * environment. Diagnostics get the kernel's environment. A fake still records. The tracker logs the bad values;
-     * nothing is logged here, and boot tracks nothing. Where this process's SAPI sends a response only when the script
-     * ends, the answers of tracked servers get their length (D62).
+     * environment: a literal, a parameter or a secret of the configuration is not in the environment. Diagnostics get
+     * the kernel's environment. A fake still records. The tracker logs the bad values; nothing is logged here, and boot
+     * tracks nothing. Where this process's SAPI sends a response only when the script ends, the answers of tracked
+     * servers get their length (D62).
      */
     #[\Override]
     public function boot(): void

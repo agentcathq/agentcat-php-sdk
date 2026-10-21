@@ -6,9 +6,9 @@ namespace AgentCat\Internal\Support;
 
 /**
  * The keys of a framework bridge's `agentcat` configuration that the bridge reads itself (not options), read with their
- * types: a value of a wrong type logs one line through `$warn`, and the default is used, so a
- * typo never goes unseen. Null is an unset value (`env()` of an unset variable, `%env(default::…)%` in Symfony): the
- * default, no line. The lines name the key as the customer wrote it, `agentcat.<key>`.
+ * types: a value of a wrong type logs one line through `$warn`, and the default is used, so a typo never goes unseen.
+ * Null is an unset value (`env()` of an unset variable, `%env(default::…)%` in Symfony): the default, no line. The
+ * lines name the key as the customer wrote it, `agentcat.<key>`.
  *
  * @internal
  */

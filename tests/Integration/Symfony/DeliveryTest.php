@@ -21,10 +21,10 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\HttpKernel\KernelEvents;
 
 /**
- * Delivery after each request of a Symfony application (D58): `TerminateListener` waits on
- * `kernel.terminate`. PHPUnit runs on the `cli` SAPI, so the listener waits as in a Symfony Runtime worker, at most
- * `RequestEndWait::WORKER_SECONDS`. The global queue records its deliveries, unless a test replaces it. Each test
- * boots its own kernel, which compiles a container: 0.2 to 0.5 s measured on PHP 8.3 and 8.5.
+ * Delivery after each request of a Symfony application (D58): `TerminateListener` waits on `kernel.terminate`. PHPUnit
+ * runs on the `cli` SAPI, so the listener waits as in a Symfony Runtime worker, at most
+ * `RequestEndWait::WORKER_SECONDS`. The global queue records its deliveries, unless a test replaces it. Each test boots
+ * its own kernel, which compiles a container: 0.2 to 0.5 s measured on PHP 8.3 and 8.5.
  */
 final class DeliveryTest extends SymfonyTestCase
 {
@@ -132,11 +132,11 @@ final class DeliveryTest extends SymfonyTestCase
     }
 
     /**
-     * D04: one kernel, requests with different `X-User`, and an `identify` service
-     * that reads the `request_stack`, while the AgentCat API backs up. The first five deliveries stay in flight, so the
-     * later events wait for a free slot past their own request. Each hook still runs before its request's terminate
-     * phase ends, so it never reads a later request: it finds the stack empty, as `HttpKernel::handle()` pops the request
-     * before `kernel.terminate`. Hooks read the `ToolCall`, which carries each request's own headers.
+     * D04: one kernel, requests with different `X-User`, and an `identify` service that reads the `request_stack`,
+     * while the AgentCat API backs up. The first five deliveries stay in flight, so the later events wait for a free
+     * slot past their own request. Each hook still runs before its request's terminate phase ends, so it never reads a
+     * later request: it finds the stack empty, as `HttpKernel::handle()` pops the request before `kernel.terminate`.
+     * Hooks read the `ToolCall`, which carries each request's own headers.
      */
     #[Group('ac-03-1')]
     #[MaximumDuration(2000)]

@@ -101,8 +101,8 @@ final class TelemetryManager implements ExporterSink
     }
 
     /**
-     * A set that cannot be serialized (a closure) or whose serialization warns counts as different, and
-     * nothing throws or reaches the output (D32).
+     * A set that cannot be serialized (a closure) or whose serialization warns counts as different, and nothing throws
+     * or reaches the output (D32).
      *
      * @param array<array-key, mixed> $configs
      * @param array<array-key, mixed> $installed
