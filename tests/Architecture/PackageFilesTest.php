@@ -126,18 +126,32 @@ final class PackageFilesTest extends TestCase
         }
     }
 
-    /** The first release, Unreleased until it has its version, is the last one in the file. */
-    public function testTheFirstReleaseListsItsFeaturesAndTheB10Change(): void
+    /**
+     * The first release, Unreleased until it has its version, is the last one in the file. It names only what 1.0.0
+     * ships: the Symfony Flex recipe reaches Flex after the release, and its line comes with the release that follows.
+     * Its lines speak to customers: no decision or bug ID, which no reader can look up.
+     */
+    public function testTheFirstReleaseListsItsFeaturesAndTheToolListChange(): void
     {
         $releases = $this->releases();
         $first = end($releases);
         $this->assertIsArray($first);
 
-        $this->assertCount(10, $first['Added'] ?? [], 'one line for each feature of 1.0.0');
+        $added = $first['Added'] ?? [];
+        $this->assertCount(10, $added, 'one line for each feature of 1.0.0');
+        $this->assertSame([], preg_grep('/\bFlex\b/i', $added), 'no Flex recipe in 1.0.0');
         $changed = $first['Changed'] ?? [];
         $this->assertCount(1, $changed);
-        $this->assertStringStartsWith('Unlike the TypeScript SDK, AgentCat reads every `tools/list` page, so no listed tool falls back to the heuristic argument strip (B10).', $changed[0]);
+        $this->assertStringStartsWith('AgentCat reads `tools/list` pages until it finds the called tool, so a tool on a later page keeps its own parameters', $changed[0]);
+        $this->assertStringContainsString('your own `tools/list` handler', $changed[0], 'the change says whose code runs more often');
+        $this->assertStringContainsString('runs once for each page that AgentCat reads during a `tools/call`', $changed[0]);
+        $this->assertStringContainsString('its queries, metrics and log lines', $changed[0]);
         $this->assertStringContainsString('57.6 ms (2.7 ms before)', $changed[0], 'the change states its cost');
+        foreach ($releases as $sections) {
+            foreach ($sections as $items) {
+                $this->assertSame([], preg_grep('/\b[A-Z][0-9]{1,2}\b/', $items), 'a decision or bug ID means nothing to a customer');
+            }
+        }
     }
 
     public function testTheLinksOfTheReleasesEndTheChangelog(): void
@@ -198,6 +212,15 @@ final class PackageFilesTest extends TestCase
         foreach ($named as $key) {
             $this->assertArrayHasKey($key, $keys, 'a key the guideline names is a key of config/agentcat.php');
         }
+    }
+
+    /** The contributing guide makes no promise of a response time (D70): issues and pull requests get an answer as soon as we can. */
+    public function testTheContributingGuidePromisesNoResponseTime(): void
+    {
+        $guide = (string) file_get_contents(self::ROOT . '/CONTRIBUTING.md');
+
+        $this->assertDoesNotMatchRegularExpression('/\b(?:business\s+)?(?:days?|hours?|weeks?)\b/i', $guide, 'no deadline for an answer');
+        $this->assertStringContainsString('as soon as we can', $guide);
     }
 
     /** Blade compiles the guideline to itself: no `@` directive, echo or PHP tag in the Markdown by accident. */

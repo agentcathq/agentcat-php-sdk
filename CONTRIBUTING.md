@@ -82,7 +82,7 @@ git commit -m "docs: update API documentation"
    - Why these changes are needed
    - Any relevant context or screenshots
 
-4. **Wait for review** - The AgentCat team will review your PR within 2 business days
+4. **Wait for review** - We will review your PR as soon as we can
 
 5. **Address feedback** if any changes are requested
 
@@ -195,5 +195,7 @@ If you have questions about contributing, feel free to:
 
 - Ask in our [Discord server](https://discord.gg/n9qpyhzp2u)
 - Open an [issue](https://github.com/agentcathq/agentcat-php-sdk/issues) on GitHub
+
+We answer issues and pull requests as soon as we can.
 
 Thank you for contributing to AgentCat! 🐱
