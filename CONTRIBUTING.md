@@ -124,6 +124,8 @@ AGENTCAT_RUNTIME_TESTS=1 vendor/bin/phpunit --testsuite Runtime --group runtime
 tests/bin/package-probe.sh 0.9.0
 ```
 
+The runtime containers write files as root or www-data into the test home under `.cache/test-home`, and a test that ends removes them. When you kill a runtime run before it ends (for example with Ctrl+C), those files can stay there: remove them with `docker run --rm -v "$PWD/.cache:/cache" php:8.3-cli rm -rf /cache/test-home`, or with `sudo rm -rf .cache/test-home`.
+
 ## Code Quality
 
 Before submitting your PR, ensure your code passes all checks:
