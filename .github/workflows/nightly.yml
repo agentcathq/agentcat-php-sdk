@@ -47,8 +47,13 @@ jobs:
         run: composer require --dev --no-interaction -W "mcp/sdk:dev-main as 0.9.99"
       - run: vendor/bin/phpstan analyse --no-progress --error-format=github --memory-limit=1G --configuration=phpstan.no-bundle.neon
         timeout-minutes: 6
-      - run: vendor/bin/phpunit --testsuite Contract,Integration,E2E
+      - name: Run the tests
         timeout-minutes: 12
+        env:
+          OUTPUT: ${{ runner.temp }}/phpunit.txt
+        run: |
+          set -o pipefail
+          vendor/bin/phpunit --testsuite Contract,Integration,E2E --no-progress --colors=never 2>&1 | tee "$OUTPUT"
       - name: Fail on purpose (workflow_dispatch force_failure)
         if: github.event_name == 'workflow_dispatch' && inputs.force_failure == github.job
         run: exit 1
@@ -56,7 +61,12 @@ jobs:
         if: failure() && github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: .github/nightly-issue.sh "${{ github.job }}"
+          OUTPUT: ${{ runner.temp }}/phpunit.txt
+          REPORT: ${{ runner.temp }}/phpunit.md
+        run: |
+          # The failing tests and their messages, STDERR included, when PHPUnit ran: the issue names the failing test.
+          if [ -s "$OUTPUT" ]; then { printf '~~~text\n'; cat "$OUTPUT"; printf '~~~\n'; } >"$REPORT"; fi
+          .github/nightly-issue.sh "${{ github.job }}" "$REPORT"
 
   laravel-mcp-dev-main:
     name: laravel/mcp dev-main (PHP 8.5)
@@ -78,8 +88,13 @@ jobs:
         run: composer require --dev --no-interaction -W "laravel/mcp:dev-main as 1.0.99"
       - run: vendor/bin/phpstan analyse --no-progress --error-format=github --memory-limit=1G
         timeout-minutes: 6
-      - run: vendor/bin/phpunit --testsuite Contract,Integration,E2E
+      - name: Run the tests
         timeout-minutes: 12
+        env:
+          OUTPUT: ${{ runner.temp }}/phpunit.txt
+        run: |
+          set -o pipefail
+          vendor/bin/phpunit --testsuite Contract,Integration,E2E --no-progress --colors=never 2>&1 | tee "$OUTPUT"
       - name: Fail on purpose (workflow_dispatch force_failure)
         if: github.event_name == 'workflow_dispatch' && inputs.force_failure == github.job
         run: exit 1
@@ -87,7 +102,12 @@ jobs:
         if: failure() && github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: .github/nightly-issue.sh "${{ github.job }}"
+          OUTPUT: ${{ runner.temp }}/phpunit.txt
+          REPORT: ${{ runner.temp }}/phpunit.md
+        run: |
+          # The failing tests and their messages, STDERR included, when PHPUnit ran: the issue names the failing test.
+          if [ -s "$OUTPUT" ]; then { printf '~~~text\n'; cat "$OUTPUT"; printf '~~~\n'; } >"$REPORT"; fi
+          .github/nightly-issue.sh "${{ github.job }}" "$REPORT"
 
   mcp-bundle-dev-main:
     name: symfony/mcp-bundle dev-main (PHP 8.5)
@@ -109,8 +129,13 @@ jobs:
         run: composer require --dev --no-interaction -W "symfony/mcp-bundle:dev-main as 0.14.99" "mcp/sdk:^0.9"
       - run: vendor/bin/phpstan analyse --no-progress --error-format=github --memory-limit=1G
         timeout-minutes: 6
-      - run: vendor/bin/phpunit --testsuite Contract,Integration,E2E
+      - name: Run the tests
         timeout-minutes: 12
+        env:
+          OUTPUT: ${{ runner.temp }}/phpunit.txt
+        run: |
+          set -o pipefail
+          vendor/bin/phpunit --testsuite Contract,Integration,E2E --no-progress --colors=never 2>&1 | tee "$OUTPUT"
       - name: Fail on purpose (workflow_dispatch force_failure)
         if: github.event_name == 'workflow_dispatch' && inputs.force_failure == github.job
         run: exit 1
@@ -118,7 +143,12 @@ jobs:
         if: failure() && github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: .github/nightly-issue.sh "${{ github.job }}"
+          OUTPUT: ${{ runner.temp }}/phpunit.txt
+          REPORT: ${{ runner.temp }}/phpunit.md
+        run: |
+          # The failing tests and their messages, STDERR included, when PHPUnit ran: the issue names the failing test.
+          if [ -s "$OUTPUT" ]; then { printf '~~~text\n'; cat "$OUTPUT"; printf '~~~\n'; } >"$REPORT"; fi
+          .github/nightly-issue.sh "${{ github.job }}" "$REPORT"
 
   php-nightly:
     name: Tests (PHP nightly)
@@ -137,7 +167,8 @@ jobs:
           dependency-versions: highest
           # ergebnis/composer-normalize caps PHP below the nightly.
           composer-options: --ignore-platform-req=php+
-      - run: vendor/bin/phpunit
+      # display_errors=stderr: a dependency's deprecation (opis/json-schema) prints to STDERR, never before a test's headers; the log keeps it.
+      - run: vendor/bin/phpunit -d display_errors=stderr
         timeout-minutes: 20
       - name: Fail on purpose (workflow_dispatch force_failure)
         if: github.event_name == 'workflow_dispatch' && inputs.force_failure == github.job
