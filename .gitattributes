@@ -14,3 +14,4 @@
 /composer-dependency-analyser.php export-ignore
 /phpstan.php85.neon export-ignore
 /CONTRIBUTING.md export-ignore
+/phpunit-baseline.xml export-ignore

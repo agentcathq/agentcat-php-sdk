@@ -10,6 +10,8 @@ return (new Configuration())
     ->ignoreErrorsOnExtensions(['ext-pcntl', 'ext-posix', 'ext-session'], [ErrorType::SHADOW_DEPENDENCY])
     // ext-tokenizer reads the attributes of the test files in TraceabilityTest; php-cs-fixer/shim, a dev dependency, requires it.
     ->ignoreErrorsOnExtensionAndPath('ext-tokenizer', __DIR__ . '/tests/Architecture/TraceabilityTest.php', [ErrorType::SHADOW_DEPENDENCY])
+    // ext-dom and ext-libxml read the PHPUnit baseline in PackageFilesTest; phpunit/phpunit requires them.
+    ->ignoreErrorsOnExtensionsAndPaths(['ext-dom', 'ext-libxml'], [__DIR__ . '/tests/Architecture/PackageFilesTest.php'], [ErrorType::SHADOW_DEPENDENCY])
     // Test fixture functions, loaded with require_once by ExceptionCaptureTest (not autoloadable).
     ->ignoreUnknownFunctionsRegex('~^AgentCat\\\\Tests\\\\Fixtures\\\\Errors\\\\~')
     // mcp/sdk is optional (ac-01-90): a dev dependency and a suggestion, used only by the adapter.

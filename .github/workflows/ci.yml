@@ -98,7 +98,8 @@ jobs:
           dependency-versions: highest
           # ergebnis/composer-normalize caps PHP below 8.6.
           composer-options: --ignore-platform-req=php+
-      - run: vendor/bin/phpunit
+      # The baseline holds the deprecations that PHP 8.6 raises inside a dependency (opis/json-schema).
+      - run: vendor/bin/phpunit --use-baseline phpunit-baseline.xml
 
   coverage:
     name: Coverage

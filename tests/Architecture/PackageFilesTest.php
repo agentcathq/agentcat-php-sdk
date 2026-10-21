@@ -13,7 +13,8 @@ use PHPUnit\Framework\TestCase;
 /**
  * The files that ship next to `src/`: the changelog, the Composer metadata and the Laravel Boost guidelines, which
  * Boost loads from `resources/boost/guidelines/core.blade.php` into the AI agent of a Laravel application. And the
- * comments of every committed file state their rules: the documents the project was planned in are not public.
+ * comments of every committed file state their rules: the documents the project was planned in are not public. And the
+ * PHPUnit baseline of the PHP 8.6 jobs, which does not ship.
  */
 final class PackageFilesTest extends TestCase
 {
@@ -53,8 +54,8 @@ final class PackageFilesTest extends TestCase
     private const array PUBLIC_PATHS = [
         'src', 'tests', 'config', 'resources', 'recipe', '.github', 'README.md', 'CHANGELOG.md', 'CONTRIBUTING.md',
         'composer.json', 'composer-dependency-analyser.php', 'phpstan.neon.dist', 'phpstan.no-bundle.neon',
-        'phpstan.php85.neon', 'rector.php', 'infection.json5', 'phpunit.xml.dist', '.php-cs-fixer.dist.php',
-        '.gitattributes', '.gitignore', '.editorconfig',
+        'phpstan.php85.neon', 'rector.php', 'infection.json5', 'phpunit.xml.dist', 'phpunit-baseline.xml',
+        '.php-cs-fixer.dist.php', '.gitattributes', '.gitignore', '.editorconfig',
     ];
 
     /** This file: it holds the pattern and the texts that prove it. */
@@ -240,6 +241,34 @@ final class PackageFilesTest extends TestCase
         foreach ($attributes as $line) {
             $this->assertDoesNotMatchRegularExpression('#\A/?(?:CHANGELOG\.md|resources)\b#', $line, 'CHANGELOG.md and resources/ go into the dist');
         }
+    }
+
+    /**
+     * Only the PHP 8.6 jobs read `phpunit-baseline.xml`, and an unreadable baseline is a PHPUnit warning there, not a
+     * failure here. PHPUnit joins the baseline's directory and each path without resolving "..": a path matches only
+     * when it names a file from the repository root.
+     */
+    public function testThePhpunitBaselineIsWellFormedAndNamesFilesFromTheRoot(): void
+    {
+        $document = new \DOMDocument();
+        $errors = libxml_use_internal_errors(true);
+        try {
+            $loaded = $document->load(self::ROOT . '/phpunit-baseline.xml');
+            $problems = array_map(static fn(\LibXMLError $error): string => trim($error->message), libxml_get_errors());
+        } finally {
+            libxml_clear_errors();
+            libxml_use_internal_errors($errors);
+        }
+
+        $this->assertTrue($loaded, 'phpunit-baseline.xml is not well-formed: ' . implode('; ', $problems));
+        $files = $document->getElementsByTagName('file');
+        $this->assertGreaterThan(0, $files->length);
+        foreach ($files as $file) {
+            $path = $file->getAttribute('path');
+            $this->assertStringNotContainsString('..', $path);
+            $this->assertFileExists(self::ROOT . '/' . $path);
+        }
+        $this->assertContains('/phpunit-baseline.xml export-ignore', array_map(trim(...), $this->lines(self::ROOT . '/.gitattributes')));
     }
 
     /** A comment states its rule: no committed file points at the documents the project was planned in. */

@@ -168,7 +168,8 @@ jobs:
           # ergebnis/composer-normalize caps PHP below the nightly.
           composer-options: --ignore-platform-req=php+
       # display_errors=stderr: a dependency's deprecation (opis/json-schema) prints to STDERR, never before a test's headers; the log keeps it.
-      - run: vendor/bin/phpunit -d display_errors=stderr
+      # The baseline holds the deprecations that PHP raises inside a dependency.
+      - run: vendor/bin/phpunit -d display_errors=stderr --use-baseline phpunit-baseline.xml
         timeout-minutes: 20
       - name: Fail on purpose (workflow_dispatch force_failure)
         if: github.event_name == 'workflow_dispatch' && inputs.force_failure == github.job
