@@ -57,9 +57,14 @@ final class SdkVersionTest extends TestCase
         $pretty = InstalledVersions::getPrettyVersion('mcp/sdk');
         $this->assertIsString($pretty);
 
-        $this->assertSame(str_starts_with($pretty, 'v') ? substr($pretty, 1) : $pretty, SdkVersion::installed('mcp/sdk'));
-        $this->assertStringStartsNotWith('v', (string) SdkVersion::installed('mcp/sdk'));
-        $this->assertStringStartsNotWith('v', (string) SdkVersion::installed('symfony/console'));
+        $installed = SdkVersion::installed('mcp/sdk');
+        $console = SdkVersion::installed('symfony/console');
+        $this->assertIsString($installed);
+        $this->assertIsString($console);
+
+        $this->assertSame(str_starts_with($pretty, 'v') ? substr($pretty, 1) : $pretty, $installed);
+        $this->assertStringStartsNotWith('v', $installed);
+        $this->assertStringStartsNotWith('v', $console);
     }
 
     public function testInstalledReturnsNullForAPackageThatIsNotInstalled(): void
