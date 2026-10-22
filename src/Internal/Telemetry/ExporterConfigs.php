@@ -13,8 +13,9 @@ use AgentCat\Internal\Support\ErrorText;
 use AgentCat\Internal\Support\Js;
 
 /**
- * `exporters` from a framework config file: each `['type' => …]` array becomes its config object. A bad entry logs
- * one line and is skipped; the others are kept. Never throws.
+ * `exporters` from a framework config file: each `['type' => …]` array becomes its config object. A null entry is
+ * skipped without a line: a config file switches an exporter off with null. A bad entry logs one line and is skipped;
+ * the others are kept. Never throws.
  *
  * @internal
  */
@@ -36,6 +37,9 @@ final class ExporterConfigs
     {
         $configs = [];
         foreach ($entries as $key => $entry) {
+            if ($entry === null) {
+                continue;
+            }
             $name = (string) $key;
             try {
                 $config = match (true) {
@@ -114,7 +118,7 @@ final class ExporterConfigs
         $value = $entry['headers'] ?? [];
         $headers = [];
         foreach (is_array($value) ? $value : throw self::invalid('headers', 'array<string, string>', $value) as $header => $text) {
-            $headers[(string) $header] = is_string($text) ? $text : throw self::invalid('headers', 'array<string, string>', $value);
+            $headers[(string) $header] = is_string($text) ? $text : throw self::invalid('headers.' . $header, 'string', $text);
         }
 
         return $headers;

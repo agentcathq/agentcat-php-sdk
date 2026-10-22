@@ -38,9 +38,13 @@
         "ergebnis/composer-normalize": "^2.54",
         "ergebnis/phpunit-slow-test-detector": "^2.26",
         "infection/infection": "^0.35.8",
+        "larastan/larastan": "^3.13",
+        "laravel/framework": "^12.41.1 || ^13.0",
+        "laravel/mcp": "^1.0",
         "mcp/sdk": "^0.8.1",
         "nyholm/psr7": "^1.8.2",
         "opis/json-schema": "^2.6",
+        "orchestra/testbench": "^10.8 || ^11.3",
         "php-cs-fixer/shim": "3.95.27",
         "phpat/phpat": "^0.12.5",
         "phpdocumentor/type-resolver": "^1.10 || ^2.0",
@@ -55,15 +59,18 @@
         "spaze/phpstan-disallowed-calls": "^4.15",
         "symfony/polyfill-uuid": "^1.20",
         "symfony/process": "^7.4 || ^8.1",
+        "symfony/translation": "^6.4.3 || ^7.0.3 || ^8.0",
         "symfony/uid": "^5.4.35 || ^6.4.3 || ^7.3 || ^8.0",
         "tomasvotruba/type-coverage": "^2.5.1"
     },
     "conflict": {
+        "laravel/mcp": "<1.0",
         "mcp/sdk": "<0.8.1"
     },
     "suggest": {
         "ext-pcntl": "Delivers the queued events when a CLI server (an MCP stdio server) gets SIGTERM or SIGINT",
         "ext-posix": "Ends the process with the signal after that delivery, and finds the home directory for agentcat.log when HOME is not set",
+        "laravel/mcp": "Tracks every laravel/mcp server of a Laravel application, through the auto-discovered service provider",
         "mcp/sdk": "Track mcp/sdk servers with AgentCat::track($builder, $projectId)"
     },
     "minimum-stability": "stable",
@@ -85,6 +92,13 @@
             "phpstan/extension-installer": true
         },
         "sort-packages": true
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "AgentCat\\Laravel\\AgentCatServiceProvider"
+            ]
+        }
     },
     "scripts": {
         "check": [

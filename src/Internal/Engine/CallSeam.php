@@ -70,4 +70,17 @@ interface CallSeam
      * @return list<mixed>|null
      */
     public function listOriginal(): ?array;
+
+    /**
+     * For a result that completes later (a stream), a result that calls `$complete` with the final result, and yields
+     * what it returns in its place, or calls `$fail` with what the stream throws; null for an ordinary result. Never
+     * throws.
+     *
+     * @param TResult $result
+     * @param \Closure(TResult): TResult $complete
+     * @param \Closure(\Throwable): void $fail
+     *
+     * @return TResult|null
+     */
+    public function later(mixed $result, \Closure $complete, \Closure $fail): mixed;
 }

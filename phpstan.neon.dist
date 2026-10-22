@@ -11,6 +11,10 @@ parameters:
     reportPossiblyNonexistentGeneralArrayOffset: true
     reportUnmatchedIgnoredErrors: true
     reportIgnoresWithoutComments: true
+    # Larastan: the SDK reads Env::get(), never env() (the only env() calls are in config/agentcat.php, which is not
+    # analysed), and it has no Eloquent models.
+    noEnvCallsOutsideOfConfig: false
+    checkModelProperties: false
     type_coverage:
         return: 100
         param: 100

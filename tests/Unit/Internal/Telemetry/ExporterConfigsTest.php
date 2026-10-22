@@ -112,11 +112,29 @@ final class ExporterConfigsTest extends TestCase
 
     public function testANonArrayEntryIsLogged(): void
     {
-        $this->assertSame([], ExporterConfigs::fromArray([3 => null, 'x' => new \stdClass()]));
+        $this->assertSame([], ExporterConfigs::fromArray([3 => 'otlp', 'x' => new \stdClass()]));
         $this->assertSame([
-            'Failed to initialize exporter 3: InvalidArgumentException: exporter configuration must be an array, got null',
+            'Failed to initialize exporter 3: InvalidArgumentException: exporter configuration must be an array, got string',
             'Failed to initialize exporter x: InvalidArgumentException: exporter configuration must be an array, got stdClass',
         ], $this->logger->messages());
+    }
+
+    /** A config file switches an exporter off with null (plan E1 header conflict 17). */
+    public function testANullEntryIsSkippedWithoutALine(): void
+    {
+        $logger = new MemoryLogger();
+        Log::setLogger($logger);
+
+        $this->assertSame([], ExporterConfigs::fromArray(['otlp' => null]));
+        $this->assertSame([], $logger->messages());
+    }
+
+    public function testANullEntryLeavesTheOthers(): void
+    {
+        $configs = ExporterConfigs::fromArray(['off' => null, 'on' => ['type' => 'otlp', 'endpoint' => 'e']]);
+
+        $this->assertEquals(['on' => new OtlpExporter('e')], $configs);
+        $this->assertSame([], $this->logger->messages());
     }
 
     public function testAnUnknownKeyIsWarnedAboutAndTheEntryIsKept(): void
@@ -133,9 +151,19 @@ final class ExporterConfigsTest extends TestCase
         ], $this->logger->messages());
     }
 
-    public function testAHeaderWithANonStringValueIsRejected(): void
+    public function testAHeaderThatIsNotAStringIsNamed(): void
     {
-        $this->assertSame([], ExporterConfigs::fromArray(['a' => ['type' => 'otlp', 'endpoint' => 'e', 'headers' => ['x' => 'y', 'z' => null]]]));
-        $this->assertSame(['Failed to initialize exporter a: InvalidArgumentException: exporter option "headers" must be array<string, string>, got array'], $this->logger->messages());
+        $logger = new MemoryLogger();
+        Log::setLogger($logger);
+
+        ExporterConfigs::fromArray(['otlp' => ['type' => 'otlp', 'endpoint' => 'http://127.0.0.1:1', 'headers' => ['Authorization' => null]]]);
+
+        $this->assertSame(['Failed to initialize exporter otlp: InvalidArgumentException: exporter option "headers.Authorization" must be string, got null'], $logger->messages());
+    }
+
+    public function testTheFirstHeaderThatIsNotAStringIsNamed(): void
+    {
+        $this->assertSame([], ExporterConfigs::fromArray(['a' => ['type' => 'otlp', 'endpoint' => 'e', 'headers' => ['x' => 'y', 'z' => 1, 'w' => null]]]));
+        $this->assertSame(['Failed to initialize exporter a: InvalidArgumentException: exporter option "headers.z" must be string, got int'], $this->logger->messages());
     }
 }

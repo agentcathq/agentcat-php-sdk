@@ -13,14 +13,17 @@ use AgentCat\Internal\ClientSeams;
 use AgentCat\Internal\Constants;
 use AgentCat\Internal\Delivery\EventQueue;
 use AgentCat\Internal\Delivery\SignalDrain;
+use AgentCat\Internal\Engine\Libraries;
 use AgentCat\Internal\Engine\TrackedServers;
 use AgentCat\Internal\Json\Json;
 use AgentCat\Internal\Logging\Log;
+use AgentCat\Internal\Support\BridgeConfig;
 use AgentCat\Internal\Tools\GetMoreTools;
 use AgentCat\Internal\Transport\CurlTransport;
 use AgentCat\Internal\Transport\Delivery;
 use AgentCat\Internal\Transport\RetryPolicy;
 use AgentCat\McpSdk\Internal\Access\BuilderAccess;
+use AgentCat\McpSdk\McpSdkAdapter;
 use AgentCat\Options;
 use AgentCat\Tests\Integration\Support\MockCollector;
 use AgentCat\Tests\Support\Environment;
@@ -47,8 +50,6 @@ use Psr\Log\LogLevel;
 /** `Client::track()` on real mcp/sdk Builders, end to end through the adapter. */
 final class ClientTrackTest extends TestCase
 {
-    private const string MATRIX = 'AgentCat supports mcp/sdk 0.8.1+ (pass the Mcp\Server\Builder to AgentCat::track() before build()).';
-
     private const string PROJECT = 'proj_aaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
     private const string NO_PROJECT = 'Warning: No projectId provided and no exporters configured. Events will not be sent anywhere.';
@@ -107,6 +108,7 @@ final class ClientTrackTest extends TestCase
         }
         TrackedServers::resetIncomplete(); // a failed track() marks the process
         TrackedServers::resetSkipped(); // so does a track() while AgentCat is off
+        BridgeConfig::reset();
         Log::reset();
         $this->environment->restore();
     }
@@ -118,6 +120,7 @@ final class ClientTrackTest extends TestCase
         $client = new Client(ClientSeams::of($queue, static fn(): bool => true));
 
         $client->track(TrackingFixture::builder(), self::PROJECT, new Options(disableSignalHandlers: true));
+        $this->assertContains(self::SIGNALS_INSTALLED, $this->logger->messages(), 'the first call warns');
         $client->track(TrackingFixture::builder(), self::PROJECT, new Options(disableSignalHandlers: true));
         $client->track(TrackingFixture::builder(), self::PROJECT);
 
@@ -208,9 +211,16 @@ final class ClientTrackTest extends TestCase
         $this->assertSame($server, $this->client->track($server, self::PROJECT));
 
         $this->assertSame([
-            ['level' => LogLevel::WARNING, 'message' => 'AgentCat SDK Compatibility: unrecognized server shape | signals ' . $signals . '. ' . self::MATRIX],
-            ['level' => LogLevel::WARNING, 'message' => 'Warning: Failed to track server - UnexpectedValueException: AgentCat SDK compatibility error: server object does not match any supported MCP SDK shape. ' . self::MATRIX],
+            ['level' => LogLevel::WARNING, 'message' => 'AgentCat SDK Compatibility: unrecognized server shape | signals ' . $signals . '. ' . Libraries::supportMatrix()],
+            ['level' => LogLevel::WARNING, 'message' => 'Warning: Failed to track server - UnexpectedValueException: AgentCat SDK compatibility error: server object does not match any supported MCP SDK shape. ' . Libraries::supportMatrix()],
         ], $this->logger->records);
+    }
+
+    public function testTheSetupLineNamesTheLibraryOfTheServer(): void
+    {
+        $this->client->track(TrackingFixture::builder(), self::PROJECT);
+
+        $this->assertSame('AgentCat setup started | project ' . self::PROJECT . ' | sdk mcp-sdk/builder | signals mcpSdkBuilder', $this->logger->messages()[0] ?? null);
     }
 
     #[Group('ac-01-2')]
@@ -223,8 +233,8 @@ final class ClientTrackTest extends TestCase
         $this->assertSame($builder, $this->client->track($builder, self::PROJECT));
 
         $this->assertSame([
-            'AgentCat SDK Compatibility: ' . self::MATRIX,
-            'Warning: Failed to track server - UnexpectedValueException: AgentCat SDK compatibility error: the mcp/sdk Builder was already built. ' . self::MATRIX,
+            'AgentCat SDK Compatibility: ' . McpSdkAdapter::SUPPORT_MATRIX,
+            'Warning: Failed to track server - UnexpectedValueException: AgentCat SDK compatibility error: the mcp/sdk Builder was already built. ' . McpSdkAdapter::SUPPORT_MATRIX,
         ], $this->logger->messages());
         $this->assertSame(['echo'], $this->names($this->initialized($server)->listTools()));
         $this->assertSame(['echo'], $this->names($this->harness($builder)->listTools()), 'no AgentCat handler was added');
@@ -331,6 +341,22 @@ final class ClientTrackTest extends TestCase
         $this->harness($builder)->callTool('echo', ['msg' => 'hi']);
         $this->assertSame($project, $this->event()->projectId);
         $this->assertCount(1, $this->transport->deliveries);
+    }
+
+    /** A bridge's configured project (a cached Laravel configuration) comes before AGENTCAT_PROJECT_ID. */
+    #[Group('ac-01-5')]
+    public function testANullProjectReadsTheConfiguredProjectFirst(): void
+    {
+        $project = 'proj_' . str_repeat('c', 27);
+        putenv('AGENTCAT_PROJECT_ID=proj_' . str_repeat('b', 27));
+        BridgeConfig::configure(['AGENTCAT_PROJECT_ID' => $project], false);
+        $builder = TrackingFixture::builder();
+        Tools::echo($builder);
+
+        $this->client->track($builder);
+
+        $this->harness($builder)->callTool('echo', ['msg' => 'hi']);
+        $this->assertSame($project, $this->event()->projectId);
     }
 
     #[Group('ac-01-6')]
@@ -514,6 +540,21 @@ final class ClientTrackTest extends TestCase
         $this->assertSame(['https://env.test/v1/public/events/'], $this->urls());
     }
 
+    /** A bridge's configured URL (a cached Laravel configuration) is set by a track() without the option, like a variable. */
+    public function testAConfiguredApiUrlIsUsedByATrackWithoutTheOption(): void
+    {
+        $this->queue->configure('https://earlier.test'); // an earlier track() with its own option
+        BridgeConfig::configure(['AGENTCAT_API_URL' => 'https://configured.test'], false);
+        $builder = TrackingFixture::builder();
+        Tools::echo($builder);
+
+        $this->client->track($builder, self::PROJECT);
+        $this->harness($builder)->callTool('echo', ['msg' => 'hi']);
+
+        $this->assertTrue($this->queue->flush());
+        $this->assertSame(['https://configured.test/v1/public/events/'], $this->urls());
+    }
+
     public function testUnderPhpUnitTheDefaultClientLeavesTheBuilderAlone(): void
     {
         $client = new Client(ClientSeams::of($this->queue));
@@ -564,7 +605,7 @@ final class ClientTrackTest extends TestCase
 
         $this->client->track($builder, self::PROJECT);
 
-        $this->assertSame('AgentCat SDK Compatibility: ' . self::MATRIX, $builderLogger->messages()[0] ?? null);
+        $this->assertSame('AgentCat SDK Compatibility: ' . McpSdkAdapter::SUPPORT_MATRIX, $builderLogger->messages()[0] ?? null);
     }
 
     #[Group('ac-03-1')]

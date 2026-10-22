@@ -47,12 +47,13 @@ final class BuiltInServer
      *
      * @param string $router the router script that answers every request
      * @param array<string, string> $env environment variables of the server, on top of this process's
+     * @param array<string, string> $ini php.ini settings of the server (`-d`)
      */
-    public static function start(string $router, array $env): self
+    public static function start(string $router, array $env, array $ini = ['output_buffering' => '0']): self
     {
         $errors = '';
         for ($attempt = 1; $attempt <= self::START_ATTEMPTS; ++$attempt) {
-            $server = self::launch($router, $env);
+            $server = self::launch($router, $env, $ini);
             if ($server->waitUntilListening()) {
                 return $server;
             }
@@ -96,16 +97,24 @@ final class BuiltInServer
         $this->process->stop(0);
     }
 
-    /** @param array<string, string> $env */
-    private static function launch(string $router, array $env): self
+    /**
+     * @param array<string, string> $env
+     * @param array<string, string> $ini
+     */
+    private static function launch(string $router, array $env, array $ini): self
     {
         $port = self::freePort();
         $input = new InputStream();
-        // php.ini-production sets output_buffering=4096, and PHP empties that output buffer only after the shutdown
-        // functions, so the response would wait for AgentCat's shutdown delivery. Without it, the router's flush()
-        // sends the body before the shutdown functions run.
+        // The default is output_buffering=0. php.ini-production sets output_buffering=4096, and PHP empties that output
+        // buffer only after the shutdown functions. Without it, the router's flush() sends the body before the shutdown
+        // functions run; BufferedOutputTest keeps 4096 to show that AgentCat sends the buffer before it delivers.
+        $settings = [];
+        foreach ($ini as $name => $value) {
+            $settings[] = '-d';
+            $settings[] = $name . '=' . $value;
+        }
         $process = new Process(
-            [PHP_BINARY, __DIR__ . '/../../Integration/Support/watchdog.php', PHP_BINARY, '-d', 'output_buffering=0', '-S', '127.0.0.1:' . $port, $router],
+            [PHP_BINARY, __DIR__ . '/../../Integration/Support/watchdog.php', PHP_BINARY, ...$settings, '-S', '127.0.0.1:' . $port, $router],
             null,
             ['PHP_CLI_SERVER_WORKERS' => '4', 'AGENTCAT_WATCHDOG_TIMEOUT' => (string) self::LIFETIME_SECONDS, ...$env],
             $input,

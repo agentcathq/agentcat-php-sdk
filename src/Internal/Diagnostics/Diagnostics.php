@@ -8,6 +8,7 @@ use AgentCat\Internal\Delivery\EventQueue;
 use AgentCat\Internal\Delivery\QueueCompanion;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\SdkVersion;
+use AgentCat\Internal\Support\BridgeConfig;
 use AgentCat\Internal\Support\Env;
 use AgentCat\Internal\Support\TestMode;
 use AgentCat\Internal\Transport\HttpRequest;
@@ -72,7 +73,8 @@ final class Diagnostics implements QueueCompanion
 
     /**
      * TS `initDiagnostics`: the first call in the process decides; a later call changes nothing. A later
-     * `$disabled = true` while diagnostics run logs one line, once. Never throws.
+     * `$disabled = true` while diagnostics run logs one line, once. A framework bridge's configuration can turn them off
+     * too (`BridgeConfig::diagnosticsOff()`), never on. Never throws.
      *
      * @param (\Closure(): bool)|null  $inTestEnvironment default `TestMode::inTestEnvironment()` (P5)
      * @param (\Closure(): float)|null $clock             tests: monotonic seconds
@@ -91,7 +93,7 @@ final class Diagnostics implements QueueCompanion
             }
             self::$initialized = true;
             $testEnvironment = $inTestEnvironment instanceof \Closure ? $inTestEnvironment() : TestMode::inTestEnvironment();
-            if (!DiagnosticsSwitch::enabled($disabled, Env::get('AGENTCAT_DISABLE_DIAGNOSTICS'), Env::get('DISABLE_DIAGNOSTICS'), $testEnvironment)) {
+            if (!DiagnosticsSwitch::enabled($disabled || BridgeConfig::diagnosticsOff(), Env::get('AGENTCAT_DISABLE_DIAGNOSTICS'), Env::get('DISABLE_DIAGNOSTICS'), $testEnvironment)) {
                 return;
             }
             $diagnostics = new self(

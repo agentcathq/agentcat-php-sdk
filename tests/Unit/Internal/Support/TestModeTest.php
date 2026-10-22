@@ -179,6 +179,61 @@ final class TestModeTest extends TestCase
         ], $this->logger->messages(), 'once per process');
     }
 
+    /** @return iterable<string, array{mixed, ?bool}> */
+    public static function words(): iterable
+    {
+        foreach ([true, 1, 'true', ' YES ', 'on', '1'] as $i => $value) {
+            yield 'on ' . $i => [$value, true];
+        }
+        foreach ([false, 0, 'false', 'No', ' off', '0'] as $i => $value) {
+            yield 'off ' . $i => [$value, false];
+        }
+        foreach ([null, '', '  ', 'maybe', 2, 1.0, []] as $i => $value) {
+            yield 'neither ' . $i => [$value, null];
+        }
+    }
+
+    #[DataProvider('words')]
+    public function testTheEnabledWords(mixed $value, ?bool $expected): void
+    {
+        $this->assertSame($expected, TestMode::word($value));
+    }
+
+    /** Plan E1 header conflict 12: a framework bridge's configuration decides before the environment. */
+    public function testAConfiguredSwitchDecidesBeforeTheEnvironment(): void
+    {
+        putenv('AGENTCAT_ENABLED=true');
+        TestMode::configure(false);
+        $this->assertFalse(TestMode::sdkEnabled());
+
+        putenv('AGENTCAT_ENABLED=off');
+        TestMode::configure(true);
+        $this->assertTrue(TestMode::sdkEnabled());
+
+        putenv('AGENTCAT_ENABLED=maybe');
+        $this->assertTrue(TestMode::sdkEnabled());
+        $this->assertSame([], $this->logger->messages()); // the variable is not read
+    }
+
+    public function testNoConfiguredSwitchLeavesTheEnvironmentToDecide(): void
+    {
+        putenv('AGENTCAT_ENABLED=true');
+        TestMode::configure(false);
+
+        TestMode::configure(null);
+
+        $this->assertTrue(TestMode::sdkEnabled());
+    }
+
+    public function testResetForgetsTheConfiguredSwitch(): void
+    {
+        TestMode::configure(true);
+
+        TestMode::reset();
+
+        $this->assertFalse(TestMode::sdkEnabled()); // PHPUnit is loaded (D31)
+    }
+
     public function testResetReportsAnOtherValueAgain(): void
     {
         putenv('AGENTCAT_ENABLED=maybe');

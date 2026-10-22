@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace AgentCat\Tests\Contract;
 
 use AgentCat\Internal\Access\TouchesPrivateMember;
+use Laravel\Mcp\Server\Methods\CallTool;
+use Laravel\Mcp\Server\ToolInvoker;
 use Mcp\Schema\Result\CallToolResult;
 use Mcp\Schema\Result\ListToolsResult;
 
@@ -15,10 +17,12 @@ use Mcp\Schema\Result\ListToolsResult;
 final class PrivateMemberManifest
 {
     /**
-     * The library classes that classes in src/<Adapter>/Internal extend, each with the constructor they call. A parent
-     * that turns final or changes this constructor breaks them.
+     * The library classes that classes in src/<Adapter>/Internal extend, each with the method they depend on: the
+     * constructor they call, or the method they override. A parent that turns final or changes this method breaks them.
      */
     public const array EXTENDED = [
+        CallTool::class => 'handle(Laravel\\Mcp\\Transport\\JsonRpcRequest $request, Laravel\\Mcp\\Server\\ServerContext $context): Generator|Laravel\\Mcp\\Transport\\JsonRpcResponse',
+        ToolInvoker::class => 'toErrorResponse(Throwable $e): Laravel\\Mcp\\Response',
         CallToolResult::class => '__construct(array $content, bool $isError = false, mixed $structuredContent = null, ?array $meta = null)',
         ListToolsResult::class => '__construct(array $tools, ?string $nextCursor = null)',
     ];
@@ -79,8 +83,8 @@ final class PrivateMemberManifest
     }
 
     /**
-     * The private members AgentCat reads (`Class::$member`) and the constructors of the classes it extends
-     * (`Class::__construct(...)`), sorted.
+     * The private members AgentCat reads (`Class::$member`) and the methods of the classes it extends that it depends
+     * on (`Class::__construct(...)`, `Class::handle(...): …`), sorted.
      *
      * @return list<string>
      */
@@ -90,8 +94,8 @@ final class PrivateMemberManifest
             static fn(array $entry): string => $entry['member']->class . '::$' . $entry['member']->member,
             self::entries(),
         );
-        foreach (self::EXTENDED as $class => $constructor) {
-            $members[] = $class . '::' . $constructor;
+        foreach (self::EXTENDED as $class => $method) {
+            $members[] = $class . '::' . $method;
         }
         $members = array_values(array_unique($members));
         sort($members);

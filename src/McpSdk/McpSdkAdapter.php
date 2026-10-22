@@ -6,6 +6,7 @@ namespace AgentCat\McpSdk;
 
 use AgentCat\Internal\Engine\CallInterceptor;
 use AgentCat\Internal\Engine\Publisher;
+use AgentCat\Internal\Engine\ThrowableStash;
 use AgentCat\Internal\Engine\TrackedServer;
 use AgentCat\Internal\Engine\TrackedServers;
 use AgentCat\Internal\Logging\Log;
@@ -20,7 +21,6 @@ use AgentCat\McpSdk\Internal\Delegates;
 use AgentCat\McpSdk\Internal\Drift;
 use AgentCat\McpSdk\Internal\ListToolsInterceptor;
 use AgentCat\McpSdk\Internal\RequestReader;
-use AgentCat\McpSdk\Internal\ThrowableStash;
 use Mcp\Capability\Registry\Container;
 use Mcp\Capability\Registry\ReferenceHandler;
 use Mcp\Capability\Registry\ReferenceHandlerInterface;
@@ -71,12 +71,6 @@ final class McpSdkAdapter
         }
 
         return $signals;
-    }
-
-    /** The signals, comma-joined (TS `fingerprintServerShape`); empty when none applies. */
-    public static function fingerprint(object $server): string
-    {
-        return implode(',', self::signals($server));
     }
 
     public static function version(): string

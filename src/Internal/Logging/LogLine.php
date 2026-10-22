@@ -15,10 +15,27 @@ final class LogLine
 {
     private static ?string $prefix = null;
 
-    /** `[sdk=<v> php=<v> mcp=<v>]`, resolved once per process (03 AC-38). */
+    /** `[<versions()>]` for this process, resolved once (03 AC-38). */
     public static function prefix(): string
     {
-        return self::$prefix ??= sprintf('[sdk=%s php=%s mcp=%s]', SdkVersion::get(), PHP_VERSION, SdkVersion::installed('mcp/sdk') ?? 'unknown');
+        return self::$prefix ??= '[' . self::versions(SdkVersion::get(), PHP_VERSION, SdkVersion::installed('mcp/sdk'), SdkVersion::installed('laravel/mcp')) . ']';
+    }
+
+    /** `sdk=<v> php=<v>` and the installed MCP libraries; `mcp=unknown` when none is (TS `mcp=`/`mcp2=`, 03 §5.2). */
+    public static function versions(string $sdk, string $php, ?string $mcpSdk, ?string $laravelMcp): string
+    {
+        $parts = ['sdk=' . $sdk, 'php=' . $php];
+        if ($mcpSdk !== null) {
+            $parts[] = 'mcp=' . $mcpSdk;
+        }
+        if ($laravelMcp !== null) {
+            $parts[] = 'laravel-mcp=' . $laravelMcp;
+        }
+        if ($mcpSdk === null && $laravelMcp === null) {
+            $parts[] = 'mcp=unknown';
+        }
+
+        return implode(' ', $parts);
     }
 
     /** `[<ISO time with milliseconds, UTC>] <prefix> <message>`; `$now` defaults to the current time. */

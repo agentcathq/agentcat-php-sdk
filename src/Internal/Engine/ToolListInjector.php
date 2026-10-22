@@ -48,7 +48,7 @@ final class ToolListInjector
         try {
             return (new self($config, $state))->build($tools);
         } catch (\Throwable $throwable) {
-            Log::write('Warning: AgentCat tool-list injection failed; serving the original tool list unmodified - ' . ErrorText::message($throwable));
+            ToolListing::injectionFailed($throwable);
 
             return new InjectedList($tools, [], [], degraded: true);
         }

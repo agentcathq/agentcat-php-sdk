@@ -6,6 +6,7 @@ namespace AgentCat\Tests\Unit\Internal\Logging;
 
 use AgentCat\Internal\Logging\LogLine;
 use AgentCat\Internal\SdkVersion;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
@@ -42,8 +43,24 @@ final class LogLineTest extends TestCase
     {
         $prefix = LogLine::prefix();
 
-        $this->assertMatchesRegularExpression('/\A\[sdk=\S+ php=\d+\.\d+\.\d+\S* mcp=(v?\d\S*|dev-\S+|unknown)\]\z/', $prefix);
-        $this->assertSame(sprintf('[sdk=%s php=%s mcp=%s]', SdkVersion::get(), PHP_VERSION, SdkVersion::installed('mcp/sdk') ?? 'unknown'), $prefix);
+        $this->assertMatchesRegularExpression('/\A\[sdk=\S+ php=\d+\.\d+\.\d+\S* mcp=(v?\d\S*|dev-\S+|unknown)(?: laravel-mcp=(v?\d\S*|dev-\S+))?\]\z/', $prefix);
+        $this->assertSame(sprintf('[%s]', LogLine::versions(SdkVersion::get(), PHP_VERSION, SdkVersion::installed('mcp/sdk'), SdkVersion::installed('laravel/mcp'))), $prefix);
         $this->assertSame($prefix, LogLine::prefix());
+    }
+
+    /** @return iterable<string, array{?string, ?string, string}> */
+    public static function libraryVersions(): iterable
+    {
+        yield 'mcp/sdk only' => ['v0.8.1', null, 'sdk=1.0.0 php=8.3.6 mcp=v0.8.1'];
+        yield 'laravel/mcp only' => [null, 'v1.0.2', 'sdk=1.0.0 php=8.3.6 laravel-mcp=v1.0.2'];
+        yield 'both' => ['v0.8.1', 'v1.0.2', 'sdk=1.0.0 php=8.3.6 mcp=v0.8.1 laravel-mcp=v1.0.2'];
+        yield 'neither' => [null, null, 'sdk=1.0.0 php=8.3.6 mcp=unknown'];
+    }
+
+    #[DataProvider('libraryVersions')]
+    #[Group('ac-03-35')]
+    public function testThePrefixNamesTheInstalledMcpLibraries(?string $mcpSdk, ?string $laravelMcp, string $expected): void
+    {
+        $this->assertSame($expected, LogLine::versions('1.0.0', '8.3.6', $mcpSdk, $laravelMcp));
     }
 }

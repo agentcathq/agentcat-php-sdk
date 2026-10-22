@@ -10,6 +10,12 @@ use AgentCat\Internal\Support\ErrorText;
 /** @internal */
 final class ToolListing
 {
+    /** The listing is served as the library answered it, after this line (TS listWrap, ErrorText::message()). */
+    public static function injectionFailed(\Throwable $e): void
+    {
+        Log::write('Warning: AgentCat tool-list injection failed; serving the original tool list unmodified - ' . ErrorText::message($e));
+    }
+
     /**
      * TS listWrap after the original handler: a listing without a tool list or with an empty one is served as is
      * (`!Array.isArray(tools) || tools.length === 0`, B11, D15); a degraded injection keeps the previous registries

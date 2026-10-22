@@ -6,6 +6,7 @@ namespace AgentCat\McpSdk\Internal;
 
 use AgentCat\Internal\Engine\CallInterceptor;
 use AgentCat\Internal\Engine\Publisher;
+use AgentCat\Internal\Engine\ThrowableStash;
 use AgentCat\Internal\Engine\TrackedServer;
 use Mcp\Schema\JsonRpc\Error;
 use Mcp\Schema\JsonRpc\Request;

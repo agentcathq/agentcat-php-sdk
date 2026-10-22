@@ -7,8 +7,6 @@ namespace AgentCat\McpSdk\Internal;
 use AgentCat\Internal\Engine\Publisher;
 use AgentCat\Internal\Engine\ToolListing;
 use AgentCat\Internal\Engine\TrackedServer;
-use AgentCat\Internal\Logging\Log;
-use AgentCat\Internal\Support\ErrorText;
 use Mcp\Schema\JsonRpc\Error;
 use Mcp\Schema\JsonRpc\Request;
 use Mcp\Schema\JsonRpc\Response;
@@ -64,7 +62,7 @@ final readonly class ListToolsInterceptor implements RequestHandlerInterface
 
             return new Response($response->getId(), new WireListToolsResult($original, $tree));
         } catch (\Throwable $e) {
-            Log::write('Warning: AgentCat tool-list injection failed; serving the original tool list unmodified - ' . ErrorText::message($e));
+            ToolListing::injectionFailed($e);
 
             return $response;
         }

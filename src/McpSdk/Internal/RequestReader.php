@@ -6,6 +6,7 @@ namespace AgentCat\McpSdk\Internal;
 
 use AgentCat\Internal\Constants;
 use AgentCat\Internal\Engine\CallContext;
+use AgentCat\Internal\Engine\CallTrees;
 use AgentCat\Internal\Engine\ClientIdentity;
 use AgentCat\Internal\Engine\HttpContext;
 use AgentCat\ToolCall;
@@ -48,33 +49,11 @@ final readonly class RequestReader
             $session->get('client_info'),
         );
         // Never the session's negotiated `protocol_version` (02 §3.3): only what the call itself claims.
-        $protocolVersion = $requestMeta instanceof RequestMeta ? $requestMeta->protocolVersion : $this->claimedVersion($meta ?? []);
+        $protocolVersion = $requestMeta instanceof RequestMeta ? $requestMeta->protocolVersion : CallTrees::claimedVersion($meta);
         $transportSessionId = $requestMeta instanceof RequestMeta ? null : (string) $session->getId(); // the Mcp-Session-Id
         $http = ($this->http)();
-
-        $params = $request->jsonSerialize()['params'] ?? [];
-        $params['arguments'] = (object) $request->arguments; // integer keys stay keys (N8); empty arguments are {}
-        if ($meta !== null) {
-            $params['_meta'] = (object) $meta; // a sent `_meta: {}` stays {}
-        }
-        $extra = new \stdClass();
-        if ($transportSessionId !== null) {
-            $extra->sessionId = $transportSessionId;
-        }
-        $extra->requestId = $request->getId();
-        if ($meta !== null) {
-            $extra->_meta = Trees::of((object) $meta);
-        }
-        if ($http instanceof HttpContext) {
-            $extra->requestInfo = $http->toRequestInfo();
-        }
-        $authInfo = $this->authInfo($session->get(self::ACCESS_TOKEN));
-        if ($authInfo instanceof \stdClass) {
-            $extra->authInfo = $authInfo;
-        }
-        $tree = new \stdClass();
-        $tree->method = 'tools/call';
-        $tree->params = Trees::of((object) $params);
+        $tree = CallTrees::request($request->jsonSerialize()['params'] ?? [], $request->arguments, $meta);
+        $extra = CallTrees::extra($transportSessionId, $request->getId(), $meta, $http, $this->authInfo($session->get(self::ACCESS_TOKEN)));
 
         return new CallContext(
             request: $tree,
@@ -96,14 +75,6 @@ final readonly class RequestReader
             clientName: $clientName,
             clientVersion: $clientVersion,
         );
-    }
-
-    /** @param array<string, mixed> $meta */
-    private function claimedVersion(array $meta): ?string
-    {
-        $claim = $meta[Constants::META_PROTOCOL_VERSION_KEY] ?? null;
-
-        return is_string($claim) && $claim !== '' ? $claim : null;
     }
 
     /**

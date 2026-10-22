@@ -12,6 +12,7 @@ use AgentCat\Internal\Json\Json;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Logging\LogLine;
 use AgentCat\Internal\SdkVersion;
+use AgentCat\Internal\Support\BridgeConfig;
 use AgentCat\Internal\Transport\CurlHttpChannel;
 use AgentCat\Internal\Transport\HttpChannel;
 use AgentCat\Internal\Transport\HttpRequest;
@@ -67,6 +68,7 @@ final class DiagnosticsTest extends TestCase
     protected function tearDown(): void
     {
         Diagnostics::reset();
+        BridgeConfig::reset();
         Log::reset();
         $this->environment->restore();
     }
@@ -91,7 +93,7 @@ final class DiagnosticsTest extends TestCase
         $record = JsonAssert::at($body, 'resourceLogs', 0, 'scopeLogs', 0, 'logRecords', 0);
         $this->assertSame(13, JsonAssert::at($record, 'severityNumber'));
         $this->assertSame('WARN', JsonAssert::at($record, 'severityText'));
-        $this->assertMatchesRegularExpression('/\A\[\d{4}-\d\d\-\d\dT\d\d:\d\d:\d\d\.\d{3}Z\] \[sdk=\S+ php=\S+ mcp=\S+\] Warning: something\z/', $this->text($record));
+        $this->assertMatchesRegularExpression('/\A\[\d{4}-\d\d\-\d\dT\d\d:\d\d:\d\d\.\d{3}Z\] \[sdk=\S+ php=\S+ mcp=\S+(?: laravel-mcp=\S+)?\] Warning: something\z/', $this->text($record));
         $this->assertSame('1792163096821000000', JsonAssert::at($record, 'timeUnixNano'));
         $this->assertSame(Json::encodeJs(DiagnosticsAttributes::record()), Json::encodeJs(JsonAssert::at($record, 'attributes')));
         $this->assertSame(1, $this->armed, 'the first line registers the shutdown delivery');
@@ -443,6 +445,18 @@ final class DiagnosticsTest extends TestCase
         putenv('AGENTCAT_DISABLE_DIAGNOSTICS=false');
         $this->init('p', testEnvironment: true);
         $this->assertFalse(Diagnostics::enabled(), 'off wins over AGENTCAT_DISABLE_DIAGNOSTICS=false');
+    }
+
+    /** A bridge's configuration (a cached Laravel configuration) can turn diagnostics off, also over a false variable. */
+    public function testAConfiguredOptOutTurnsDiagnosticsOff(): void
+    {
+        putenv('AGENTCAT_DISABLE_DIAGNOSTICS=false');
+        BridgeConfig::configure([], true);
+
+        $this->init('p', testEnvironment: false);
+
+        $this->assertFalse(Diagnostics::enabled());
+        $this->assertSame([], $this->logger->messages());
     }
 
     /** A10 (D50): an application's own `DIAGNOSTICS_ENDPOINT` and `DIAGNOSTICS_TOKEN` never reach AgentCat. */

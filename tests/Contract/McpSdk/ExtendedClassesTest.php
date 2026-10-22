@@ -21,14 +21,14 @@ final class ExtendedClassesTest extends TestCase
 {
     public function testTheManifestListsEveryLibraryClassAgentCatExtends(): void
     {
-        $this->assertSame([CallToolResult::class, ListToolsResult::class], PrivateMemberManifest::extendedClasses());
-        $this->assertSame(PrivateMemberManifest::extendedClasses(), array_keys(PrivateMemberManifest::EXTENDED));
+        $this->assertSame([CallToolResult::class, ListToolsResult::class], self::mcpClasses(PrivateMemberManifest::extendedClasses()));
+        $this->assertSame([CallToolResult::class, ListToolsResult::class], self::mcpClasses(array_keys(PrivateMemberManifest::EXTENDED)));
     }
 
-    /** @return \Iterator<string, array{class-string}> one row per extended class */
+    /** @return \Iterator<string, array{class-string}> one row per extended mcp/sdk class */
     public static function extendedClasses(): \Iterator
     {
-        foreach (array_keys(PrivateMemberManifest::EXTENDED) as $class) {
+        foreach (self::mcpClasses(array_keys(PrivateMemberManifest::EXTENDED)) as $class) {
             yield $class => [$class];
         }
     }
@@ -51,6 +51,18 @@ final class ExtendedClassesTest extends TestCase
             $property = $parent->getProperty($parameter->getName());
             $this->assertTrue($property->isPublic() && $property->isReadOnly(), $class . '::$' . $parameter->getName() . ' is not public readonly');
         }
+    }
+
+    /**
+     * The mcp/sdk classes of a list of classes, in order.
+     *
+     * @param list<class-string> $classes
+     *
+     * @return list<class-string>
+     */
+    private static function mcpClasses(array $classes): array
+    {
+        return array_values(array_filter($classes, static fn(string $class): bool => str_starts_with($class, 'Mcp\\')));
     }
 
     /** `name(type $parameter = default, ...)`, defaults as JSON. */

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace AgentCat\Tests\Contract\McpSdk;
 
 use AgentCat\McpSdk\Internal\Access\BuilderAccess;
-use AgentCat\Tests\Contract\PrivateMemberManifest;
+use AgentCat\Tests\Contract\MemberShape;
 use AgentCat\Tests\Support\McpSdk\BuilderMembers;
 use AgentCat\Tests\Support\Thrown;
 use Mcp\Capability\Registry\Container;
@@ -24,43 +24,19 @@ use Psr\Log\NullLogger;
 final class BuilderMembersTest extends TestCase
 {
     /**
-     * One row per accessor that touches an mcp/sdk member. The test reads the attributes itself, so their code runs
-     * inside the test (coverage and mutation testing see it; a data provider runs before either starts).
+     * One row per accessor that touches an mcp/sdk member.
      *
      * @return array<string, array{string}>
      */
     public static function mcpSdkAccessors(): array
     {
-        $rows = [];
-        foreach (PrivateMemberManifest::entries() as $entry) {
-            if (str_starts_with($entry['member']->class, 'Mcp\\')) {
-                $rows[$entry['accessor']] = [$entry['accessor']];
-            }
-        }
-
-        return $rows;
+        return MemberShape::accessorsIn('Mcp\\');
     }
 
     #[DataProvider('mcpSdkAccessors')]
     public function testTheMembersStillHaveTheDeclaredShape(string $accessor): void
     {
-        $members = array_column(array_filter(
-            PrivateMemberManifest::entries(),
-            static fn(array $entry): bool => $entry['accessor'] === $accessor,
-        ), 'member');
-        $this->assertNotSame([], $members);
-
-        foreach ($members as $member) {
-            $this->assertTrue(property_exists($member->class, $member->member), $member->class . '::$' . $member->member . ' is gone');
-
-            $property = new \ReflectionProperty($member->class, $member->member);
-            $this->assertSame($member->class, $property->getDeclaringClass()->getName());
-            $this->assertSame($member->visibility === 'private', $property->isPrivate());
-            $this->assertSame($member->visibility === 'protected', $property->isProtected());
-            $this->assertSame($member->static, $property->isStatic());
-            $this->assertSame($member->readonly, $property->isReadOnly());
-            $this->assertSame($member->type, (string) $property->getType());
-        }
+        MemberShape::assertDeclared($accessor);
     }
 
     public function testBuiltPartsHoldWhatAgentCatReads(): void

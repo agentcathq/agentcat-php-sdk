@@ -24,6 +24,11 @@ use AgentCat\Internal\Wire\WireMapper;
  * hygiene and HTTP run in `pump()`, `flush()` or `shutdown()`. At most 5 events are in delivery at once, and
  * at most 10 000 wait (the oldest is dropped). No method throws.
  *
+ * An event's hooks run when it gets a free delivery slot, except in a `flush()` with a window, which runs them for
+ * every waiting event first, whatever the free slots: a worker's request-end wait is such a `flush()`, so each hook runs
+ * in its own request, also in a worker that serves the next request in the same process (Octane). The payloads then
+ * wait, in order, only for the transport. A 0 s `flush()` stays one non-blocking pass.
+ *
  * The queue also drives the side channel of the exporter and diagnostics requests (`channel()`) and its companions
  * (`attach()`): every pass ticks each companion (except the pass after `finish()`), then pumps the channel. `flush()`
  * waits for the exporter requests inside its timeout, `shutdown()` for the background ones (diagnostics) too.
@@ -51,8 +56,11 @@ final class EventQueue
 
     private static ?self $global = null;
 
-    /** @var \SplQueue<QueuedEvent> events not yet in delivery */
+    /** @var \SplQueue<QueuedEvent> events whose hooks have not run */
     private readonly \SplQueue $waiting;
+
+    /** @var \SplQueue<ReadyEvent> events through the pipeline (`flush()`), each older than every waiting event */
+    private readonly \SplQueue $ready;
 
     /** @var \Closure(Event): string */
     private readonly \Closure $encode;
@@ -89,18 +97,20 @@ final class EventQueue
         private readonly ?SignalDrain $signalDrain = null,
     ) {
         $this->waiting = new \SplQueue();
+        $this->ready = new \SplQueue();
         $this->encode = $encode ?? WireEncoder::encode(...);
         $this->endpoint = ApiBaseUrl::endpoint(ApiBaseUrl::resolve()); // environment or default, until configure()
     }
 
     /**
-     * The queue of this process; its first event registers the shutdown delivery and installs the signal drain
-     * (CLI servers with ext-pcntl).
+     * The queue of this process; its first event registers the shutdown delivery (which ends the request first on a
+     * web SAPI, `RequestEnd`) and installs the signal drain (CLI servers with ext-pcntl).
      */
     public static function global(): self
     {
         if (!self::$global instanceof self) {
-            $flusher = new ShutdownFlusher(static fn(): self => self::global(), null, FinishRequest::detect());
+            $finish = FinishRequest::detect();
+            $flusher = new ShutdownFlusher(static fn(): self => self::global(), null, $finish, RequestEnd::detect($finish instanceof \Closure));
             $signals = new SignalDrain(static fn(): self => self::global());
             self::$global = new self(onEnqueue: static function () use ($flusher, $signals): void {
                 $flusher->ensureRegistered();
@@ -177,7 +187,7 @@ final class EventQueue
     public function hasWork(): bool
     {
         try {
-            if (!$this->waiting->isEmpty() || $this->transport->inFlight() > 0 || $this->channel->pending() > 0) {
+            if ($this->queued() > 0 || $this->transport->inFlight() > 0 || $this->channel->pending() > 0) {
                 return true;
             }
             foreach ($this->companions as $companion) {
@@ -200,9 +210,9 @@ final class EventQueue
 
             return;
         }
-        if ($this->waiting->count() >= self::MAX_QUEUE_SIZE) {
+        if ($this->queued() >= self::MAX_QUEUE_SIZE) {
             Log::write('Event queue full, dropping oldest event');
-            $this->waiting->dequeue();
+            $this->ready->isEmpty() ? $this->waiting->dequeue() : $this->ready->dequeue();
         }
         $this->waiting->enqueue($event);
         $this->arm();
@@ -230,10 +240,17 @@ final class EventQueue
      * and no exporter request is pending (true), or the timeout passes (false); null = no limit. The background
      * requests (diagnostics) are neither counted nor waited for: they go on in later passes and at `shutdown()`. A
      * re-entrant call (from a hook or an exporter) returns false at once.
+     *
+     * With a window (a positive timeout, or none), each pass ends with the pipeline (the hooks first) of the events that
+     * waited when it began, whatever the free slots: so the hooks of those events run before the call returns, also
+     * when the deadline has passed. An event a hook queues meanwhile goes to the next pass, so a hook that keeps queueing
+     * cannot hold the call past its deadline. Without a window (0, negative or NaN) it is one non-blocking pass, which
+     * runs only the hooks of the events it starts; the others run later, in the shutdown function of the same request
+     * or process at the latest.
      */
     public function flush(?float $timeoutSeconds = null): bool
     {
-        return $this->deliverUntil(fn(): float => $timeoutSeconds === null ? INF : $this->transport->now() + $this->budget($timeoutSeconds), background: false);
+        return $this->deliverUntil(fn(): float => $timeoutSeconds === null ? INF : $this->transport->now() + $this->budget($timeoutSeconds), background: false, prepare: $timeoutSeconds === null || $timeoutSeconds > 0);
     }
 
     /**
@@ -260,8 +277,8 @@ final class EventQueue
                 $this->deliverWithCompanions($deadline);
             }
         }
-        if (!$this->waiting->isEmpty()) {
-            Log::write(sprintf('Shutting down with %d events still in queue', $this->waiting->count()));
+        if ($this->queued() > 0) {
+            Log::write(sprintf('Shutting down with %d events still in queue', $this->queued()));
         }
     }
 
@@ -280,7 +297,13 @@ final class EventQueue
     /** @return array{queueLength: int, activeRequests: int} */
     public function stats(): array
     {
-        return ['queueLength' => $this->waiting->count(), 'activeRequests' => $this->transport->inFlight()];
+        return ['queueLength' => $this->queued(), 'activeRequests' => $this->transport->inFlight()];
+    }
+
+    /** The events not yet in delivery: those that went through the pipeline, then those whose hooks have not run. */
+    private function queued(): int
+    {
+        return $this->ready->count() + $this->waiting->count();
     }
 
     /**
@@ -333,8 +356,9 @@ final class EventQueue
      * @param \Closure(): float $deadline   read once, after the re-entrancy guard is taken
      * @param bool              $tick       false after `finish()`: the passes tick no companion
      * @param bool              $background whether it waits for the background requests (diagnostics): `shutdown()` does
+     * @param bool              $prepare    whether each pass ends with the pipeline of the waiting events: a `flush()` with a window
      */
-    private function deliverUntil(\Closure $deadline, bool $tick = true, bool $background = true): bool
+    private function deliverUntil(\Closure $deadline, bool $tick = true, bool $background = true, bool $prepare = false): bool
     {
         if ($this->busy) {
             return false;
@@ -345,14 +369,17 @@ final class EventQueue
             $until = $deadline();
             while (true) {
                 $this->pumpOnce($tick);
-                if ($this->waiting->isEmpty() && $this->transport->inFlight() === 0 && $this->channel->pending($background) === 0) {
+                if ($prepare) {
+                    $this->prepareWaiting();
+                }
+                if ($this->queued() === 0 && $this->transport->inFlight() === 0 && $this->channel->pending($background) === 0) {
                     return true;
                 }
                 if ($this->transport->now() >= $until) {
                     return false;
                 }
                 // Slots freed by the last pump are refilled at once; waiting would sleep with idle slots.
-                if ($this->waiting->isEmpty() || $this->transport->inFlight() >= self::CONCURRENCY) {
+                if ($this->queued() === 0 || $this->transport->inFlight() >= self::CONCURRENCY) {
                     $this->wait($until);
                 }
             }
@@ -382,14 +409,18 @@ final class EventQueue
     }
 
     /**
-     * One pass: starts waiting events while fewer than 5 are in delivery and pumps the transport, then ticks each
-     * companion (unless `$tick` is false) and pumps the side channel. Never throws.
+     * One pass: starts events while fewer than 5 are in delivery, oldest first (those through the pipeline, then the
+     * waiting ones, whose pipeline runs now), and pumps the transport, then ticks each companion (unless `$tick` is
+     * false) and pumps the side channel. Never throws.
      */
     private function pumpOnce(bool $tick = true): void
     {
         try {
-            while (!$this->waiting->isEmpty() && $this->transport->inFlight() < self::CONCURRENCY) {
-                $this->dispatch($this->waiting->dequeue());
+            while ($this->queued() > 0 && $this->transport->inFlight() < self::CONCURRENCY) {
+                $ready = $this->ready->isEmpty() ? $this->prepare($this->waiting->dequeue()) : $this->ready->dequeue();
+                if ($ready instanceof ReadyEvent) {
+                    $this->send($ready);
+                }
             }
             $this->transport->pump();
         } catch (\Throwable $e) {
@@ -423,31 +454,58 @@ final class EventQueue
         }
     }
 
-    /** TypeScript `processEvent` stages 0-5, then `sendEvent`. */
-    private function dispatch(QueuedEvent $queued): void
+    /**
+     * The pipeline of the events that waited when the pass began, whatever the free slots (`flush()`): the payloads wait
+     * in order. An event a hook queues meanwhile waits for the next pass. A hook can only add waiting events (the cap
+     * drops a prepared one first, and a waiting one only for a new one), so `$left` never outruns the queue.
+     */
+    private function prepareWaiting(): void
+    {
+        for ($left = $this->waiting->count(); $left > 0; --$left) {
+            $ready = $this->prepare($this->waiting->dequeue());
+            if ($ready instanceof ReadyEvent) {
+                $this->ready->enqueue($ready);
+            }
+        }
+    }
+
+    /** TypeScript `processEvent` stages 0-5 (the hooks first), and the body; null when the pipeline dropped the event. */
+    private function prepare(QueuedEvent $queued): ?ReadyEvent
     {
         $event = $this->processor->process($queued);
         if (!$event instanceof Event) {
-            return;
+            return null;
         }
         if (($event->projectId ?? '') === '') {
-            $this->export($event);
-
-            return;
+            return new ReadyEvent($event, null);
         }
 
         try {
-            $body = ($this->encode)($event);
+            return new ReadyEvent($event, ($this->encode)($event));
         } catch (\Throwable $e) {
+            return new ReadyEvent($event, null, ErrorText::of($e));
+        }
+    }
+
+    /**
+     * TypeScript `sendEvent`: the exporters alone for an event without a body, else the delivery to the API endpoint of
+     * this moment (the last `configure()` wins).
+     */
+    private function send(ReadyEvent $ready): void
+    {
+        $event = $ready->event;
+        if ($ready->body === null) {
             $this->export($event);
-            Log::write(sprintf('Failed to encode event %s: %s', $event->id, ErrorText::of($e)));
+            if ($ready->encodeError !== null) {
+                Log::write(sprintf('Failed to encode event %s: %s', $event->id, $ready->encodeError));
+            }
 
             return;
         }
         foreach (WireMapper::droppedFields($event) as $key) {
             Log::write(sprintf('WARN: Event %s: %s is not a JSON object or array and was not sent', $event->id, $key));
         }
-        $this->transport->start(Delivery::forEvent($event, $this->endpoint, $body, function () use ($event): void {
+        $this->transport->start(Delivery::forEvent($event, $this->endpoint, $ready->body, function () use ($event): void {
             $this->export($event);
         }));
     }

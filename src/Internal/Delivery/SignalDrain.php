@@ -9,11 +9,12 @@ namespace AgentCat\Internal\Delivery;
  * a handler, these signals end PHP at once: no shutdown function runs, and the waiting events are lost.
  *
  * The global queue calls `install()` when it gets an event, so nothing happens at autoload. It installs once, only
- * under the CLI SAPI with ext-pcntl, and keeps the handler each signal had before. A signal that the application
- * ignores in PHP (`pcntl_signal(…, SIG_IGN)`) stays ignored; an ignore inherited from the parent process is not
- * visible to PHP, so AgentCat installs its drain for that signal. When it installs a handler, `install()` also turns
- * on `pcntl_async_signals(true)`, which is process wide: from then on every PHP signal handler of the process runs
- * between two opcodes, not at `pcntl_signal_dispatch()` or a tick.
+ * under the CLI SAPI with ext-pcntl, and keeps the handler each signal had before. It installs nothing when ext-swoole
+ * or ext-openswoole is loaded. A signal that the application ignores in PHP (`pcntl_signal(…, SIG_IGN)`) stays
+ * ignored; an ignore inherited from the parent process is not visible to PHP, so AgentCat installs its drain for that
+ * signal. When it installs a handler, `install()` also turns on `pcntl_async_signals(true)`, which is process wide:
+ * from then on every PHP signal handler of the process runs between two opcodes, not at `pcntl_signal_dispatch()` or
+ * a tick.
  *
  * Each handler runs once (TypeScript `process.once`). It first gives the signal back to the earlier handler, so a
  * second Ctrl-C during the drain acts as if AgentCat were not there. Then it shuts the queue down
@@ -31,6 +32,9 @@ final class SignalDrain
     /** @var \Closure(string): bool */
     private readonly \Closure $functionExists;
 
+    /** @var \Closure(string): bool */
+    private readonly \Closure $extensionLoaded;
+
     private bool $installed = false;
 
     private bool $disabled = false;
@@ -40,16 +44,19 @@ final class SignalDrain
      * @param (\Closure(int): void)|null    $raise          raises the signal with the default disposition: default
      *                                                      `pcntl_signal($signal, SIG_DFL)`, then `posix_kill()` to this
      *                                                      process, or `exit(128 + $signal)` without ext-posix
-     * @param (\Closure(string): bool)|null $functionExists default `function_exists(...)`
+     * @param (\Closure(string): bool)|null $functionExists  default `function_exists(...)`
+     * @param (\Closure(string): bool)|null $extensionLoaded default `extension_loaded(...)`
      */
     public function __construct(
         private readonly \Closure $queue,
         ?\Closure $raise = null,
         ?\Closure $functionExists = null,
         private readonly string $sapi = PHP_SAPI,
+        ?\Closure $extensionLoaded = null,
     ) {
         $this->raise = $raise ?? $this->raiseWithDefaultDisposition(...);
         $this->functionExists = $functionExists ?? function_exists(...);
+        $this->extensionLoaded = $extensionLoaded ?? extension_loaded(...);
     }
 
     /** Never installs after this. False when the handlers are installed already (then nothing changes). */
@@ -63,11 +70,16 @@ final class SignalDrain
         return true;
     }
 
-    /** Installs the handlers once. Does nothing outside the CLI SAPI or without ext-pcntl. */
+    /** Installs the handlers once. Does nothing outside the CLI SAPI, under Swoole or OpenSwoole, or without ext-pcntl. */
     public function install(): void
     {
         if ($this->installed || $this->disabled || $this->sapi !== 'cli') {
             return;
+        }
+        foreach (['swoole', 'openswoole'] as $extension) {
+            if (($this->extensionLoaded)($extension)) {
+                return; // a coroutine server stops its workers with C-level handlers PHP cannot see or chain
+            }
         }
         foreach (['pcntl_signal', 'pcntl_signal_get_handler', 'pcntl_async_signals'] as $function) {
             if (!($this->functionExists)($function)) {

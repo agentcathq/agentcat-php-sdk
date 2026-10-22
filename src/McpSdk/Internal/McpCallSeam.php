@@ -7,6 +7,8 @@ namespace AgentCat\McpSdk\Internal;
 use AgentCat\Internal\Engine\CallContext;
 use AgentCat\Internal\Engine\CallSeam;
 use AgentCat\Internal\Engine\Observed;
+use AgentCat\Internal\Engine\ThrowableStash;
+use AgentCat\Internal\Json\JsonTree;
 use Mcp\Schema\JsonRpc\Error;
 use Mcp\Schema\JsonRpc\Response;
 use Mcp\Schema\Request\CallToolRequest;
@@ -48,7 +50,7 @@ final class McpCallSeam implements CallSeam
     #[\Override]
     public function arguments(): mixed
     {
-        return Trees::arguments($this->request->arguments);
+        return JsonTree::object($this->request->arguments);
     }
 
     #[\Override]
@@ -128,5 +130,12 @@ final class McpCallSeam implements CallSeam
         $answer = $delegate->handle((new ListToolsRequest())->withId('agentcat-rebuild'), $this->session);
 
         return $answer instanceof Response ? (Trees::listing($answer->result)[2] ?? null) : null;
+    }
+
+    /** mcp/sdk answers are complete when `handle()` returns: a tool that waits suspends its fiber inside it. */
+    #[\Override]
+    public function later(mixed $result, \Closure $complete, \Closure $fail): null
+    {
+        return null;
     }
 }

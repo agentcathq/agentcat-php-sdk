@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace AgentCat\Tests\Unit\McpSdk;
 
 use AgentCat\McpSdk\Internal\Trees;
-use AgentCat\Tests\Support\Thrown;
 use Mcp\Schema\Content\ImageContent;
 use Mcp\Schema\Content\TextContent;
 use Mcp\Schema\JsonRpc\ResultInterface;
@@ -19,50 +18,9 @@ final class TreesTest extends TestCase
 {
     public function testOfTurnsLibraryValuesIntoJsonTrees(): void
     {
-        $tree = Trees::of(['a' => ['b' => 1], 'list' => [1, 2], 'empty' => []]);
+        $tree = Trees::of(['content' => [new TextContent('x')], 'empty' => []]);
 
-        $this->assertEquals((object) ['a' => (object) ['b' => 1], 'list' => [1, 2], 'empty' => []], $tree);
-    }
-
-    public function testOfReplacesInvalidUtf8WithTheReplacementCharacter(): void
-    {
-        $tree = Trees::of(['text' => "a\xB1b"]);
-
-        $this->assertInstanceOf(\stdClass::class, $tree);
-        $this->assertSame("a\u{FFFD}b", $tree->text);
-    }
-
-    public function testOfThrowsForAValueJsonCannotCarry(): void
-    {
-        Thrown::by(\JsonException::class, static fn(): mixed => Trees::of(['n' => NAN]));
-    }
-
-    public function testEmptyArgumentsAreAnEmptyObject(): void
-    {
-        $this->assertEquals(new \stdClass(), Trees::arguments([]));
-    }
-
-    public function testArgumentsKeepIntegerKeysAndNestedEmptyLists(): void
-    {
-        $tree = Trees::arguments(['0' => 'zero', 'n' => ['a' => []]]);
-
-        $this->assertInstanceOf(\stdClass::class, $tree);
-        $this->assertSame(['0', 'n'], array_map(strval(...), array_keys(get_object_vars($tree))));
-        $this->assertSame('zero', $tree->{'0'});
-        $this->assertEquals((object) ['a' => []], $tree->n);
-    }
-
-    public function testArgumentsWithOnlySequentialIntegerKeysStayAnObject(): void
-    {
-        $tree = Trees::arguments(['a', 'b']);
-
-        $this->assertInstanceOf(\stdClass::class, $tree);
-        $this->assertSame('{"0":"a","1":"b"}', json_encode($tree));
-    }
-
-    public function testArgumentsJsonCannotCarryBecomeAnEmptyObject(): void
-    {
-        $this->assertEquals(new \stdClass(), Trees::arguments(['msg' => 'hi', 'n' => NAN]));
+        $this->assertEquals((object) ['content' => [(object) ['type' => 'text', 'text' => 'x']], 'empty' => []], $tree);
     }
 
     public function testAnEmptyListAsStructuredContentBecomesAnEmptyObject(): void

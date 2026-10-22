@@ -9,18 +9,20 @@ use AgentCat\Internal\Constants;
 use AgentCat\Internal\Delivery\EventQueue;
 use AgentCat\Internal\Diagnostics\Diagnostics;
 use AgentCat\Internal\Engine\CallInterceptor;
+use AgentCat\Internal\Engine\Libraries;
+use AgentCat\Internal\Engine\Library;
 use AgentCat\Internal\Engine\Publisher;
 use AgentCat\Internal\Engine\TrackedServer;
 use AgentCat\Internal\Engine\TrackedServers;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Pipeline\QueuedEvent;
+use AgentCat\Internal\Support\BridgeConfig;
 use AgentCat\Internal\Support\Env;
 use AgentCat\Internal\Support\ErrorText;
 use AgentCat\Internal\Support\TestMode;
 use AgentCat\Internal\Support\Values;
 use AgentCat\Internal\Tags\TagValidator;
 use AgentCat\Internal\Telemetry\TelemetryManager;
-use AgentCat\McpSdk\McpSdkAdapter;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -66,7 +68,7 @@ final readonly class Client
      *
      * `AGENTCAT_ENABLED` turns AgentCat off everywhere with `false`, `0`, `no` or `off`, and on everywhere with
      * `true`, `1`, `yes` or `on`. Otherwise AgentCat does nothing in test environments (PHPUnit, Pest, `APP_ENV`
-     * `testing` or `test`).
+     * `testing` or `test`). In a Laravel application, `enabled` in config/agentcat.php decides before the variable.
      *
      * @template T of object
      *
@@ -86,7 +88,7 @@ final readonly class Client
                 return $server; // D44 AGENTCAT_ENABLED, else D31: nothing in test environments unless fake()
             }
             $options ??= new Options();
-            $projectId ??= Env::get('AGENTCAT_PROJECT_ID') ?? ''; // D36: '' means telemetry only
+            $projectId ??= BridgeConfig::env('AGENTCAT_PROJECT_ID') ?? ''; // D36: '' means telemetry only; a bridge's configuration first
             if ($this->telemetry) {
                 // TS: the first statement of track(), before the server is checked; the first call in the process decides.
                 Diagnostics::init($projectId, $options->disableDiagnostics, $this->publisher->queue());
@@ -94,25 +96,26 @@ final readonly class Client
             if ($options->disableSignalHandlers && !$this->publisher->queue()->disableSignalHandlers() && $this->publisher->queue()->claimSignalHandlersWarning()) {
                 Log::write('WARN: AgentCat signal handlers are already installed; disableSignalHandlers is ignored');
             }
-            if (!McpSdkAdapter::supports($server)) {
-                $signals = McpSdkAdapter::fingerprint($server);
-                Log::warning(sprintf('AgentCat SDK Compatibility: unrecognized server shape | signals %s. %s', $signals === '' ? '(none)' : $signals, McpSdkAdapter::SUPPORT_MATRIX));
+            $library = Libraries::for($server);
+            if (!$library instanceof Library) {
+                $signals = Libraries::fingerprint($server);
+                Log::warning(sprintf('AgentCat SDK Compatibility: unrecognized server shape | signals %s. %s', $signals === '' ? '(none)' : $signals, Libraries::supportMatrix()));
 
-                throw new \UnexpectedValueException('AgentCat SDK compatibility error: server object does not match any supported MCP SDK shape. ' . McpSdkAdapter::SUPPORT_MATRIX);
+                throw new \UnexpectedValueException('AgentCat SDK compatibility error: server object does not match any supported MCP SDK shape. ' . Libraries::supportMatrix());
             }
-            $logger = McpSdkAdapter::logger($server);
+            $logger = $library->logger($server);
             if ($logger instanceof LoggerInterface) {
                 Log::adopt($logger); // D30, D38
             }
             $tracked = TrackedServers::get($server) instanceof TrackedServer;
             if (!$tracked) {
-                McpSdkAdapter::inspect($server); // a tracked Builder can be built by now: tracking it again changes nothing
+                $library->inspect($server); // a tracked Builder can be built by now: tracking it again changes nothing
             }
-            if (($options->apiBaseUrl ?? '') !== '' || Env::get('AGENTCAT_API_URL') !== null || Env::get('MCPCAT_API_URL') !== null) {
+            if (($options->apiBaseUrl ?? '') !== '' || BridgeConfig::env('AGENTCAT_API_URL') !== null || Env::get('MCPCAT_API_URL') !== null) {
                 $this->publisher->queue()->configure($options->apiBaseUrl); // before the already-tracked check; the last call wins
             }
             $project = $projectId !== '' ? $projectId : '(telemetry-only)';
-            Log::write(sprintf('AgentCat setup started | project %s | sdk mcp-sdk/builder | signals %s', $project, McpSdkAdapter::fingerprint($server)));
+            Log::write(sprintf('AgentCat setup started | project %s | sdk %s | signals %s', $project, $library->sdk(), implode(',', $library->signals($server))));
             if ($tracked) {
                 Log::write('[SESSION DEBUG] track() - Server already being tracked, skipping initialization');
 
@@ -126,8 +129,8 @@ final readonly class Client
             } elseif ($projectId !== '' && preg_match(self::PROJECT_ID_PATTERN, $projectId) !== 1) {
                 Log::write(sprintf('WARN: Project ID "%s" does not match proj_ followed by 27 letters or digits; the AgentCat API drops its events', $projectId));
             }
-            $state = new TrackedServer($projectId, $options, McpSdkAdapter::serverInfo($server), $this->publisher);
-            McpSdkAdapter::install($server, $state, $this->publisher, $this->interceptor);
+            $state = new TrackedServer($projectId, $options, $library->serverInfo($server), $this->publisher);
+            $library->install($server, $state, $this->publisher, $this->interceptor);
             TrackedServers::add($server, $state);
             Log::write(sprintf(
                 'AgentCat setup complete | project %s | tracing=%s context=%s reportMissing=%s exporters=%d',
@@ -188,7 +191,7 @@ final readonly class Client
         if (is_string($serverOrSessionId)) {
             $sessionId = $sessionId !== '' ? $sessionId : $serverOrSessionId; // verbatim: no derivation, '' is sessionless
         } else {
-            $server = TrackedServers::get($serverOrSessionId) ?? McpSdkAdapter::trackedServer($serverOrSessionId);
+            $server = TrackedServers::get($serverOrSessionId) ?? Libraries::trackedServer($serverOrSessionId);
             if (!$server instanceof TrackedServer) {
                 if (TrackedServers::incomplete()) {
                     // AgentCat's own failure, logged before: it must not throw into the customer's code

@@ -36,4 +36,35 @@ final class LayeringTest
             ->classes(Selector::inNamespace('Mcp'))
             ->because('mcp/sdk is optional: only AgentCat\McpSdk may reference it (01 AC-90)');
     }
+
+    #[TestRule]
+    public function onlyTheLaravelPartsDependOnLaravel(): Rule
+    {
+        return PHPat::rule()
+            ->classes(Selector::inNamespace('AgentCat'))
+            ->excluding(Selector::inNamespace('AgentCat\LaravelMcp'), Selector::inNamespace('AgentCat\Laravel'), Selector::inNamespace('AgentCat\Tests'))
+            ->shouldNot()->dependOn()
+            ->classes(Selector::inNamespace('Laravel'), Selector::inNamespace('Illuminate'))
+            ->because('laravel/mcp and Laravel are optional (01 AC-90)');
+    }
+
+    #[TestRule]
+    public function theLaravelAdapterNeedsNoMcpSdk(): Rule
+    {
+        return PHPat::rule()
+            ->classes(Selector::inNamespace('AgentCat\LaravelMcp'), Selector::inNamespace('AgentCat\Laravel'))
+            ->shouldNot()->dependOn()
+            ->classes(Selector::inNamespace('Mcp'), Selector::inNamespace('AgentCat\McpSdk'))
+            ->because('a Laravel application without mcp/sdk must load every Laravel class');
+    }
+
+    #[TestRule]
+    public function theMcpSdkAdapterNeedsNoLaravel(): Rule
+    {
+        return PHPat::rule()
+            ->classes(Selector::inNamespace('AgentCat\McpSdk'))
+            ->shouldNot()->dependOn()
+            ->classes(Selector::inNamespace('AgentCat\LaravelMcp'), Selector::inNamespace('AgentCat\Laravel'))
+            ->because('an mcp/sdk application without Laravel must load every mcp/sdk class');
+    }
 }

@@ -6,6 +6,7 @@ namespace AgentCat\Tests\Unit\Internal\Diagnostics;
 
 use AgentCat\Internal\Constants;
 use AgentCat\Internal\Diagnostics\DiagnosticsEndpoint;
+use AgentCat\Internal\Support\BridgeConfig;
 use AgentCat\Tests\Integration\Support\MockCollector;
 use AgentCat\Tests\Support\Environment;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -26,6 +27,7 @@ final class DiagnosticsEndpointTest extends TestCase
     #[\Override]
     protected function tearDown(): void
     {
+        BridgeConfig::reset();
         $this->environment->restore();
     }
 
@@ -36,6 +38,17 @@ final class DiagnosticsEndpointTest extends TestCase
 
         $this->assertSame('https://otel.agentcat.com/v1/logs', DiagnosticsEndpoint::url());
         $this->assertSame('dgk_sdk_diag_3f9a2c7e1b8d4065af2e9c1d7b6a4f80', DiagnosticsEndpoint::token());
+    }
+
+    /** A cached Laravel configuration hides `.env` from the process: the configured collector and token come first. */
+    public function testTheConfiguredCollectorAndTokenComeBeforeTheVariables(): void
+    {
+        putenv('AGENTCAT_DIAGNOSTICS_TOKEN=dgk_env');
+        $collector = MockCollector::closedPortUrl() . '/configured/';
+        BridgeConfig::configure(['AGENTCAT_DIAGNOSTICS_ENDPOINT' => $collector, 'AGENTCAT_DIAGNOSTICS_TOKEN' => 'dgk_configured'], false);
+
+        $this->assertSame(rtrim($collector, '/') . '/v1/logs', DiagnosticsEndpoint::url());
+        $this->assertSame('dgk_configured', DiagnosticsEndpoint::token());
     }
 
     /** @return iterable<string, array{string, string}> */

@@ -79,6 +79,8 @@ final class MockCollector
      * The requests a scenario received so far, in arrival order (`n`).
      *
      * @return list<\stdClass> each with `n`, `method`, `path`, `headers`, `body`, `start` and `end`
+     *
+     * @phpstan-impure the collector writes the log while the test runs
      */
     public function requests(string $baseUrl): array
     {
@@ -100,8 +102,12 @@ final class MockCollector
         } finally {
             fclose($handle);
         }
+        $contents = trim($contents);
+        if ($contents === '') {
+            return []; // file_put_contents() creates the log before it takes its lock: the first record is not written yet
+        }
         $requests = [];
-        foreach (explode("\n", trim($contents)) as $line) {
+        foreach (explode("\n", $contents) as $line) {
             $request = Json::decode($line);
             if (!$request instanceof \stdClass) {
                 throw new \UnexpectedValueException('Not a request record: ' . $line);
