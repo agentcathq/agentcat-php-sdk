@@ -34,6 +34,18 @@ final class SdkVersionTest extends TestCase
         $this->assertSame('dev', SdkVersion::resolve(static fn(): string => ''));
     }
 
+    public function testInstalledReturnsThePrettyVersionOfAnInstalledPackage(): void
+    {
+        $version = SdkVersion::installed('mcp/sdk');
+        $this->assertIsString($version);
+        $this->assertNotSame('', $version);
+    }
+
+    public function testInstalledReturnsNullForAPackageThatIsNotInstalled(): void
+    {
+        $this->assertNull(SdkVersion::installed('nobody/nothing'));
+    }
+
     public function testResolveFallsBackWhenLookupThrows(): void
     {
         $this->assertSame('dev', SdkVersion::resolve(static function (): never {

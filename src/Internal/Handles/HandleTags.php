@@ -35,7 +35,7 @@ final class HandleTags
      * Customer tags first; SDK tags overwrite the same keys.
      *
      * @param array<array-key, string>|null $customerTags
-     * @param array<string, string> $sdkTags
+     * @param array<array-key, string> $sdkTags
      *
      * @return array<array-key, string>
      */

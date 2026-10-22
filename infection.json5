@@ -12,5 +12,5 @@
         "@default": true
     },
     "testFramework": "phpunit",
-    "testFrameworkOptions": "--testsuite=Unit,Golden,Integration"
+    "testFrameworkOptions": "--testsuite=Unit,Golden,Integration,Contract"
 }

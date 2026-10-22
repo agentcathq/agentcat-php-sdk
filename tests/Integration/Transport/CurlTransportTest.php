@@ -30,6 +30,8 @@ final class CurlTransportTest extends TestCase
 
     private const string GAVE_UP = 'Failed to deliver AgentCat event after retries: ';
 
+    private const string NO_CURL = 'WARN: AgentCat cannot send events: ext-curl functions are missing or disabled (';
+
     /** Seconds; every blocking call in these tests has a deadline. */
     private const float DEADLINE = 5.0;
 
@@ -488,26 +490,33 @@ final class CurlTransportTest extends TestCase
     }
 
     /**
-     * Fix round 1: a transfer that finished while a slow logger held the loop is collected at once, not after a
-     * 1 s wait on the socket of a slower transfer.
+     * Fix round 1: a transfer that finished while a slow logger held the loop is collected at once, not after a wait
+     * of up to 1 s on the socket of a slower transfer. evt_b fails at once (connection refused) and its line blocks the
+     * loop while evt_a's answer arrives. The time counts from the later of two moments, the slow logger letting go and
+     * the collector answering evt_a, so a loaded machine that delays either one does not count against the transport:
+     * with the fix it collects evt_a within milliseconds, without it about 1 s later.
      */
     #[MaximumDuration(2000)]
     public function testAFinishedTransferIsCollectedWithoutWaitingForOthers(): void
     {
         $collector = self::collector();
-        $slow = $collector->scenario([], ['status' => 202, 'delayMs' => 1200, 'body' => '']);
-        $fast = $collector->scenario([], ['status' => 202, 'delayMs' => 100, 'body' => '']);
-        $failing = $collector->scenario([], ['status' => 503, 'body' => '']);
+        $slow = $collector->scenario([], ['status' => 202, 'delayMs' => 2000, 'body' => '']);
+        $fast = $collector->scenario([], ['status' => 202, 'delayMs' => 300, 'body' => '']);
         $logger = new class extends AbstractLogger {
-            /** @var list<array{float, string}> */
-            public array $lines = [];
+            /** @var array<string, float> when each line was logged (wall clock) */
+            public array $at = [];
 
+            /** When the slow line was done (wall clock). */
+            public float $released = 0.0;
+
+            /** @param mixed[] $context */
             #[\Override]
             public function log($level, string|\Stringable $message, array $context = []): void
             {
-                $this->lines[] = [hrtime(true) / 1e9, (string) $message];
+                $this->at[(string) $message] = microtime(true);
                 if (str_starts_with((string) $message, 'Failed to send event evt_b')) {
-                    usleep(300_000); // a slow customer PSR logger; evt_a's response arrives meanwhile
+                    usleep(700_000); // a slow customer PSR logger; evt_a's response arrives meanwhile
+                    $this->released = microtime(true);
                 }
             }
         };
@@ -515,15 +524,23 @@ final class CurlTransportTest extends TestCase
         $transport = new CurlTransport(new RetryPolicy([10.0]));
         $transport->start(new Delivery(ApiBaseUrl::endpoint($slow), '{}', 'evt_c', 'slow'));
         $transport->start(new Delivery(ApiBaseUrl::endpoint($fast), '{}', 'evt_a', 'fast'));
-        $transport->start(new Delivery(ApiBaseUrl::endpoint($failing), '{}', 'evt_b', 'failing'));
-
-        $this->assertFalse($transport->drain($transport->now() + 1.0)); // evt_c runs 1.2 s, evt_b retries in 10 s
-
-        $failed = 'Failed to send event evt_b, retrying... [Error: HTTP 503]';
+        $transport->start(new Delivery(ApiBaseUrl::endpoint(MockCollector::closedPortUrl()), '{}', 'evt_b', 'refused'));
         $sent = 'Successfully sent event evt_a | fast';
-        $times = array_column($logger->lines, 0, 1); // message => when it was logged
-        $this->assertSame([$failed, $sent], array_keys($times));
-        $this->assertLessThan(0.7, ($times[$sent] ?? INF) - ($times[$failed] ?? 0.0));
+
+        // drain() without its deadline: evt_c runs 2 s and evt_b retries in 10 s, so stop once evt_a is collected.
+        $deadline = $transport->now() + self::DEADLINE;
+        while (!isset($logger->at[$sent]) && $transport->now() < $deadline) {
+            $transport->pump();
+            $transport->waitForActivity($deadline);
+        }
+
+        $lines = implode(' / ', array_keys($logger->at));
+        $this->assertArrayHasKey($sent, $logger->at, $lines);
+        $this->assertStringStartsWith('Failed to send event evt_b, retrying... [Error: cURL error 7: ', $lines);
+        $this->assertGreaterThan(0.0, $logger->released);
+        $answered = $collector->requests($fast)[0]->end ?? null; // the collector logs just before it answers
+        $this->assertIsNumeric($answered);
+        $this->assertLessThan(0.5, $logger->at[$sent] - max($logger->released, (float) $answered), $lines);
     }
 
     #[MaximumDuration(2000)]
@@ -829,6 +846,86 @@ final class CurlTransportTest extends TestCase
         } finally {
             restore_error_handler();
         }
+    }
+
+    /**
+     * D32: a PHP whose ext-curl lacks a function this transport calls (disabled with `disable_functions`, say) drops
+     * every delivery and logs one line; nothing throws. tests/Integration/Delivery/MissingCurlTest runs it for real.
+     */
+    public function testWithoutACurlFunctionEveryDeliveryIsDroppedWithOneLine(): void
+    {
+        $attempts = new \ArrayObject();
+        $beforeAttempt = static function () use ($attempts): void {
+            $attempts[] = true;
+        };
+        $execs = new \ArrayObject();
+        $transport = new CurlTransport(
+            multiStatus: static function (string $function, int $code) use ($execs): int {
+                $execs[] = $function;
+
+                return $code;
+            },
+            functionExists: static fn(string $function): bool => $function !== 'curl_multi_init',
+        );
+
+        $transport->start($this->delivery('http://127.0.0.1:9', $beforeAttempt));
+        $transport->pump();
+        $drained = $transport->drain($this->deadline());
+        $sent = $transport->send($this->delivery('http://127.0.0.1:9', $beforeAttempt, 'evt_y'), $this->deadline());
+
+        $this->assertTrue($drained);
+        $this->assertTrue($sent);
+        $this->assertSame(0, $transport->inFlight());
+        $this->assertCount(0, $attempts);
+        $this->assertCount(0, $execs, 'no curl_multi call ran');
+        $this->assertSame([self::NO_CURL . 'curl_multi_init)'], $this->logger->messages());
+    }
+
+    public function testTheLineNamesEveryMissingFunction(): void
+    {
+        $transport = new CurlTransport(functionExists: static fn(string $function): bool => !in_array($function, ['curl_multi_select', 'curl_init'], true));
+
+        $transport->start($this->delivery('http://127.0.0.1:9'));
+
+        $this->assertSame([self::NO_CURL . 'curl_init, curl_multi_select)'], $this->logger->messages());
+    }
+
+    #[MaximumDuration(1000)]
+    public function testTheFunctionsAreCheckedOnceAtTheFirstDelivery(): void
+    {
+        $base = self::collector()->scenario();
+        $checked = new \ArrayObject();
+        $transport = new CurlTransport(new RetryPolicy([0.01]), functionExists: static function (string $function) use ($checked): bool {
+            $checked[] = $function;
+
+            return function_exists($function);
+        });
+        $this->assertCount(0, $checked);
+
+        $this->assertTrue($transport->send($this->delivery($base), $this->deadline()));
+        $this->assertTrue($transport->send($this->delivery($base, null, 'evt_y'), $this->deadline()));
+
+        $this->assertSame(
+            ['curl_init', 'curl_setopt_array', 'curl_error', 'curl_strerror', 'curl_getinfo', 'curl_multi_init', 'curl_multi_add_handle', 'curl_multi_remove_handle', 'curl_multi_exec', 'curl_multi_info_read', 'curl_multi_select', 'curl_multi_strerror'],
+            $checked->getArrayCopy(),
+        );
+        $this->assertCount(2, self::collector()->requests($base));
+    }
+
+    public function testPumpBeforeTheFirstDeliveryRunsNoCurl(): void
+    {
+        $execs = new \ArrayObject();
+        $transport = new CurlTransport(multiStatus: static function (string $function, int $code) use ($execs): int {
+            $execs[] = $function;
+
+            return $code;
+        });
+
+        $transport->pump();
+        $this->assertTrue($transport->drain($this->deadline()));
+
+        $this->assertCount(0, $execs);
+        $this->assertSame([], $this->logger->messages());
     }
 
     private static function collector(): MockCollector

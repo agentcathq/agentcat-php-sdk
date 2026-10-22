@@ -16,6 +16,16 @@ final class SdkVersion
         );
     }
 
+    /** The Composer pretty version of a package, or null when it is not installed. Never throws. */
+    public static function installed(string $package): ?string
+    {
+        try {
+            return InstalledVersions::getPrettyVersion($package);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
     /**
      * Turns a version lookup into a non-empty string. Never throws.
      *

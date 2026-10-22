@@ -12,15 +12,34 @@ final class Log
 {
     private static ?LoggerInterface $logger = null;
 
+    /** True once `setLogger()` or `adopt()` chose the logger; the lazy file fallback does not count. */
+    private static bool $chosen = false;
+
+    /** A non-null logger wins over every later `adopt()`; null goes back to the file fallback. */
     public static function setLogger(?LoggerInterface $logger): void
     {
         self::$logger = $logger;
+        self::$chosen = $logger instanceof LoggerInterface;
+    }
+
+    /**
+     * Routes every later line to the first logger adopted in the process, unless `setLogger()` chose one (D30, D38):
+     * the PSR-3 logger of the first tracked server.
+     */
+    public static function adopt(LoggerInterface $logger): void
+    {
+        if (self::$chosen) {
+            return;
+        }
+        self::$logger = $logger;
+        self::$chosen = true;
     }
 
     /** Tests only. */
     public static function reset(): void
     {
         self::$logger = null;
+        self::$chosen = false;
     }
 
     /** Never throws. The level comes from the line prefix only. */

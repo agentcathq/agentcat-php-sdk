@@ -21,19 +21,29 @@ final class ArgumentStripper
             return $arguments;
         }
 
-        if ($registry !== null && array_key_exists($toolName, $registry)) {
-            $names = $registry[$toolName];
-        } elseif ($toolName === GetMoreTools::NAME) {
-            $names = [Constants::PARAM_SESSION_ID, Constants::PARAM_AGENT_ID];
-        } else {
-            $names = [Constants::PARAM_SESSION_ID, Constants::PARAM_AGENT_ID, Constants::PARAM_CONTEXT];
-        }
-
         $copy = clone $arguments;
-        foreach ($names as $name) {
+        foreach (self::names($toolName, $registry) as $name) {
             unset($copy->{$name});
         }
 
         return $copy;
+    }
+
+    /**
+     * The parameter names strip() removes: the registry entry, else the heuristic for unlisted tools.
+     *
+     * @param array<array-key, list<string>>|null $registry
+     * @return list<string>
+     */
+    public static function names(string $toolName, ?array $registry): array
+    {
+        if ($registry !== null && array_key_exists($toolName, $registry)) {
+            return $registry[$toolName];
+        }
+        if ($toolName === GetMoreTools::NAME) {
+            return [Constants::PARAM_SESSION_ID, Constants::PARAM_AGENT_ID];
+        }
+
+        return [Constants::PARAM_SESSION_ID, Constants::PARAM_AGENT_ID, Constants::PARAM_CONTEXT];
     }
 }
