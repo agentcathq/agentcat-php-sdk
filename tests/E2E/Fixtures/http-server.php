@@ -30,6 +30,14 @@ $builder = Server::builder()
         throw new \RuntimeException('e2e boom');
     }, 'boom', description: 'Always fails', inputSchema: ['type' => 'object', 'properties' => []]);
 
+// Diagnostics stay off (the inherited AGENTCAT_DISABLE_DIAGNOSTICS=true) and point at a closed port, unless the test
+// sends the scenario that this request's diagnostics go to. putenv() lasts for this request only.
+$diagnostics = is_string($_SERVER['HTTP_X_E2E_DIAGNOSTICS'] ?? null) ? $_SERVER['HTTP_X_E2E_DIAGNOSTICS'] : null;
+if ($diagnostics !== null) {
+    putenv('AGENTCAT_DIAGNOSTICS_ENDPOINT=' . $diagnostics);
+    putenv('AGENTCAT_DISABLE_DIAGNOSTICS=false');
+}
+
 AgentCat::track($builder, 'proj_' . str_repeat('e', 27), new Options(
     identify: static function (ToolCall $call) use ($markers): Identity {
         if (($call->headers['x-e2e-identify-sleep'] ?? '') === '1') {

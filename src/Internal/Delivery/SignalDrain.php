@@ -33,6 +33,8 @@ final class SignalDrain
 
     private bool $installed = false;
 
+    private bool $disabled = false;
+
     /**
      * @param \Closure(): EventQueue        $queue          the queue to deliver, looked up at the signal
      * @param (\Closure(int): void)|null    $raise          raises the signal with the default disposition: default
@@ -50,10 +52,21 @@ final class SignalDrain
         $this->functionExists = $functionExists ?? function_exists(...);
     }
 
+    /** Never installs after this. False when the handlers are installed already (then nothing changes). */
+    public function disable(): bool
+    {
+        if ($this->installed) {
+            return false;
+        }
+        $this->disabled = true;
+
+        return true;
+    }
+
     /** Installs the handlers once. Does nothing outside the CLI SAPI or without ext-pcntl. */
     public function install(): void
     {
-        if ($this->installed || $this->sapi !== 'cli') {
+        if ($this->installed || $this->disabled || $this->sapi !== 'cli') {
             return;
         }
         foreach (['pcntl_signal', 'pcntl_signal_get_handler', 'pcntl_async_signals'] as $function) {

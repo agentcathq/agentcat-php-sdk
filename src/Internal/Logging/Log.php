@@ -18,6 +18,9 @@ final class Log
     /** @var array{logger: ?LoggerInterface, chosen: bool}|null the routing `divert()` replaced; null without one */
     private static ?array $beforeDiversion = null;
 
+    /** @var (\Closure(string): void)|null the diagnostics tee */
+    private static ?\Closure $sink = null;
+
     /** A non-null logger wins over every later `adopt()`; null goes back to the file fallback. */
     public static function setLogger(?LoggerInterface $logger): void
     {
@@ -60,12 +63,24 @@ final class Log
         self::$beforeDiversion = null;
     }
 
+    /**
+     * TypeScript `setDiagnosticsSink`: one sink, replaced by a later call; null removes it. It gets every line, with
+     * the log-file prefix (`LogLine::format()`), before the logger does, except while a diversion is active.
+     *
+     * @param (\Closure(string): void)|null $sink
+     */
+    public static function setDiagnosticsSink(?\Closure $sink): void
+    {
+        self::$sink = $sink;
+    }
+
     /** Tests only. */
     public static function reset(): void
     {
         self::$logger = null;
         self::$chosen = false;
         self::$beforeDiversion = null;
+        self::$sink = null;
     }
 
     /** Never throws. The level comes from the line prefix only. */
@@ -100,6 +115,14 @@ final class Log
 
     private static function emit(string $level, string $message): void
     {
+        if (self::$sink instanceof \Closure && self::$beforeDiversion === null) { // a fake sends nothing (spec conflict 9)
+            try {
+                (self::$sink)(LogLine::format($message));
+            } catch (\Throwable) {
+                // Diagnostics must never break logging.
+            }
+        }
+
         try {
             self::$logger ??= new FileLogger();
             self::$logger->log($level, $message);

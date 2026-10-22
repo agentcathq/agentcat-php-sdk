@@ -10,8 +10,11 @@ use AgentCat\Internal\Pipeline\EventProcessor;
 use AgentCat\Internal\Pipeline\QueuedEvent;
 use AgentCat\Internal\Support\ErrorText;
 use AgentCat\Internal\Transport\ApiBaseUrl;
+use AgentCat\Internal\Transport\CurlHttpChannel;
+use AgentCat\Internal\Transport\CurlSupport;
 use AgentCat\Internal\Transport\CurlTransport;
 use AgentCat\Internal\Transport\Delivery;
+use AgentCat\Internal\Transport\HttpChannel;
 use AgentCat\Internal\Transport\Transport;
 use AgentCat\Internal\Wire\WireEncoder;
 use AgentCat\Internal\Wire\WireMapper;
@@ -20,6 +23,10 @@ use AgentCat\Internal\Wire\WireMapper;
  * The process-global event queue (TypeScript `eventQueue`). `add()` only stores the event (D04); hooks,
  * hygiene and HTTP run in `pump()`, `flush()` or `shutdown()`. At most 5 events are in delivery at once, and
  * at most 10 000 wait (the oldest is dropped). No method throws.
+ *
+ * The queue also drives the side channel of the exporter and diagnostics requests (`channel()`) and its companions
+ * (`attach()`): every pass ticks each companion (except the pass after `finish()`), then pumps the channel. `flush()`
+ * waits for the exporter requests inside its timeout, `shutdown()` for the background ones (diagnostics) too.
  *
  * @internal
  */
@@ -34,6 +41,14 @@ final class EventQueue
 
     private const string GAVE_UP = 'Failed to deliver AgentCat event after retries: ';
 
+    /** Short waits when both the events and the side channel have transfers, so neither waits on the other's sockets. */
+    private const float SLICE_SECONDS = 0.01;
+
+    /** With companions, the end of the shutdown budget is kept for `finish()`: this share of it, at most the cap. */
+    private const float FINISH_RESERVE_SHARE = 0.1;
+
+    private const float FINISH_RESERVE_MAX_SECONDS = 0.5;
+
     private static ?self $global = null;
 
     /** @var \SplQueue<QueuedEvent> events not yet in delivery */
@@ -46,15 +61,22 @@ final class EventQueue
 
     private bool $accepting = true;
 
+    private bool $signalWarningLogged = false;
+
     /** True while `pump()` or `flush()` runs: guards against re-entrant calls from hooks and exporters. */
     private bool $busy = false;
 
     /** Fixed by the first `shutdown()`: later shutdowns deliver only until then (one budget per queue). */
     private ?float $shutdownDeadline = null;
 
+    /** @var list<QueueCompanion> */
+    private array $companions = [];
+
     /**
-     * @param (\Closure(): void)|null        $onEnqueue the delivery-trigger registrar, called on every `add()`
+     * @param (\Closure(): void)|null        $onEnqueue the delivery-trigger registrar, called on every `add()` and `arm()`
      * @param (\Closure(Event): string)|null $encode    builds the HTTP body; default `WireEncoder::encode(...)`
+     * @param HttpChannel                    $channel   the side channel of the exporter and diagnostics requests
+     * @param SignalDrain|null               $signalDrain the SIGTERM and SIGINT drain that `disableSignalHandlers()` switches off
      */
     public function __construct(
         private readonly EventProcessor $processor = new EventProcessor(),
@@ -63,6 +85,8 @@ final class EventQueue
         private readonly ?\Closure $onEnqueue = null,
         private readonly float $shutdownTimeoutSeconds = self::SHUTDOWN_TIMEOUT_SECONDS,
         ?\Closure $encode = null,
+        private readonly HttpChannel $channel = new CurlHttpChannel(),
+        private readonly ?SignalDrain $signalDrain = null,
     ) {
         $this->waiting = new \SplQueue();
         $this->encode = $encode ?? WireEncoder::encode(...);
@@ -81,10 +105,25 @@ final class EventQueue
             self::$global = new self(onEnqueue: static function () use ($flusher, $signals): void {
                 $flusher->ensureRegistered();
                 $signals->install();
-            });
+            }, signalDrain: $signals);
         }
 
         return self::$global;
+    }
+
+    /** Keeps the signal handlers out of the process. False when they are installed already. */
+    public function disableSignalHandlers(): bool
+    {
+        return $this->signalDrain?->disable() ?? true;
+    }
+
+    /** True once per queue (one per process for the global queue): for the "ignored" warning of `disableSignalHandlers`. */
+    public function claimSignalHandlersWarning(): bool
+    {
+        $first = !$this->signalWarningLogged;
+        $this->signalWarningLogged = true;
+
+        return $first;
     }
 
     /** Tests only: replaces the global queue; null makes `global()` build a new one. */
@@ -104,6 +143,55 @@ final class EventQueue
         $this->exporters = $exporters;
     }
 
+    public function exporterSink(): ExporterSink
+    {
+        return $this->exporters;
+    }
+
+    /** The side channel: exporters and diagnostics post their requests here. */
+    public function channel(): HttpChannel
+    {
+        return $this->channel;
+    }
+
+    public function attach(QueueCompanion $companion): void
+    {
+        $this->companions[] = $companion;
+    }
+
+    /** The delivery triggers (shutdown function, signal drain) without an event: diagnostics lines need them too. */
+    public function arm(): void
+    {
+        if (!$this->onEnqueue instanceof \Closure) {
+            return;
+        }
+
+        try {
+            ($this->onEnqueue)();
+        } catch (\Throwable $e) {
+            Log::write('Failed to register AgentCat event delivery as a background task: ' . ErrorText::of($e));
+        }
+    }
+
+    /** Anything left to send: an event, a side request, or a companion's buffer. True when a check throws. */
+    public function hasWork(): bool
+    {
+        try {
+            if (!$this->waiting->isEmpty() || $this->transport->inFlight() > 0 || $this->channel->pending() > 0) {
+                return true;
+            }
+            foreach ($this->companions as $companion) {
+                if ($companion->hasWork()) {
+                    return true;
+                }
+            }
+
+            return false;
+        } catch (\Throwable) {
+            return true;
+        }
+    }
+
     /** Stores the event. Nothing else runs on the request path. */
     public function add(QueuedEvent $event): void
     {
@@ -117,18 +205,12 @@ final class EventQueue
             $this->waiting->dequeue();
         }
         $this->waiting->enqueue($event);
-        if ($this->onEnqueue instanceof \Closure) {
-            try {
-                ($this->onEnqueue)();
-            } catch (\Throwable $e) {
-                Log::write('Failed to register AgentCat event delivery as a background task: ' . ErrorText::of($e));
-            }
-        }
+        $this->arm();
     }
 
     /**
-     * Non-blocking: runs the pipeline for waiting events while fewer than 5 are in delivery, then pumps the
-     * transport. A re-entrant call (from a hook or an exporter) does nothing.
+     * Non-blocking: runs the pipeline for waiting events while fewer than 5 are in delivery, pumps the transport,
+     * ticks the companions and pumps the side channel. A re-entrant call (from a hook or an exporter) does nothing.
      *
      * `pump()` is non-blocking only when libcurl resolves host names asynchronously (threaded resolver or
      * c-ares). With a synchronous resolver, starting a transfer can block for the DNS lookup.
@@ -144,25 +226,39 @@ final class EventQueue
     }
 
     /**
-     * Blocking: delivers until nothing waits or is in flight (true) or the timeout passes (false); null = no
-     * limit. A re-entrant call (from a hook or an exporter) returns false at once.
+     * Blocking: delivers the events and the side channel's exporter requests until no event waits or is in flight
+     * and no exporter request is pending (true), or the timeout passes (false); null = no limit. The background
+     * requests (diagnostics) are neither counted nor waited for: they go on in later passes and at `shutdown()`. A
+     * re-entrant call (from a hook or an exporter) returns false at once.
      */
     public function flush(?float $timeoutSeconds = null): bool
     {
-        return $this->deliverUntil(fn(): float => $timeoutSeconds === null ? INF : $this->transport->now() + $this->budget($timeoutSeconds));
+        return $this->deliverUntil(fn(): float => $timeoutSeconds === null ? INF : $this->transport->now() + $this->budget($timeoutSeconds), background: false);
     }
 
     /**
-     * Stops accepting events, then delivers for at most the shutdown timeout (TypeScript `destroy()`). The first call
-     * fixes the deadline; a later call delivers only until that same deadline, and dispatches nothing once it has
-     * passed. So a signal drain and the shutdown function after it, or a signal during the shutdown function's flush,
-     * share one budget.
+     * Stops accepting events, then delivers the events and the side requests, background ones included, for at most
+     * the shutdown timeout (TypeScript `destroy()`). The first call fixes the deadline; a later call delivers only until
+     * that same deadline, and dispatches nothing once it has passed. So a signal drain and the shutdown function after
+     * it, or a signal during the shutdown function's flush, share one budget.
+     *
+     * With companions, the end of the budget is kept for them: 10 % of the shutdown timeout, at most 0.5 s. The
+     * delivery stops when everything is delivered or only that reserve is left. Then each companion finishes
+     * (diagnostics posts its buffer, also when a hung exporter or a slow AgentCat API used the rest of the budget), and
+     * one more pass, to the full deadline, sends what they posted. That pass ticks no companion, so `finish()` is a
+     * companion's last call in a shutdown. A call whose delivery never started (a re-entrant call from a hook or an
+     * exporter, or a clock that cannot be read) finishes no companion.
      */
     public function shutdown(): void
     {
         $this->accepting = false;
+        $deadline = fn(): float => $this->shutdownDeadline ??= $this->transport->now() + $this->budget($this->shutdownTimeoutSeconds);
         if (!$this->shutdownDeadlinePassed()) {
-            $this->deliverUntil(fn(): float => $this->shutdownDeadline ??= $this->transport->now() + $this->budget($this->shutdownTimeoutSeconds));
+            if ($this->companions === []) {
+                $this->deliverUntil($deadline);
+            } else {
+                $this->deliverWithCompanions($deadline);
+            }
         }
         if (!$this->waiting->isEmpty()) {
             Log::write(sprintf('Shutting down with %d events still in queue', $this->waiting->count()));
@@ -187,7 +283,11 @@ final class EventQueue
         return ['queueLength' => $this->waiting->count(), 'activeRequests' => $this->transport->inFlight()];
     }
 
-    /** True when an earlier `shutdown()` fixed the deadline and that deadline has passed. */
+    /**
+     * True when an earlier `shutdown()` fixed the deadline and that deadline has passed.
+     *
+     * @phpstan-impure it reads the clock
+     */
     private function shutdownDeadlinePassed(): bool
     {
         try {
@@ -204,11 +304,37 @@ final class EventQueue
     }
 
     /**
-     * The delivery loop of `flush()` and `shutdown()`. A re-entrant call returns false at once.
+     * The shutdown delivery with companions: up to the finish reserve, then each companion's `finish()`, then the
+     * last pass, to the full deadline, which ticks none of them.
      *
-     * @param \Closure(): float $deadline read once, after the re-entrancy guard is taken
+     * @param \Closure(): float $deadline fixes the shared deadline at its first call
      */
-    private function deliverUntil(\Closure $deadline): bool
+    private function deliverWithCompanions(\Closure $deadline): void
+    {
+        $this->deliverUntil(fn(): float => $deadline() - $this->finishReserve());
+        // Only after a delivery that ran: a re-entrant call finds the guard still taken by the frame it runs in, and
+        // an unreadable clock left the deadline unset.
+        if (!$this->busy && $this->shutdownDeadline !== null && !$this->shutdownDeadlinePassed()) {
+            $this->finishCompanions();
+            $this->deliverUntil($deadline, tick: false);
+        }
+    }
+
+    /** 10 % of the shutdown budget, at most 0.5 s; never NaN, as `budget()` is not. */
+    private function finishReserve(): float
+    {
+        return min(self::FINISH_RESERVE_MAX_SECONDS, self::FINISH_RESERVE_SHARE * $this->budget($this->shutdownTimeoutSeconds));
+    }
+
+    /**
+     * The delivery loop of `flush()` and `shutdown()`: done when no event waits or is in flight and no side request is
+     * pending (the background ones count only with `$background`). A re-entrant call returns false at once.
+     *
+     * @param \Closure(): float $deadline   read once, after the re-entrancy guard is taken
+     * @param bool              $tick       false after `finish()`: the passes tick no companion
+     * @param bool              $background whether it waits for the background requests (diagnostics): `shutdown()` does
+     */
+    private function deliverUntil(\Closure $deadline, bool $tick = true, bool $background = true): bool
     {
         if ($this->busy) {
             return false;
@@ -218,8 +344,8 @@ final class EventQueue
         try {
             $until = $deadline();
             while (true) {
-                $this->pumpOnce();
-                if ($this->waiting->isEmpty() && $this->transport->inFlight() === 0) {
+                $this->pumpOnce($tick);
+                if ($this->waiting->isEmpty() && $this->transport->inFlight() === 0 && $this->channel->pending($background) === 0) {
                     return true;
                 }
                 if ($this->transport->now() >= $until) {
@@ -227,7 +353,7 @@ final class EventQueue
                 }
                 // Slots freed by the last pump are refilled at once; waiting would sleep with idle slots.
                 if ($this->waiting->isEmpty() || $this->transport->inFlight() >= self::CONCURRENCY) {
-                    $this->transport->waitForActivity($until);
+                    $this->wait($until);
                 }
             }
         } catch (\Throwable $e) {
@@ -239,7 +365,27 @@ final class EventQueue
         }
     }
 
-    private function pumpOnce(): void
+    /**
+     * Waits on the transport alone, or, while side requests are pending, a slice on each that never ends past `$until`.
+     * `$until` is never NaN. The time left goes through `CurlSupport::waitSeconds()`: within 0 and the slice, and 0 for
+     * the NaN of INF - INF (a test clock that jumped to an INF deadline).
+     */
+    private function wait(float $until): void
+    {
+        if ($this->channel->pending() === 0) {
+            $this->transport->waitForActivity($until);
+
+            return;
+        }
+        $this->transport->waitForActivity(min($until, $this->transport->now() + self::SLICE_SECONDS));
+        $this->channel->waitForActivity(CurlSupport::waitSeconds($until - $this->transport->now(), self::SLICE_SECONDS));
+    }
+
+    /**
+     * One pass: starts waiting events while fewer than 5 are in delivery and pumps the transport, then ticks each
+     * companion (unless `$tick` is false) and pumps the side channel. Never throws.
+     */
+    private function pumpOnce(bool $tick = true): void
     {
         try {
             while (!$this->waiting->isEmpty() && $this->transport->inFlight() < self::CONCURRENCY) {
@@ -248,6 +394,32 @@ final class EventQueue
             $this->transport->pump();
         } catch (\Throwable $e) {
             Log::write(self::GAVE_UP . ErrorText::of($e));
+        }
+        if ($tick) {
+            foreach ($this->companions as $companion) {
+                try {
+                    $companion->tick();
+                } catch (\Throwable) {
+                    // a companion never stops the queue
+                }
+            }
+        }
+
+        try {
+            $this->channel->pump(); // CurlHttpChannel never throws; a test double's callback might
+        } catch (\Throwable) {
+            // the side channel never stops the queue
+        }
+    }
+
+    private function finishCompanions(): void
+    {
+        foreach ($this->companions as $companion) {
+            try {
+                $companion->finish(); // diagnostics posts the lines of the drain too (D07)
+            } catch (\Throwable) {
+                // a companion never stops the shutdown
+            }
         }
     }
 

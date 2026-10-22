@@ -16,6 +16,12 @@ final class Values
         return \DateTimeImmutable::createFromInterface($date)->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d\TH:i:s.v\Z');
     }
 
+    /** JS `Date.getTime()`: whole milliseconds since the epoch, floored (`format('Uv')` is wrong before 1970). */
+    public static function epochMillis(\DateTimeInterface $date): int
+    {
+        return (int) $date->format('U') * 1000 + (int) $date->format('v');
+    }
+
     public static function enumMarker(\UnitEnum $case): string
     {
         return '[Enum: ' . $case::class . '::' . $case->name . ']';

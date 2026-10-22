@@ -12,7 +12,11 @@ use AgentCat\Internal\Json\Json;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Pipeline\EventProcessor;
 use AgentCat\Internal\Pipeline\QueuedEvent;
+use AgentCat\Internal\Transport\CurlHttpChannel;
 use AgentCat\Internal\Transport\CurlTransport;
+use AgentCat\Internal\Transport\HttpChannel;
+use AgentCat\Internal\Transport\HttpRequest;
+use AgentCat\Internal\Transport\HttpResponse;
 use AgentCat\Internal\Transport\RetryPolicy;
 use AgentCat\Tests\Integration\Support\MockCollector;
 use AgentCat\Tests\Support\JsonAssert;
@@ -147,6 +151,90 @@ final class EventQueueDeliveryTest extends TestCase
         $this->assertSame(['Shutting down with 2 events still in queue'], $this->logger->messages());
         $this->assertSame(['queueLength' => 2, 'activeRequests' => 5], $queue->stats());
         $this->assertEqualsWithDelta(5.0, EventQueue::SHUTDOWN_TIMEOUT_SECONDS, PHP_FLOAT_EPSILON);
+    }
+
+    /**
+     * Review Focus 1: an exporter endpoint that hangs, on a server whose AgentCat API works. `pump()` returns at once,
+     * the event is delivered, and `shutdown()` waits for the export only until its budget, then abandons it.
+     */
+    #[Group('ac-06-63')]
+    #[MaximumDuration(5000)]
+    public function testASlowExportEndpointNeverHoldsTheEventsBack(): void
+    {
+        $events = $this->collector()->scenario();
+        $slow = $this->collector()->scenario([], ['status' => 200, 'delayMs' => 3000]);
+        $channel = new CurlHttpChannel();
+        $exporter = new readonly class ($channel, $slow) implements ExporterSink {
+            public function __construct(private HttpChannel $channel, private string $url) {}
+
+            #[\Override]
+            public function export(Event $event): void
+            {
+                $this->channel->post(new HttpRequest($this->url . '/v1/traces', [], '{}'), static function (): void {});
+            }
+        };
+        $queue = new EventQueue(new EventProcessor(), new CurlTransport(new RetryPolicy([0.01, 0.02, 0.04])), $exporter, null, 0.3, null, $channel);
+        $queue->configure($events);
+        $queue->add(new QueuedEvent($this->event('slow-export')));
+
+        $start = hrtime(true);
+        $queue->pump();
+        $this->assertLessThan(1.0, (hrtime(true) - $start) / 1e9, 'pump() at handler entry never waits');
+
+        $start = hrtime(true);
+        $queue->shutdown();
+        $elapsed = (hrtime(true) - $start) / 1e9;
+
+        $this->assertGreaterThanOrEqual(0.29, $elapsed, 'shutdown() waits for the export, up to its budget');
+        $this->assertLessThan(1.5, $elapsed, 'the shutdown budget (0.3 s here) bounds the slow export');
+        $this->assertCount(1, $this->collector()->requests($events), 'the event is delivered');
+        $this->assertSame(1, $channel->pending(), 'the slow export is abandoned');
+    }
+
+    /**
+     * I2: a SIGTERM drain that runs inside a callback of the side channel (the seam stands in for the signal
+     * handler). It delivers the event on the transport's own multi handle and returns once the event is delivered: the
+     * side channel cannot progress inside its own callback, so the drain does not wait for it. The side transfer then
+     * completes in the next passes.
+     */
+    #[MaximumDuration(3000)]
+    public function testADrainInsideASideTransferCallbackDeliversTheEventAndReturns(): void
+    {
+        $events = $this->collector()->scenario();
+        $side = $this->collector()->scenario([], ['status' => 200, 'body' => str_repeat('x', 200_000)]);
+        $state = new class {
+            public ?EventQueue $queue = null;
+
+            /** Seconds the drain took; null until it ran. */
+            public ?float $drained = null;
+        };
+        $channel = new CurlHttpChannel(onCallback: function () use ($state): void {
+            if ($state->drained !== null || !$state->queue instanceof EventQueue) {
+                return;
+            }
+            $state->queue->add(new QueuedEvent($this->event('in-callback')));
+            $begin = hrtime(true);
+            $state->queue->finalShutdown();
+            $state->drained = (hrtime(true) - $begin) / 1e9;
+        });
+        $state->queue = new EventQueue(new EventProcessor(), new CurlTransport(new RetryPolicy([0.01, 0.02, 0.04])), new NullExporterSink(), null, EventQueue::SHUTDOWN_TIMEOUT_SECONDS, null, $channel);
+        $state->queue->configure($events);
+        $outcome = null;
+        $channel->post(new HttpRequest($side . '/v1/traces', [], '{}'), static function (HttpResponse $response) use (&$outcome): void {
+            $outcome = [$response->status, $response->error];
+        });
+
+        $until = microtime(true) + 2.0;
+        do {
+            $this->assertLessThan($until, microtime(true), 'the side transfer did not finish');
+            $channel->pump();
+            $channel->waitForActivity(0.05);
+        } while ($channel->pending() > 0);
+
+        $this->assertIsFloat($state->drained, 'the drain ran inside a write callback');
+        $this->assertLessThan(2.5, $state->drained, 'it did not wait for the side channel it interrupted (the budget is 5 s)');
+        $this->assertCount(1, $this->collector()->requests($events), "the event was delivered on the transport's own handle");
+        $this->assertSame([200, null], $outcome, 'the side transfer completed');
     }
 
     private function collector(): MockCollector

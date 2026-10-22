@@ -60,8 +60,9 @@ final class MockCollector
     /**
      * A new scenario; returns its base URL (`http://127.0.0.1:<port>/c/<id>`).
      *
-     * @param list<array{status: int, delayMs?: int, body?: string}> $steps   responses to requests 0, 1, 2, …
-     * @param array{status: int, delayMs?: int, body?: string}       $default the response once the steps run out
+     * @param list<array{status: int, delayMs?: int, body?: string, location?: string}> $steps   responses to requests 0, 1, 2, …;
+     *                                                                                  `location` is sent as the Location header
+     * @param array{status: int, delayMs?: int, body?: string, location?: string}       $default the response once the steps run out
      */
     public function scenario(array $steps = [], array $default = ['status' => 202, 'body' => '{"status":"accepted"}']): string
     {

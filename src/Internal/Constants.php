@@ -41,4 +41,7 @@ final class Constants
     public const string SOURCE = 'agentcat';
     public const string DIAGNOSTICS_SCOPE_NAME = 'agentcat-diagnostics';
     public const string DEFAULT_API_BASE_URL = 'https://api.agentcat.com';
+    public const string DEFAULT_DIAGNOSTICS_ENDPOINT = 'https://otel.agentcat.com';
+    /** Public by design (TS: a shared ingestion key that deters drive-by traffic; not a secret). */
+    public const string DEFAULT_DIAGNOSTICS_TOKEN = 'dgk_sdk_diag_3f9a2c7e1b8d4065af2e9c1d7b6a4f80';
 }

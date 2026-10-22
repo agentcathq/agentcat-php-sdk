@@ -6,10 +6,13 @@ namespace AgentCat\Tests\Integration;
 
 use AgentCat\Client;
 use AgentCat\Event;
+use AgentCat\Exporters\OtlpExporter;
+use AgentCat\Exporters\PostHogExporter;
 use AgentCat\Identity;
 use AgentCat\Internal\ClientSeams;
 use AgentCat\Internal\Constants;
 use AgentCat\Internal\Delivery\EventQueue;
+use AgentCat\Internal\Delivery\SignalDrain;
 use AgentCat\Internal\Engine\TrackedServers;
 use AgentCat\Internal\Json\Json;
 use AgentCat\Internal\Logging\Log;
@@ -28,6 +31,7 @@ use AgentCat\Tests\Support\McpSdk\Tools;
 use AgentCat\Tests\Support\McpSdk\TrackingFixture;
 use AgentCat\Tests\Support\MemoryLogger;
 use AgentCat\Tests\Support\RecordingExporter;
+use AgentCat\Tests\Support\RecordingHttpChannel;
 use AgentCat\Tests\Support\RecordingTransport;
 use AgentCat\ToolCall;
 use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
@@ -35,6 +39,7 @@ use Mcp\Server;
 use Mcp\Server\Builder;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\AbstractLogger;
 use Psr\Log\LogLevel;
@@ -50,6 +55,8 @@ final class ClientTrackTest extends TestCase
 
     private const string ALREADY_TRACKED = '[SESSION DEBUG] track() - Server already being tracked, skipping initialization';
 
+    private const string SIGNALS_INSTALLED = 'WARN: AgentCat signal handlers are already installed; disableSignalHandlers is ignored';
+
     private const string REBUILT = 'Rebuilt injection registries on demand (tools/call before tools/list on this instance)';
 
     private Environment $environment;
@@ -64,9 +71,20 @@ final class ClientTrackTest extends TestCase
 
     private Client $client;
 
+    /** @var array<int, (callable(int, mixed): mixed)|int> the SIGTERM and SIGINT handlers before the test */
+    private array $savedHandlers = [];
+
+    private ?bool $savedAsyncSignals = null;
+
     #[\Override]
     protected function setUp(): void
     {
+        if (function_exists('pcntl_signal_get_handler')) {
+            foreach ([\SIGTERM, \SIGINT] as $signal) {
+                $this->savedHandlers[$signal] = pcntl_signal_get_handler($signal);
+            }
+            $this->savedAsyncSignals = pcntl_async_signals();
+        }
         $this->environment = Environment::clear('AGENTCAT_PROJECT_ID', 'AGENTCAT_API_URL', 'MCPCAT_API_URL', 'AGENTCAT_ENABLED', 'APP_ENV');
         TrackedServers::resetIncomplete();
         TrackedServers::resetSkipped();
@@ -81,10 +99,45 @@ final class ClientTrackTest extends TestCase
     #[\Override]
     protected function tearDown(): void
     {
+        foreach ($this->savedHandlers as $signal => $handler) {
+            pcntl_signal($signal, $handler);
+        }
+        if ($this->savedAsyncSignals !== null) {
+            pcntl_async_signals($this->savedAsyncSignals);
+        }
         TrackedServers::resetIncomplete(); // a failed track() marks the process
         TrackedServers::resetSkipped(); // so does a track() while AgentCat is off
         Log::reset();
         $this->environment->restore();
+    }
+
+    #[RequiresPhpExtension('pcntl')]
+    public function testTrackWarnsOncePerProcessWhenTheSignalHandlersAreInstalledAlready(): void
+    {
+        $queue = new EventQueue(transport: $this->transport, signalDrain: $this->installedDrain());
+        $client = new Client(ClientSeams::of($queue, static fn(): bool => true));
+
+        $client->track(TrackingFixture::builder(), self::PROJECT, new Options(disableSignalHandlers: true));
+        $client->track(TrackingFixture::builder(), self::PROJECT, new Options(disableSignalHandlers: true));
+        $client->track(TrackingFixture::builder(), self::PROJECT);
+
+        $this->assertCount(1, array_keys($this->logger->messages(), self::SIGNALS_INSTALLED, true));
+    }
+
+    #[RequiresPhpExtension('pcntl')]
+    public function testTrackSaysNothingWhenTheSwitchIsOffOrThereIsNothingToDisable(): void
+    {
+        $term = pcntl_signal_get_handler(\SIGTERM);
+        $drain = new SignalDrain(fn(): EventQueue => $this->queue, null, static fn(string $f): bool => true, 'cli');
+        $client = new Client(ClientSeams::of(new EventQueue(transport: $this->transport, signalDrain: $drain), static fn(): bool => true));
+
+        $client->track(TrackingFixture::builder(), self::PROJECT, new Options(disableSignalHandlers: true));
+        $drain->install();
+
+        $this->assertNotContains(self::SIGNALS_INSTALLED, $this->logger->messages());
+        $this->assertSame($term, pcntl_signal_get_handler(\SIGTERM), 'the switch kept the drain out');
+        $this->client->track(TrackingFixture::builder(), self::PROJECT, new Options(disableSignalHandlers: true)); // a queue without a drain
+        $this->assertNotContains(self::SIGNALS_INSTALLED, $this->logger->messages());
     }
 
     #[Group('ac-01-1')]
@@ -103,6 +156,25 @@ final class ClientTrackTest extends TestCase
         ], $this->logger->messages());
         $this->assertSame(['echo', GetMoreTools::NAME], $this->names($this->harness($builder)->listTools()));
         $this->assertFalse(TrackedServers::incomplete());
+    }
+
+    #[Group('ac-06-14')]
+    public function testTheCompleteLineCountsTheExporters(): void
+    {
+        $queue = new EventQueue(transport: $this->transport, channel: new RecordingHttpChannel());
+        $client = new Client(ClientSeams::of($queue, static fn(): bool => true));
+        $builder = TrackingFixture::builder();
+        Tools::echo($builder);
+
+        $client->track($builder, self::PROJECT, new Options(exporters: [
+            'otlp' => new OtlpExporter('http://otlp.test'),
+            'ph' => new PostHogExporter('phc_x'),
+        ]));
+
+        $this->assertContains(
+            'AgentCat setup complete | project ' . self::PROJECT . ' | tracing=true context=true reportMissing=true exporters=2',
+            $this->logger->messages(),
+        );
     }
 
     #[Group('ac-01-4')]
@@ -588,5 +660,13 @@ final class ClientTrackTest extends TestCase
     private function urls(): array
     {
         return array_map(static fn(Delivery $delivery): string => $delivery->url, $this->transport->deliveries);
+    }
+
+    private function installedDrain(): SignalDrain
+    {
+        $drain = new SignalDrain(fn(): EventQueue => $this->queue, null, static fn(string $f): bool => true, 'cli');
+        $drain->install();
+
+        return $drain;
     }
 }

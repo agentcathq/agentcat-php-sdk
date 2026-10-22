@@ -10,7 +10,10 @@ use AgentCat\Internal\Delivery\ExporterSink;
 use AgentCat\Internal\Delivery\ShutdownFlusher;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Pipeline\QueuedEvent;
+use AgentCat\Internal\Transport\HttpRequest;
 use AgentCat\Tests\Support\MemoryLogger;
+use AgentCat\Tests\Support\RecordingCompanion;
+use AgentCat\Tests\Support\RecordingHttpChannel;
 use AgentCat\Tests\Support\RecordingTransport;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -139,6 +142,36 @@ final class ShutdownFlusherTest extends TestCase
 
         $this->assertSame(['queueLength' => 0, 'activeRequests' => 1], $queue->stats());
         $this->assertSame(1, $finished);
+    }
+
+    /** Exporter and diagnostics requests are work too: the client gets its response before they are sent. */
+    public function testFinalPassFinishesTheRequestForPendingSideRequests(): void
+    {
+        $finishedForTheRequest = 0;
+        $channel = new RecordingHttpChannel(complete: false);
+        $sideRequest = new EventQueue(transport: new RecordingTransport(), shutdownTimeoutSeconds: 0.0, channel: $channel);
+        $channel->post(new HttpRequest('http://exporter.test/a', [], '{}'), static function (): void {});
+
+        (new ShutdownFlusher(static fn(): EventQueue => $sideRequest, $this->recorder(), static function () use (&$finishedForTheRequest): void {
+            ++$finishedForTheRequest;
+        }))->onFinalShutdown();
+
+        $this->assertSame(1, $finishedForTheRequest);
+        $this->assertSame(1, $channel->pending(), 'the zero budget leaves it pending');
+
+        $finishedForTheCompanion = 0;
+        $companion = new RecordingCompanion();
+        $companion->work = true;
+        $buffered = new EventQueue(transport: new RecordingTransport(), channel: new RecordingHttpChannel());
+        $buffered->attach($companion);
+
+        (new ShutdownFlusher(static fn(): EventQueue => $buffered, $this->recorder(), static function () use (&$finishedForTheCompanion): void {
+            ++$finishedForTheCompanion;
+        }))->onFinalShutdown();
+
+        $this->assertSame(1, $finishedForTheCompanion);
+        $this->assertSame(['tick', 'finish'], $companion->calls);
+        $this->assertSame([], $this->logger->messages());
     }
 
     public function testFinalPassWithAnEmptyQueueDoesNotFinishTheRequest(): void

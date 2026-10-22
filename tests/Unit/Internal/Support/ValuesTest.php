@@ -21,6 +21,13 @@ final class ValuesTest extends TestCase
         $this->assertSame('2026-10-16T12:00:00.123Z', Values::isoDate(\DateTime::createFromImmutable($date)));
     }
 
+    public function testEpochMillisFloorsBeforeTheEpochToo(): void
+    {
+        $this->assertSame(1749988805123, Values::epochMillis(new \DateTimeImmutable('2025-06-15T12:00:05.123Z')));
+        $this->assertSame(-500, Values::epochMillis(new \DateTimeImmutable('1969-12-31T23:59:59.500Z')));
+        $this->assertSame(-1000, Values::epochMillis(new \DateTimeImmutable('1969-12-31T23:59:59.000Z')));
+    }
+
     public function testEnumMarker(): void
     {
         $this->assertSame('[Enum: AgentCat\Tests\Support\Samples\UnitStatus::Active]', Values::enumMarker(UnitStatus::Active));

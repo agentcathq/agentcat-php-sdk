@@ -7,10 +7,11 @@ namespace AgentCat\Internal\Delivery;
 /**
  * Delivers the global queue when the request or script ends.
  *
- * The first event registers `onShutdown()` as a shutdown function. It registers `onFinalShutdown()` again, so
+ * The first event (or `EventQueue::arm()`) registers `onShutdown()` as a shutdown function. It registers `onFinalShutdown()` again, so
  * that the flush runs after every shutdown function the application registered later (OpenTelemetry's
  * `ShutdownHandler` pattern). The final pass first sends the HTTP response to the client when the SAPI can
- * (`fastcgi_finish_request()` and friends), then shuts the queue down within its drain budget.
+ * (`fastcgi_finish_request()` and friends) and the queue has work (events, exporter requests or diagnostics lines),
+ * then shuts the queue down within its drain budget.
  *
  * @internal
  */
@@ -59,8 +60,7 @@ final class ShutdownFlusher
     {
         try {
             $queue = ($this->queue)();
-            $stats = $queue->stats();
-            if ($this->finishRequest instanceof \Closure && $stats['queueLength'] + $stats['activeRequests'] > 0) {
+            if ($this->finishRequest instanceof \Closure && $queue->hasWork()) {
                 try {
                     ($this->finishRequest)(); // the client gets its response before the events are sent
                 } catch (\Throwable) {
