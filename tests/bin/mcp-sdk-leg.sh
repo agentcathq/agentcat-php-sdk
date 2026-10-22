@@ -19,8 +19,7 @@ cd "$copy"
 if [ -n "${MCP_SDK_REPO:-}" ]; then
   composer config repositories.mcp-sdk-leg vcs "$MCP_SDK_REPO"
 fi
-# symfony/mcp-bundle requires mcp/sdk ^0.8.1, which 0.9 and main do not satisfy: the Symfony tests skip without it.
-composer remove --dev --no-update symfony/mcp-bundle
-composer require --dev --no-interaction --update-with-all-dependencies "mcp/sdk:${constraint}"
+# Removes symfony/mcp-bundle, which requires mcp/sdk ^0.8.1: the Symfony tests skip without it.
+tests/bin/require-library.sh mcp/sdk "$constraint"
 vendor/bin/phpstan analyse --no-progress --memory-limit=1G --configuration=phpstan.no-bundle.neon
 vendor/bin/phpunit --testsuite "${SUITES:-Contract,Integration,E2E}"

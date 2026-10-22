@@ -159,10 +159,13 @@ jobs:
         if: github.event_name != 'pull_request'
         run: vendor/bin/infection --threads=max --logger-github
 
-  mcp-sdk-0-9:
-    name: mcp/sdk 0.9.0 (PHP 8.5)
+  discover:
+    name: Discover the MCP library releases (Packagist)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
+    outputs:
+      releases: ${{ steps.releases.outputs.releases }}
+      mcp-sdk: ${{ steps.releases.outputs.mcp-sdk }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -174,11 +177,42 @@ jobs:
       - uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
         with:
           dependency-versions: highest
-      - name: Remove symfony/mcp-bundle, which requires mcp/sdk ^0.8.1
-        run: composer remove --dev --no-update symfony/mcp-bundle
-      - name: Install the mcp/sdk 0.9.0 tag
-        run: composer require --dev --no-interaction --update-with-all-dependencies "mcp/sdk:0.9.0"
-      - run: vendor/bin/phpstan analyse --no-progress --error-format=github --configuration=phpstan.no-bundle.neon
+      # The newest patch of each minor release from the require-dev floor, so a new release joins the matrix by itself.
+      - name: Read the releases from Packagist
+        id: releases
+        run: |
+          releases="$(php -d display_errors=stderr tests/bin/released-versions.php)"
+          jq -e 'type == "array" and length > 0' <<<"$releases" >/dev/null
+          echo "releases=${releases}" >>"$GITHUB_OUTPUT"
+          echo "mcp-sdk=$(jq -c 'map(select(.library == "mcp/sdk"))' <<<"$releases")" >>"$GITHUB_OUTPUT"
+          jq -r '.[] | "- \(.library) \(.version) (lowest PHP \(.php))"' <<<"$releases" >>"$GITHUB_STEP_SUMMARY"
+
+  released:
+    name: ${{ matrix.library }} ${{ matrix.version }} (PHP 8.5)
+    needs: discover
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.discover.outputs.releases) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.5'
+          coverage: none
+      - uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
+        with:
+          dependency-versions: highest
+      - name: Install ${{ matrix.library }} ${{ matrix.version }}
+        env:
+          LIBRARY: ${{ matrix.library }}
+          VERSION: ${{ matrix.version }}
+        run: tests/bin/require-library.sh "$LIBRARY" "$VERSION"
+      - run: vendor/bin/phpstan analyse --no-progress --error-format=github --memory-limit=1G --configuration=${{ matrix.library == 'mcp/sdk' && 'phpstan.no-bundle.neon' || 'phpstan.neon.dist' }}
       - run: vendor/bin/phpunit --testsuite Contract,Integration,E2E
 
   runtime:
@@ -206,25 +240,27 @@ jobs:
           AGENTCAT_RUNTIME_TESTS: '1'
 
   package:
-    name: Package probe (PHP 8.3, mcp/sdk ${{ matrix.mcp-sdk }})
+    name: Package probe (PHP ${{ matrix.php }}, mcp/sdk ${{ matrix.version }})
+    needs: discover
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        mcp-sdk: ['0.8.1', '0.9.0']
+        # Each mcp/sdk release, on the lowest PHP that CI tests and the release allows (8.3 today).
+        include: ${{ fromJSON(needs.discover.outputs.mcp-sdk) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
-          php-version: '8.3'
+          php-version: ${{ matrix.php }}
           coverage: none
       - name: Install the dist in a fresh project and track an mcp/sdk server
         run: tests/bin/package-probe.sh "$MCP_SDK"
         env:
-          MCP_SDK: ${{ matrix.mcp-sdk }}
+          MCP_SDK: ${{ matrix.version }}
 
   bc:
     name: Backward compatibility
@@ -250,7 +286,7 @@ jobs:
   all-green:
     name: All green
     if: always()
-    needs: [static, static-lowest, tests, coverage, mutation, mcp-sdk-0-9, runtime, package, bc]
+    needs: [static, static-lowest, tests, coverage, mutation, discover, released, runtime, package, bc]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

@@ -11,37 +11,13 @@ declare(strict_types=1);
 // docs/ and its hash. With GITHUB_TOKEN set, the GitHub API call sends it as a bearer token.
 
 use AgentCat\Tests\Support\Branding;
+use AgentCat\Tests\Support\HttpGet;
 
 require __DIR__ . '/../../vendor/autoload.php';
 
 const README_URL = 'https://raw.githubusercontent.com/agentcathq/agentcat-typescript-sdk/main/README.md';
 const TREE_URL = 'https://api.github.com/repos/agentcathq/agentcat-typescript-sdk/git/trees/main?recursive=1';
 const FIXTURES = __DIR__ . '/../Fixtures/branding';
-
-// The body of a GET that answered 200; a RuntimeException when the request fails or answers another status.
-$get = static function (string $url, string ...$headers): string {
-    $handle = curl_init($url);
-    if ($handle === false) {
-        throw new RuntimeException('GET ' . $url . ': curl_init() failed');
-    }
-    curl_setopt_array($handle, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_MAXREDIRS => 3,
-        CURLOPT_CONNECTTIMEOUT => 10,
-        CURLOPT_TIMEOUT => 30,
-        CURLOPT_USERAGENT => 'agentcat-php-sdk branding-drift',
-        CURLOPT_HTTPHEADER => array_values($headers),
-    ]);
-    $body = curl_exec($handle);
-    $status = curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
-    $error = curl_error($handle);
-    if (!is_string($body) || $status !== 200) {
-        throw new RuntimeException(sprintf('GET %s: %s', $url, $error !== '' ? $error : 'HTTP ' . $status));
-    }
-
-    return $body;
-};
 
 try {
     $images = require FIXTURES . '/images.php';
@@ -62,8 +38,8 @@ try {
     if (is_string($token) && $token !== '') {
         $apiHeaders[] = 'Authorization: Bearer ' . $token;
     }
-    $upstream = $get(README_URL);
-    $upstreamImages = Branding::treeHashes($get(TREE_URL, ...$apiHeaders));
+    $upstream = HttpGet::body(README_URL, 'branding-drift');
+    $upstreamImages = Branding::treeHashes(HttpGet::body(TREE_URL, 'branding-drift', ...$apiHeaders));
 } catch (Throwable $e) {
     fwrite(STDERR, 'branding-drift: ' . $e->getMessage() . "\n");
     exit(2);
