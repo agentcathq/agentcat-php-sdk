@@ -1,10 +1,16 @@
 {
     "name": "agentcat/sdk",
-    "description": "Analytics for MCP (Model Context Protocol) servers - placeholder for the official AgentCat PHP SDK, which is in active development.",
-    "type": "library",
+    "description": "Analytics for MCP (Model Context Protocol) servers: session replay, intent, and telemetry for PHP MCP servers.",
     "license": "MIT",
-    "homepage": "https://agentcat.com",
-    "keywords": ["mcp", "model-context-protocol", "analytics", "agentcat", "ai", "llm"],
+    "type": "library",
+    "keywords": [
+        "mcp",
+        "model-context-protocol",
+        "analytics",
+        "agentcat",
+        "ai",
+        "llm"
+    ],
     "authors": [
         {
             "name": "AgentCat, Inc.",
@@ -12,18 +18,76 @@
             "homepage": "https://agentcat.com"
         }
     ],
+    "homepage": "https://agentcat.com",
     "support": {
         "issues": "https://github.com/agentcathq/agentcat-php-sdk/issues",
         "source": "https://github.com/agentcathq/agentcat-php-sdk",
         "docs": "https://docs.agentcat.com"
     },
     "require": {
-        "php": "^8.1"
+        "php": "^8.3",
+        "ext-curl": "*",
+        "ext-json": "*",
+        "ext-mbstring": "*",
+        "composer-runtime-api": "^2.2",
+        "psr/log": "^2.0 || ^3.0"
     },
+    "require-dev": {
+        "brianium/paratest": "^7.8.6",
+        "ergebnis/composer-normalize": "^2.54",
+        "ergebnis/phpunit-slow-test-detector": "^2.26",
+        "infection/infection": "^0.35.8",
+        "php-cs-fixer/shim": "3.95.27",
+        "phpat/phpat": "^0.12.5",
+        "phpstan/extension-installer": "^1.4.3",
+        "phpstan/phpstan": "2.3.1",
+        "phpstan/phpstan-deprecation-rules": "^2.0.5",
+        "phpstan/phpstan-phpunit": "^2.1.1",
+        "phpstan/phpstan-strict-rules": "^2.1",
+        "phpunit/phpunit": "^12.5.40 || ^13.4.3",
+        "rector/rector": "2.7.0",
+        "shipmonk/composer-dependency-analyser": "^1.8.4",
+        "spaze/phpstan-disallowed-calls": "^4.15",
+        "tomasvotruba/type-coverage": "^2.5.1"
+    },
+    "minimum-stability": "stable",
     "autoload": {
         "psr-4": {
             "AgentCat\\": "src/"
         }
     },
-    "minimum-stability": "stable"
+    "autoload-dev": {
+        "psr-4": {
+            "AgentCat\\Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "allow-plugins": {
+            "ergebnis/composer-normalize": true,
+            "infection/extension-installer": true,
+            "phpstan/extension-installer": true
+        },
+        "sort-packages": true
+    },
+    "scripts": {
+        "check": [
+            "@composer validate --strict",
+            "@composer normalize --dry-run",
+            "@cs:check",
+            "@rector:check",
+            "@stan",
+            "@deps",
+            "@test"
+        ],
+        "cs:check": "php-cs-fixer check --diff",
+        "cs:fix": "php-cs-fixer fix",
+        "deps": "composer-dependency-analyser",
+        "mutation": "infection --threads=max --show-mutations",
+        "rector:check": "rector process --dry-run",
+        "stan": [
+            "phpstan analyse --no-progress --memory-limit=1G",
+            "phpstan analyse --no-progress --memory-limit=1G --configuration=phpstan.php85.neon"
+        ],
+        "test": "phpunit"
+    }
 }

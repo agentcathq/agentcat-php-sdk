@@ -1,0 +1,34 @@
+includes:
+    - vendor/phpstan/phpstan/conf/bleedingEdge.neon
+parameters:
+    level: max
+    paths: [src, tests]
+    tmpDir: .cache/phpstan
+    checkMissingCallableSignature: true
+    checkUninitializedProperties: true
+    checkMissingOverrideMethodAttribute: true
+    checkBenevolentUnionTypes: true
+    reportPossiblyNonexistentGeneralArrayOffset: true
+    reportUnmatchedIgnoredErrors: true
+    reportIgnoresWithoutComments: true
+    type_coverage:
+        return: 100
+        param: 100
+        property: 100
+        constant: 100
+    disallowedStaticCalls:
+        - method: 'Closure::bind()'
+          message: 'private-member access lives in src/*/Internal/Access only (decision D21)'
+          allowIn: [src/*/Internal/Access/*]
+    disallowedMethodCalls:
+        - method: ['Closure::call()', 'Closure::bindTo()']
+          message: 'use Closure::bind() with class scope in src/*/Internal/Access (decision D21)'
+          allowIn: [src/*/Internal/Access/*]
+    disallowedClasses:
+        - class: ['ReflectionProperty', 'ReflectionMethod']
+          message: 'Reflection is for contract tests only'
+          allowIn: [tests/Contract/*]
+services:
+    -
+        class: AgentCat\Tests\Architecture\LayeringTest
+        tags: [phpat.test]
