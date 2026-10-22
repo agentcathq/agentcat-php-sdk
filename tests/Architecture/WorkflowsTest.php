@@ -4,20 +4,23 @@ declare(strict_types=1);
 
 namespace AgentCat\Tests\Architecture;
 
+use AgentCat\Tests\Support\ReleaseDiscovery;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Yaml\Yaml;
 
 /**
  * The jobs of the workflows that the required check and the nightly issue depend on. `All green` needs every CI job
- * that gates, and the `released` jobs of CI and the nightly test the releases that the `discover` job reads from
- * Packagist (D72), so a new release joins the matrix without a commit.
+ * that gates, and the `released` and `package` jobs of CI and the nightly test the releases that the `discover` job
+ * reads from Packagist (D72), so a new release joins the matrix without a commit.
  */
 final class WorkflowsTest extends TestCase
 {
     private const string WORKFLOWS = __DIR__ . '/../../.github/workflows';
 
     private const string ISSUE_STEP = 'Open or update the nightly issue';
+
+    private const string SETUP_PHP = 'shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962';
 
     public function testAllGreenNeedsEveryCiJobThatGates(): void
     {
@@ -49,7 +52,8 @@ final class WorkflowsTest extends TestCase
     {
         $jobs = $this->jobs($workflow);
 
-        $this->assertStringContainsString('php tests/bin/released-versions.php', $this->runs($jobs['discover'] ?? []));
+        $this->assertStringContainsString('tests/bin/released-versions.php', $this->runs($jobs['discover'] ?? []));
+        $this->assertStringContainsString('echo "releases=${releases}" >>"$GITHUB_OUTPUT"', $this->stepRun($jobs, 'discover', 'releases'));
         $this->assertSame('${{ steps.releases.outputs.releases }}', $this->at($jobs, 'discover', 'outputs', 'releases'));
         $this->assertSame('discover', $this->at($jobs, 'released', 'needs'));
         $this->assertSame('${{ fromJSON(needs.discover.outputs.releases) }}', $this->at($jobs, 'released', 'strategy', 'matrix', 'include'));
@@ -58,12 +62,26 @@ final class WorkflowsTest extends TestCase
         $this->assertStringContainsString('vendor/bin/phpunit --testsuite Contract,Integration,E2E', $this->runs($jobs['released'] ?? []));
     }
 
-    public function testThePackageProbeRunsOnEachDiscoveredMcpSdkRelease(): void
+    /** Each mcp/sdk release runs the probe on the lowest PHP that CI tests and the release allows. */
+    #[DataProvider('workflows')]
+    public function testThePackageProbeRunsOnEachDiscoveredMcpSdkRelease(string $workflow): void
     {
-        $jobs = $this->jobs('ci.yml');
+        $jobs = $this->jobs($workflow);
 
+        $this->assertStringContainsString('echo "mcp-sdk=$(jq -c \'map(select(.library == "mcp/sdk"))\'', $this->stepRun($jobs, 'discover', 'releases'));
+        $this->assertSame('${{ steps.releases.outputs.mcp-sdk }}', $this->at($jobs, 'discover', 'outputs', 'mcp-sdk'));
         $this->assertSame('discover', $this->at($jobs, 'package', 'needs'));
-        $this->assertSame('${{ fromJSON(needs.discover.outputs.mcp-sdk) }}', $this->at($jobs, 'package', 'strategy', 'matrix', 'mcp-sdk'));
+        $this->assertSame('${{ fromJSON(needs.discover.outputs.mcp-sdk) }}', $this->at($jobs, 'package', 'strategy', 'matrix', 'include'));
+        $steps = $this->at($jobs, 'package', 'steps');
+        $this->assertIsArray($steps);
+        $this->assertContains(['uses' => self::SETUP_PHP, 'with' => ['php-version' => '${{ matrix.php }}', 'coverage' => 'none']], $steps);
+        $this->assertStringContainsString('tests/bin/package-probe.sh "$MCP_SDK"', $this->runs($jobs['package'] ?? []));
+    }
+
+    /** The discovery picks each probe's PHP from the versions that the tests job runs. */
+    public function testTheDiscoveryKnowsThePhpVersionsThatCiTests(): void
+    {
+        $this->assertSame(ReleaseDiscovery::PHP_VERSIONS, $this->at($this->jobs('ci.yml'), 'tests', 'strategy', 'matrix', 'php'));
     }
 
     /** A scheduled failure reaches a person: every nightly job ends by opening or updating its issue. */
@@ -108,6 +126,23 @@ final class WorkflowsTest extends TestCase
         }
 
         return $at;
+    }
+
+    /**
+     * The `run` script of the step with this `id`.
+     *
+     * @param array<string, mixed> $jobs
+     */
+    private function stepRun(array $jobs, string $job, string $id): string
+    {
+        $steps = $this->at($jobs, $job, 'steps');
+        $this->assertIsArray($steps);
+        foreach ($steps as $step) {
+            if (is_array($step) && ($step['id'] ?? null) === $id && is_string($step['run'] ?? null)) {
+                return $step['run'];
+            }
+        }
+        self::fail(sprintf('the %s job has no step with id %s', $job, $id));
     }
 
     /**

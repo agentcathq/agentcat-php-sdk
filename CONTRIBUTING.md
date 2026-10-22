@@ -90,7 +90,7 @@ git commit -m "docs: update API documentation"
 
 ### The Required Check
 
-The one required check is `All green`. It passes when every CI job passes: static analysis on the lowest and the highest dependencies, the tests on PHP 8.3, 8.4 and 8.5, coverage, mutation testing, the released-version legs, the runtime suite, the package probe and the backward-compatibility check. The released-version legs and the package probe take their versions from Packagist on each run: the newest patch of each minor release of `mcp/sdk`, `laravel/mcp` and `symfony/mcp-bundle`, from the lowest version that `require-dev` allows. The nightly runs the same legs, so a release published between pull requests opens an issue.
+The one required check is `All green`. It passes when every CI job passes: static analysis on the lowest and the highest dependencies, the tests on PHP 8.3, 8.4 and 8.5, coverage, mutation testing, the released-version legs, the runtime suite, the package probe and the backward-compatibility check. The released-version legs take their versions from Packagist on each run: the newest patch of each minor release of `mcp/sdk`, `laravel/mcp` and `symfony/mcp-bundle`, from the lowest version that `require-dev` allows. The package probe runs on each of those `mcp/sdk` releases. The nightly runs the legs and the probe again, so a release published between pull requests that breaks them opens an issue. When the install step of a leg fails, `require-dev` does not allow that release yet: widen its range, or the range of the framework that it needs.
 
 ### No Issue Required
 

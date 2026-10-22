@@ -1,4 +1,4 @@
-# PHPStan for the mcp/sdk main leg, which removes symfony/mcp-bundle (it requires mcp/sdk ^0.8.1).
+# PHPStan for the mcp/sdk legs (released versions and main), which remove symfony/mcp-bundle (it requires mcp/sdk ^0.8.1).
 includes:
     - phpstan.neon.dist
 parameters:

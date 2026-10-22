@@ -90,23 +90,25 @@ final class ReleaseDiscoveryTest extends TestCase
         $expected = array_intersect_key($floors, $conflictFloors);
         ksort($expected);
 
-        $this->assertSame(['mcp/sdk', 'laravel/mcp', 'symfony/mcp-bundle'], array_keys($floors));
-        $this->assertSame(['laravel/mcp', 'mcp/sdk'], array_keys($conflictFloors), 'symfony/mcp-bundle has no conflict floor');
+        $this->assertSame(ReleaseDiscovery::LIBRARIES, array_keys($floors));
+        $this->assertArrayHasKey('mcp/sdk', $conflictFloors);
+        $this->assertArrayHasKey('laravel/mcp', $conflictFloors);
         $this->assertSame($expected, $conflictFloors);
     }
 
-    public function testTheStableVersionsOfAPackagistBody(): void
+    /** Packagist minifies the rows: a row inherits each key it leaves out, and `__unset` removes one. */
+    public function testTheStableReleasesOfAMinifiedPackagistBody(): void
     {
         $body = $this->packagist('mcp/sdk', [
-            ['version' => 'v0.9.0', 'version_normalized' => '0.9.0.0', 'require' => ['php' => '^8.1']],
-            ['version' => 'v0.9.0-RC1', 'version_normalized' => '0.9.0.0-RC1'],
+            ['version' => 'v0.9.0', 'version_normalized' => '0.9.0.0', 'require' => ['php' => '>=8.4']],
+            ['version' => 'v0.9.0-RC1', 'version_normalized' => '0.9.0.0-RC1', 'require' => ['php' => '^8.1']],
             ['version' => 'v0.8.1', 'version_normalized' => '0.8.1.0'],
             ['version' => '0.8.0-beta.2', 'version_normalized' => '0.8.0.0-beta2'],
             ['version' => 'dev-main', 'version_normalized' => 'dev-main'],
-            ['version' => '1.2.3.4', 'version_normalized' => '1.2.3.4'],
+            ['version' => '1.2.3.4', 'version_normalized' => '1.2.3.4', 'require' => '__unset'],
         ]);
 
-        $this->assertSame(['0.9.0', '0.8.1', '1.2.3.4'], ReleaseDiscovery::stableVersions($body, 'mcp/sdk'));
+        $this->assertSame(['0.9.0' => '>=8.4', '0.8.1' => '^8.1', '1.2.3.4' => '*'], ReleaseDiscovery::stableReleases($body, 'mcp/sdk'));
     }
 
     /** @return iterable<string, array{string, string}> */
@@ -116,14 +118,76 @@ final class ReleaseDiscoveryTest extends TestCase
         yield 'another package' => ['{"packages":{"laravel/mcp":[]}}', 'the Packagist body has no versions of mcp/sdk'];
         yield 'no packages' => ['{"minified":"composer/2.0"}', 'the Packagist body has no versions of mcp/sdk'];
         yield 'a row without its version' => ['{"packages":{"mcp/sdk":[{"version":"v0.9.0"}]}}', 'a version of mcp/sdk on Packagist has no version_normalized'];
+        yield 'a row that is no object' => ['{"packages":{"mcp/sdk":["0.9.0"]}}', 'a version of mcp/sdk on Packagist is not an object'];
     }
 
     #[DataProvider('unreadableBodies')]
     public function testABodyItCannotReadStopsTheRun(string $body, string $message): void
     {
-        $thrown = Thrown::by(\UnexpectedValueException::class, static fn(): array => ReleaseDiscovery::stableVersions($body, 'mcp/sdk'));
+        $thrown = Thrown::by(\UnexpectedValueException::class, static fn(): array => ReleaseDiscovery::stableReleases($body, 'mcp/sdk'));
 
         $this->assertSame($message, $thrown->getMessage());
+    }
+
+    /** @return iterable<string, array{string, string}> */
+    public static function phpConstraints(): iterable
+    {
+        yield 'every version' => ['^8.1', '8.3'];
+        yield 'no requirement' => ['*', '8.3'];
+        yield 'a newer floor' => ['>=8.4', '8.4'];
+        yield 'two carets' => ['^8.2 || ^8.3', '8.3'];
+        yield 'a patch floor' => ['^8.4.2', '8.4'];
+        yield 'one minor' => ['~8.5.0', '8.5'];
+        yield 'a version CI does not test' => ['^8.6', '8.5'];
+    }
+
+    /**
+     * The package probe runs each release on the lowest PHP that CI tests and the release allows, so a release that
+     * drops PHP 8.3 still runs. A release that allows none runs on the newest, where Composer names its requirement.
+     */
+    #[DataProvider('phpConstraints')]
+    public function testTheLowestPhpVersionThatTheReleaseAllows(string $constraint, string $php): void
+    {
+        $this->assertSame($php, ReleaseDiscovery::lowestPhp($constraint));
+    }
+
+    public function testTheMatrixHoldsTheNewestPatchOfEachMinorOfEachLibrary(): void
+    {
+        $bodies = [
+            'https://repo.packagist.org/p2/mcp/sdk.json' => $this->packagist('mcp/sdk', [
+                ['version_normalized' => '0.10.0.0', 'require' => ['php' => '>=8.4']],
+                ['version_normalized' => '0.9.1.0', 'require' => ['php' => '^8.1']],
+                ['version_normalized' => '0.9.0.0'],
+                ['version_normalized' => '0.8.1.0'],
+            ]),
+            'https://repo.packagist.org/p2/laravel/mcp.json' => $this->packagist('laravel/mcp', [
+                ['version_normalized' => '1.0.0.0', 'require' => ['php' => '^8.2']],
+            ]),
+        ];
+        $fetched = [];
+        $fetch = static function (string $url) use ($bodies, &$fetched): string {
+            $fetched[] = $url;
+
+            return $bodies[$url] ?? throw new \RuntimeException('GET ' . $url . ': HTTP 404');
+        };
+
+        $rows = ReleaseDiscovery::matrix(['mcp/sdk' => '0.9.0', 'laravel/mcp' => '1.0.0'], $fetch);
+
+        $this->assertSame([
+            ['library' => 'mcp/sdk', 'version' => '0.9.1', 'php' => '8.3'],
+            ['library' => 'mcp/sdk', 'version' => '0.10.0', 'php' => '8.4'],
+            ['library' => 'laravel/mcp', 'version' => '1.0.0', 'php' => '8.3'],
+        ], $rows);
+        $this->assertSame(array_keys($bodies), $fetched);
+    }
+
+    public function testALibraryWithoutAReleaseAtItsFloorStopsTheRun(): void
+    {
+        $body = $this->packagist('mcp/sdk', [['version_normalized' => '0.7.1.0']]);
+
+        $thrown = Thrown::by(\RangeException::class, static fn(): array => ReleaseDiscovery::matrix(['mcp/sdk' => '0.8.1'], static fn(): string => $body));
+
+        $this->assertSame('Packagist has no release of mcp/sdk at or above 0.8.1', $thrown->getMessage());
     }
 
     /** @return iterable<string, array{list<string>, string, list<string>}> */

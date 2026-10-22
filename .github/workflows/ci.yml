@@ -181,10 +181,11 @@ jobs:
       - name: Read the releases from Packagist
         id: releases
         run: |
-          releases="$(php tests/bin/released-versions.php)"
+          releases="$(php -d display_errors=stderr tests/bin/released-versions.php)"
+          jq -e 'type == "array" and length > 0' <<<"$releases" >/dev/null
           echo "releases=${releases}" >>"$GITHUB_OUTPUT"
-          echo "mcp-sdk=$(jq -c 'map(select(.library == "mcp/sdk") | .version)' <<<"$releases")" >>"$GITHUB_OUTPUT"
-          jq -r '.[] | "- \(.library) \(.version)"' <<<"$releases" >>"$GITHUB_STEP_SUMMARY"
+          echo "mcp-sdk=$(jq -c 'map(select(.library == "mcp/sdk"))' <<<"$releases")" >>"$GITHUB_OUTPUT"
+          jq -r '.[] | "- \(.library) \(.version) (lowest PHP \(.php))"' <<<"$releases" >>"$GITHUB_STEP_SUMMARY"
 
   released:
     name: ${{ matrix.library }} ${{ matrix.version }} (PHP 8.5)
@@ -239,26 +240,27 @@ jobs:
           AGENTCAT_RUNTIME_TESTS: '1'
 
   package:
-    name: Package probe (PHP 8.3, mcp/sdk ${{ matrix.mcp-sdk }})
+    name: Package probe (PHP ${{ matrix.php }}, mcp/sdk ${{ matrix.version }})
     needs: discover
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        mcp-sdk: ${{ fromJSON(needs.discover.outputs.mcp-sdk) }}
+        # Each mcp/sdk release, on the lowest PHP that CI tests and the release allows (8.3 today).
+        include: ${{ fromJSON(needs.discover.outputs.mcp-sdk) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
-          php-version: '8.3'
+          php-version: ${{ matrix.php }}
           coverage: none
       - name: Install the dist in a fresh project and track an mcp/sdk server
         run: tests/bin/package-probe.sh "$MCP_SDK"
         env:
-          MCP_SDK: ${{ matrix.mcp-sdk }}
+          MCP_SDK: ${{ matrix.version }}
 
   bc:
     name: Backward compatibility

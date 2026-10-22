@@ -11,17 +11,20 @@ case "$library" in
     # symfony/mcp-bundle requires mcp/sdk ^0.8.1, which 0.9 and main do not satisfy: the Symfony tests skip without
     # it, and the bundle's own rows test it.
     composer remove --dev --no-update symfony/mcp-bundle
-    composer require --dev --no-interaction --update-with-all-dependencies "mcp/sdk:${constraint}"
+    composer require --dev --no-update "mcp/sdk:${constraint}"
     ;;
   laravel/mcp)
-    composer require --dev --no-interaction --update-with-all-dependencies "laravel/mcp:${constraint}"
+    composer require --dev --no-update "laravel/mcp:${constraint}"
     ;;
   symfony/mcp-bundle)
     # The bundle chooses its mcp/sdk, so a release that needs a newer mcp/sdk than require-dev allows still installs.
-    composer require --dev --no-interaction --update-with-all-dependencies "symfony/mcp-bundle:${constraint}" "mcp/sdk:*"
+    composer require --dev --no-update "symfony/mcp-bundle:${constraint}" "mcp/sdk:*"
     ;;
   *)
     echo "require-library.sh: unknown library ${library}" >&2
     exit 2
     ;;
 esac
+# Every root package can move, so a release that needs a newer shared dependency still installs. When this update
+# fails, require-dev does not allow that release yet (for example a new Laravel or Symfony major).
+composer update --no-interaction
