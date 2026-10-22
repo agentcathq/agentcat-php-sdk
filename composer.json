@@ -30,6 +30,7 @@
         "ext-json": "*",
         "ext-mbstring": "*",
         "composer-runtime-api": "^2.2",
+        "agentcat/api": "~0.0.3",
         "psr/log": "^2.0 || ^3.0"
     },
     "require-dev": {
@@ -37,6 +38,7 @@
         "ergebnis/composer-normalize": "^2.54",
         "ergebnis/phpunit-slow-test-detector": "^2.26",
         "infection/infection": "^0.35.8",
+        "opis/json-schema": "^2.6",
         "php-cs-fixer/shim": "3.95.27",
         "phpat/phpat": "^0.12.5",
         "phpstan/extension-installer": "^1.4.3",
@@ -48,6 +50,7 @@
         "rector/rector": "2.7.0",
         "shipmonk/composer-dependency-analyser": "^1.8.4",
         "spaze/phpstan-disallowed-calls": "^4.15",
+        "symfony/process": "^7.4 || ^8.1",
         "tomasvotruba/type-coverage": "^2.5.1"
     },
     "minimum-stability": "stable",

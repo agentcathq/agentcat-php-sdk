@@ -1,0 +1,21 @@
+{
+  "id": "evt_2nH0cZ9aB1cD2eF3gH4iJ5kL6mN",
+  "project_id": "proj_2mZ9yX8wV7uT6sR5qP4oN3mL2kJ",
+  "session_id": null,
+  "event_type": "mcp:tools/call",
+  "timestamp": "2026-10-16T12:00:02.500Z",
+  "duration": 17,
+  "resource_name": "get_weather",
+  "parameters": {"request": {"method": "tools/call", "params": {"name": "get_weather", "arguments": {"city": ""}}}, "extra": {}},
+  "is_error": true,
+  "error": {
+    "message": "City must not be empty",
+    "type": "InvalidArgumentException",
+    "stack": "#0 /app/src/Tools.php(42): App\\Tools->weather('')",
+    "frames": [{"filename": "src/Tools.php", "abs_path": "/app/src/Tools.php", "function": "weather", "module": "App\\Tools", "lineno": 42, "in_app": true}],
+    "platform": "php"
+  },
+  "identify_data": {},
+  "sdk_language": "PHP",
+  "agentcat_version": "0.1.0"
+}
