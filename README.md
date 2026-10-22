@@ -250,7 +250,7 @@ Diagnostics are on by default and can be turned off completely with either:
 - **Containers**: start a stdio server with `docker run --init`, so that a stop signal ends PHP and AgentCat (with ext-pcntl) first delivers the queued events.
 - **Swoole, RoadRunner and Workerman**: with Laravel or Symfony, AgentCat delivers in the framework's terminate hooks (Laravel's `terminating()` callbacks, also under Octane, and Symfony's `kernel.terminate`), waiting at most 1 s after each request; a plain `mcp/sdk` worker calls `AgentCat::flush(1.0)` after each request.
 
-AgentCat supports PHP 8.3, 8.4 and 8.5; `mcp/sdk` 0.8.1 or later (tested 0.8.1 and 0.9.0); `laravel/mcp` 1.x (tested 1.0.0 and 1.1.0) with Laravel 12.41.1 or later and 13; and `symfony/mcp-bundle` 0.13 and 0.14 with Symfony 7.3 and 8.x. The [runtimes guide](https://docs.agentcat.com/sdk/php/runtimes) covers each runtime, containers and hardened hosts, and the [limits page](https://docs.agentcat.com/sdk/php/limits) lists the differences from the TypeScript SDK and the known limits.
+AgentCat supports PHP 8.3, 8.4 and 8.5; `mcp/sdk` 0.8.1 or later; `laravel/mcp` 1.x with Laravel 12.41.1 or later and 13; and `symfony/mcp-bundle` 0.13 and 0.14 with Symfony 7.3 and 8.x. On every pull request and every night, CI reads Packagist and tests the newest patch of each minor release of these three libraries, from the lowest supported version up. The [runtimes guide](https://docs.agentcat.com/sdk/php/runtimes) covers each runtime, containers and hardened hosts, and the [limits page](https://docs.agentcat.com/sdk/php/limits) lists the differences from the TypeScript SDK and the known limits.
 
 ## Free for open source
 

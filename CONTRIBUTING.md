@@ -90,7 +90,7 @@ git commit -m "docs: update API documentation"
 
 ### The Required Check
 
-The one required check is `All green`. It passes when every CI job passes: static analysis on the lowest and the highest dependencies, the tests on PHP 8.3, 8.4 and 8.5, coverage, mutation testing, the `mcp/sdk` 0.9.0 leg, the runtime suite, the package probe and the backward-compatibility check.
+The one required check is `All green`. It passes when every CI job passes: static analysis on the lowest and the highest dependencies, the tests on PHP 8.3, 8.4 and 8.5, coverage, mutation testing, the released-version legs, the runtime suite, the package probe and the backward-compatibility check. The released-version legs and the package probe take their versions from Packagist on each run: the newest patch of each minor release of `mcp/sdk`, `laravel/mcp` and `symfony/mcp-bundle`, from the lowest version that `require-dev` allows. The nightly runs the same legs, so a release published between pull requests opens an issue.
 
 ### No Issue Required
 
@@ -116,6 +116,9 @@ vendor/bin/infection --threads=max --filter=src/Internal/Engine/ToolListing.php
 
 # PHPStan and the adapter suites against mcp/sdk 0.9.0, in a throwaway copy under .cache/
 tests/bin/mcp-sdk-leg.sh
+
+# The releases that the released-version legs test, read from Packagist
+php tests/bin/released-versions.php
 
 # The runtime suite: PHP-FPM, FrankenPHP, Apache, NGINX Unit, the CLI and Swoole, in Docker
 AGENTCAT_RUNTIME_TESTS=1 vendor/bin/phpunit --testsuite Runtime --group runtime

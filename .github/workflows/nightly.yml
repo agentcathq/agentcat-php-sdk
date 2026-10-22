@@ -150,6 +150,91 @@ jobs:
           if [ -s "$OUTPUT" ]; then { printf '~~~text\n'; cat "$OUTPUT"; printf '~~~\n'; } >"$REPORT"; fi
           .github/nightly-issue.sh "${{ github.job }}" "$REPORT"
 
+  discover:
+    name: Discover the MCP library releases (Packagist)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      releases: ${{ steps.releases.outputs.releases }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.5'
+          coverage: none
+      - uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
+        with:
+          dependency-versions: highest
+      # The same releases as the released jobs of ci.yml: a release published since the last pull request runs here.
+      - name: Read the releases from Packagist
+        id: releases
+        timeout-minutes: 2
+        run: |
+          releases="$(php tests/bin/released-versions.php)"
+          echo "releases=${releases}" >>"$GITHUB_OUTPUT"
+          jq -r '.[] | "- \(.library) \(.version)"' <<<"$releases" >>"$GITHUB_STEP_SUMMARY"
+      - name: Fail on purpose (workflow_dispatch force_failure)
+        if: github.event_name == 'workflow_dispatch' && inputs.force_failure == github.job
+        run: exit 1
+      - name: Open or update the nightly issue
+        if: failure() && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/nightly-issue.sh "${{ github.job }}"
+
+  released:
+    name: ${{ matrix.library }} ${{ matrix.version }} (PHP 8.5)
+    needs: discover
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.discover.outputs.releases) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.5'
+          coverage: none
+      - uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
+        with:
+          dependency-versions: highest
+      - name: Install ${{ matrix.library }} ${{ matrix.version }}
+        timeout-minutes: 8
+        env:
+          LIBRARY: ${{ matrix.library }}
+          VERSION: ${{ matrix.version }}
+        run: tests/bin/require-library.sh "$LIBRARY" "$VERSION"
+      - run: vendor/bin/phpstan analyse --no-progress --error-format=github --memory-limit=1G --configuration=${{ matrix.library == 'mcp/sdk' && 'phpstan.no-bundle.neon' || 'phpstan.neon.dist' }}
+        timeout-minutes: 6
+      - name: Run the tests
+        timeout-minutes: 12
+        env:
+          OUTPUT: ${{ runner.temp }}/phpunit.txt
+        run: |
+          set -o pipefail
+          vendor/bin/phpunit --testsuite Contract,Integration,E2E --no-progress --colors=never 2>&1 | tee "$OUTPUT"
+      - name: Fail on purpose (workflow_dispatch force_failure)
+        if: github.event_name == 'workflow_dispatch' && inputs.force_failure == github.job
+        run: exit 1
+      - name: Open or update the nightly issue
+        if: failure() && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LIBRARY: ${{ matrix.library }}
+          VERSION: ${{ matrix.version }}
+          OUTPUT: ${{ runner.temp }}/phpunit.txt
+          REPORT: ${{ runner.temp }}/phpunit.md
+        run: |
+          # The failing tests and their messages, STDERR included, when PHPUnit ran: the issue names the failing test.
+          if [ -s "$OUTPUT" ]; then { printf '~~~text\n'; cat "$OUTPUT"; printf '~~~\n'; } >"$REPORT"; fi
+          .github/nightly-issue.sh "released (${LIBRARY} ${VERSION})" "$REPORT"
+
   php-nightly:
     name: Tests (PHP nightly)
     runs-on: ubuntu-latest
