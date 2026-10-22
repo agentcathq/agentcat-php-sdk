@@ -53,6 +53,7 @@ final class MintBackTest extends TestCase
     }
 
     #[Group('ac-04-36')]
+    #[Group('ac-02-34')]
     #[DataProvider('resultsWithoutContentList')]
     public function testPrependTextIgnoresResultsWithoutAContentList(string $json): void
     {
@@ -70,6 +71,7 @@ final class MintBackTest extends TestCase
     }
 
     #[Group('ac-04-38')]
+    #[Group('ac-02-32')]
     public function testNoTextForSuppliedForeignOrHookMode(): void
     {
         $this->assertNull(MintBack::text(new HandleResolution('ses_A', SessionIdSource::Supplied)));

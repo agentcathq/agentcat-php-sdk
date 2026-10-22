@@ -1,0 +1,11 @@
+# PHPStan for the mcp/sdk legs (released versions and main), which remove symfony/mcp-bundle (it requires mcp/sdk ^0.8.1).
+includes:
+    - phpstan.neon.dist
+parameters:
+    tmpDir: .cache/phpstan-no-bundle
+    excludePaths:
+        - tests/Support/Symfony
+        - tests/Integration/Symfony
+        - tests/Contract/Symfony
+        - tests/Integration/Conformance/SymfonyConformanceTest.php
+        - tests/Runtime/Fixtures/symfony-front.php

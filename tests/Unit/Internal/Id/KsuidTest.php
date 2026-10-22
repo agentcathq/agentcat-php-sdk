@@ -7,6 +7,7 @@ namespace AgentCat\Tests\Unit\Internal\Id;
 use AgentCat\Internal\Id\EventId;
 use AgentCat\Internal\Id\Ksuid;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 final class KsuidTest extends TestCase
@@ -24,6 +25,7 @@ final class KsuidTest extends TestCase
     }
 
     #[DataProvider('vectors')]
+    #[Group('ac-03-21')]
     public function testFromPartsMatchesTypeScript(int $timestampMs, string $payload, string $expected): void
     {
         $this->assertSame($expected, Ksuid::fromParts($timestampMs, $payload));
@@ -33,6 +35,7 @@ final class KsuidTest extends TestCase
         $this->assertSame(intdiv($timestampMs - self::EPOCH_MS, 1000), $decoded['timestamp']);
     }
 
+    #[Group('ac-03-21')]
     public function testEventIdPrefixVector(): void
     {
         $this->assertSame(

@@ -1,0 +1,23 @@
+{
+  "id": "evt_2nH0cY4pQ8rS2tU6vW0xY3zA5bC",
+  "project_id": "proj_2mZ9yX8wV7uT6sR5qP4oN3mL2kJ",
+  "session_id": "ses_2nH0cWzQ4m8LkP1sD7fG3hJ9kL0",
+  "event_type": "mcp:tools/call",
+  "timestamp": "2026-10-16T12:00:01.007Z",
+  "duration": 3,
+  "resource_name": "ping",
+  "parameters": {"request": {"method": "tools/call", "params": {"name": "ping", "arguments": {}}}, "extra": {}},
+  "response": {"content": []},
+  "identify_actor_given_id": "user_123",
+  "identify_actor_name": "Ada Lovelace",
+  "identify_data": {"plan": "pro"},
+  "actor_id": "user_123",
+  "tags": {"agentcat_task_id_source": "minted", "env": "prod"},
+  "properties": {"feature_flags": ["beta_ui"], "device": {}},
+  "sdk_language": "PHP",
+  "agentcat_version": "0.1.0",
+  "server_name": "weather-server",
+  "server_version": "1.2.0",
+  "client_name": "claude-code",
+  "client_version": "2.1.220"
+}

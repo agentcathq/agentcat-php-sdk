@@ -7,7 +7,7 @@ use PhpCsFixer\Finder;
 
 $finder = Finder::create()
     ->in([__DIR__ . '/src', __DIR__ . '/tests'])
-    ->append([__DIR__ . '/rector.php', __DIR__ . '/composer-dependency-analyser.php', __FILE__]);
+    ->append([__DIR__ . '/rector.php', __DIR__ . '/composer-dependency-analyser.php', __DIR__ . '/config/agentcat.php', __FILE__]);
 
 return (new Config())
     ->setRiskyAllowed(true)

@@ -11,6 +11,7 @@ final class MemoryLogger extends AbstractLogger
     /** @var list<array{level: string, message: string}> */
     public array $records = [];
 
+    /** @param mixed[] $context */
     #[\Override]
     public function log($level, string|\Stringable $message, array $context = []): void
     {

@@ -14,10 +14,12 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Each job's timeout-minutes is about three times its usual run time; GitHub's default is 6 hours.
 jobs:
   static:
     name: Static analysis
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -33,13 +35,33 @@ jobs:
       - run: composer normalize --dry-run
       - run: vendor/bin/php-cs-fixer check --diff
       - run: vendor/bin/rector process --dry-run
-      - run: vendor/bin/phpstan analyse --no-progress --error-format=github
+      - run: vendor/bin/phpstan analyse --no-progress --error-format=github --memory-limit=1G
+      - run: vendor/bin/phpstan analyse --no-progress --error-format=github --memory-limit=1G --configuration=phpstan.php85.neon
       - run: vendor/bin/composer-dependency-analyser
       - run: composer audit
+
+  static-lowest:
+    name: Static analysis (lowest dependencies)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.5'
+          coverage: none
+      - uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
+        with:
+          dependency-versions: lowest
+      - run: vendor/bin/phpstan analyse --no-progress --error-format=github --memory-limit=1G
+      - run: vendor/bin/phpstan analyse --no-progress --error-format=github --memory-limit=1G --configuration=phpstan.php85.neon
 
   tests:
     name: Tests (PHP ${{ matrix.php }}, ${{ matrix.deps }})
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -61,6 +83,7 @@ jobs:
   tests-next:
     name: Tests (PHP 8.6, experimental)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -73,11 +96,15 @@ jobs:
       - uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
         with:
           dependency-versions: highest
-      - run: vendor/bin/phpunit
+          # ergebnis/composer-normalize caps PHP below 8.6.
+          composer-options: --ignore-platform-req=php+
+      # The baseline holds the deprecations that PHP 8.6 raises inside a dependency (opis/json-schema).
+      - run: vendor/bin/phpunit --use-baseline phpunit-baseline.xml
 
   coverage:
     name: Coverage
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -106,6 +133,8 @@ jobs:
   mutation:
     name: Mutation testing
     runs-on: ubuntu-latest
+    # The full run takes about 8 minutes; a hanging mutant holds a thread for the 120 s Infection timeout.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -130,11 +159,136 @@ jobs:
         if: github.event_name != 'pull_request'
         run: vendor/bin/infection --threads=max --logger-github
 
+  discover:
+    name: Discover the MCP library releases (Packagist)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      releases: ${{ steps.releases.outputs.releases }}
+      mcp-sdk: ${{ steps.releases.outputs.mcp-sdk }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.5'
+          coverage: none
+      - uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
+        with:
+          dependency-versions: highest
+      # The newest patch of each minor release from the require-dev floor, so a new release joins the matrix by itself.
+      - name: Read the releases from Packagist
+        id: releases
+        run: |
+          releases="$(php -d display_errors=stderr tests/bin/released-versions.php)"
+          jq -e 'type == "array" and length > 0' <<<"$releases" >/dev/null
+          echo "releases=${releases}" >>"$GITHUB_OUTPUT"
+          echo "mcp-sdk=$(jq -c 'map(select(.library == "mcp/sdk"))' <<<"$releases")" >>"$GITHUB_OUTPUT"
+          jq -r '.[] | "- \(.library) \(.version) (lowest PHP \(.php))"' <<<"$releases" >>"$GITHUB_STEP_SUMMARY"
+
+  released:
+    name: ${{ matrix.library }} ${{ matrix.version }} (PHP 8.5)
+    needs: discover
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.discover.outputs.releases) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.5'
+          coverage: none
+      - uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
+        with:
+          dependency-versions: highest
+      - name: Install ${{ matrix.library }} ${{ matrix.version }}
+        env:
+          LIBRARY: ${{ matrix.library }}
+          VERSION: ${{ matrix.version }}
+        run: tests/bin/require-library.sh "$LIBRARY" "$VERSION"
+      - run: vendor/bin/phpstan analyse --no-progress --error-format=github --memory-limit=1G --configuration=${{ matrix.library == 'mcp/sdk' && 'phpstan.no-bundle.neon' || 'phpstan.neon.dist' }}
+      - run: vendor/bin/phpunit --testsuite Contract,Integration,E2E
+
+  runtime:
+    name: Runtime delivery (Docker, PHP 8.3)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.3'
+          coverage: none
+      - uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
+        with:
+          dependency-versions: highest
+      - name: Build the CLI and Swoole images and pull the others
+        run: |
+          docker build --tag agentcat-runtime-cli:8.3.35 tests/Runtime/docker
+          docker build --tag agentcat-runtime-swoole:6.2.3-php8.3 tests/Runtime/docker/swoole
+          for image in php:8.3.35-fpm-bookworm php:8.3.35-apache-bookworm dunglas/frankenphp:1.13.1-php8.3.35-bookworm unit:1.34.2-php8.3; do docker pull "$image"; done
+      - run: vendor/bin/phpunit --testsuite Runtime --group runtime
+        env:
+          AGENTCAT_RUNTIME_TESTS: '1'
+
+  package:
+    name: Package probe (PHP ${{ matrix.php }}, mcp/sdk ${{ matrix.version }})
+    needs: discover
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # Each mcp/sdk release, on the lowest PHP that CI tests and the release allows (8.3 today).
+        include: ${{ fromJSON(needs.discover.outputs.mcp-sdk) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - name: Install the dist in a fresh project and track an mcp/sdk server
+        run: tests/bin/package-probe.sh "$MCP_SDK"
+        env:
+          MCP_SDK: ${{ matrix.version }}
+
+  bc:
+    name: Backward compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.3'
+          extensions: bcmath
+          coverage: none
+      - name: Compare with the latest 1.x tag
+        run: |
+          base="$(git tag --list 'v1.*' --sort=-v:refname | head -n 1)"
+          if [ -z "$base" ]; then echo "No v1.* tag yet: nothing to compare against (D63)."; exit 0; fi
+          composer global require --no-interaction roave/backward-compatibility-check:8.19.0
+          "$(composer global config bin-dir --absolute)/roave-backward-compatibility-check" --from="$base" --format=github-actions --install-development-dependencies
+
   all-green:
     name: All green
     if: always()
-    needs: [static, tests, coverage, mutation]
+    needs: [static, static-lowest, tests, coverage, mutation, discover, released, runtime, package, bc]
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: re-actors/alls-green@b5b5b37504aa4183270bd3d855c52a67f212be35 # v1.3.0
         with:

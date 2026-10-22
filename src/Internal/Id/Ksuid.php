@@ -12,7 +12,7 @@ namespace AgentCat\Internal\Id;
 final class Ksuid
 {
     private const string ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
-    private const int EPOCH_MS = 1_400_000_000_000;
+    public const int EPOCH_MS = 1_400_000_000_000;
     private const int MAX_SECONDS = 4_294_967_295;
     private const int ENCODED_LENGTH = 27;
     private const int PAYLOAD_LENGTH = 16;
@@ -35,7 +35,8 @@ final class Ksuid
 
     public static function random(?int $timestampMs = null): string
     {
-        return self::fromParts($timestampMs ?? (int) (microtime(true) * 1000), random_bytes(self::PAYLOAD_LENGTH));
+        // The clock of DateTimeImmutable, not microtime(): a host can disable a function (`disable_functions`).
+        return self::fromParts($timestampMs ?? (int) (new \DateTimeImmutable())->format('Uv'), random_bytes(self::PAYLOAD_LENGTH));
     }
 
     /**

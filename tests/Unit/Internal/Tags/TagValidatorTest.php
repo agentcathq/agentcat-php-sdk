@@ -63,6 +63,16 @@ final class TagValidatorTest extends TestCase
         ], $this->logger->messages());
     }
 
+    #[Group('ac-03-40')]
+    public function testOnlyTheInvalidKeysOfAMapAreDropped(): void
+    {
+        $this->assertSame(['good.key' => 'v'], TagValidator::validate(['invalid!key' => 'v', 'good.key' => 'v', "abc\n" => 'v']));
+        $this->assertSame([
+            'Dropping invalid tag: "invalid!key" — key contains invalid characters or is empty',
+            "Dropping invalid tag: \"abc\n\" — key contains invalid characters or is empty",
+        ], $this->logger->messages());
+    }
+
     #[Group('ac-01-42')]
     public function testKeyLengthLimit(): void
     {
@@ -138,6 +148,7 @@ final class TagValidatorTest extends TestCase
     }
 
     #[Group('ac-01-44')]
+    #[Group('ac-03-40')]
     public function testCapsAtFiftyEntries(): void
     {
         $tags = [];

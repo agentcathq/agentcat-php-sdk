@@ -6,11 +6,14 @@
     "logs": {
         "text": ".cache/infection.log"
     },
+    // Seconds per mutant. A mutant whose covering tests take longer is skipped, not run: the transport
+    // helpers are covered by the whole delivery suite, which takes longer than the default 10 s.
+    "timeout": 120,
     "minMsi": 90,
     "minCoveredMsi": 95,
     "mutators": {
         "@default": true
     },
     "testFramework": "phpunit",
-    "testFrameworkOptions": "--testsuite=Unit,Golden"
+    "testFrameworkOptions": "--testsuite=Unit,Golden,Integration,Contract"
 }

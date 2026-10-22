@@ -1,0 +1,128 @@
+<?php
+
+declare(strict_types=1);
+
+namespace AgentCat\Internal\Support;
+
+use AgentCat\Internal\Logging\Log;
+
+/**
+ * When AgentCat instruments and delivers. A framework bridge's configured switch decides first (a cached configuration
+ * hides the `.env` file), then `AGENTCAT_ENABLED` (D44): a false value turns AgentCat off everywhere, a true value
+ * turns it on everywhere. Otherwise AgentCat is off while a test framework runs (D31) and on everywhere else.
+ *
+ * @internal
+ */
+final class TestMode
+{
+    private const string UNKNOWN_VALUE = 'WARN: AGENTCAT_ENABLED "%s" is not one of true, 1, yes, on, false, 0, no, off; the default is used';
+
+    /**
+     * A loaded class of a test runner means tests run. Pest's sequential runner does not define
+     * `PHPUNIT_COMPOSER_INSTALL`, so that constant alone is not enough.
+     */
+    private const array RUNNER_CLASSES = ['PHPUnit\Framework\TestCase', 'Pest\TestSuite'];
+
+    /** True once an unknown `AGENTCAT_ENABLED` value was logged: the line appears once per process. */
+    private static bool $reported = false;
+
+    /** The configured switch of a framework bridge; null: none, `AGENTCAT_ENABLED` decides. */
+    private static ?bool $configured = null;
+
+    /**
+     * Sets the switch of a framework bridge's configuration (`agentcat.enabled` in Laravel), which decides before
+     * `AGENTCAT_ENABLED`: a cached configuration hides the `.env` file from `Env::get()`. Null removes it. The last call
+     * wins; it is process-wide, like the environment.
+     */
+    public static function configure(?bool $enabled): void
+    {
+        self::$configured = $enabled;
+    }
+
+    /**
+     * True when a test runner class is loaded, or `APP_ENV` is `testing` or `test` (trimmed, any case).
+     *
+     * @param (\Closure(string): bool)|null $classLoaded tells whether a class is loaded; default `isLoaded()`
+     */
+    public static function inTestEnvironment(?\Closure $classLoaded = null): bool
+    {
+        $classLoaded ??= self::isLoaded(...);
+        foreach (self::RUNNER_CLASSES as $class) {
+            if ($classLoaded($class)) {
+                return true;
+            }
+        }
+
+        return match (self::normalized('APP_ENV')) {
+            'testing', 'test' => true,
+            default => false,
+        };
+    }
+
+    /**
+     * The configured switch when a bridge set one (`configure()`). Else true when `AGENTCAT_ENABLED` is `true`, `1`,
+     * `yes` or `on`; false when it is `false`, `0`, `no` or `off` (trimmed, any case). Unset or empty: true outside test
+     * environments only. Any other value counts as unset and logs one line, once per process.
+     *
+     * @param (\Closure(string): bool)|null $classLoaded see `inTestEnvironment()`
+     */
+    public static function sdkEnabled(?\Closure $classLoaded = null): bool
+    {
+        return self::$configured ?? self::word(Env::get('AGENTCAT_ENABLED') ?? '') ?? self::byDefault(self::normalized('AGENTCAT_ENABLED'), $classLoaded);
+    }
+
+    /** The D44 word that `AGENTCAT_ENABLED` holds, without a log line; null when it is unset, blank or unknown. */
+    public static function environmentWord(): ?bool
+    {
+        return self::word(Env::get('AGENTCAT_ENABLED') ?? '');
+    }
+
+    /**
+     * The D44 words: `true`, `1`, `yes`, `on` (trimmed, any case), bool true and int 1 are true; `false`, `0`, `no`,
+     * `off`, bool false and int 0 are false. Anything else, blank included, is null.
+     */
+    public static function word(mixed $value): ?bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+        if ($value === 1 || $value === 0) {
+            return $value === 1;
+        }
+
+        return is_string($value) ? match (strtolower(trim($value))) {
+            'true', '1', 'yes', 'on' => true,
+            'false', '0', 'no', 'off' => false,
+            default => null,
+        } : null;
+    }
+
+    /** Whether the class is loaded already. It never autoloads: an installed but unused PHPUnit does not count. */
+    public static function isLoaded(string $class): bool
+    {
+        return class_exists($class, false);
+    }
+
+    /** Tests only: forgets the logged line and the configured switch. */
+    public static function reset(): void
+    {
+        self::$reported = false;
+        self::$configured = null;
+    }
+
+    /** @param (\Closure(string): bool)|null $classLoaded */
+    private static function byDefault(string $value, ?\Closure $classLoaded): bool
+    {
+        if ($value !== '' && !self::$reported) {
+            self::$reported = true;
+            Log::write(sprintf(self::UNKNOWN_VALUE, Env::get('AGENTCAT_ENABLED')));
+        }
+
+        return !self::inTestEnvironment($classLoaded);
+    }
+
+    private static function normalized(string $name): string
+    {
+        return strtolower(trim(Env::get($name) ?? ''));
+    }
+}

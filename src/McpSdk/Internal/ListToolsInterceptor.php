@@ -1,0 +1,71 @@
+<?php
+
+declare(strict_types=1);
+
+namespace AgentCat\McpSdk\Internal;
+
+use AgentCat\Internal\Engine\Publisher;
+use AgentCat\Internal\Engine\ToolListing;
+use AgentCat\Internal\Engine\TrackedServer;
+use Mcp\Schema\JsonRpc\Error;
+use Mcp\Schema\JsonRpc\Request;
+use Mcp\Schema\JsonRpc\Response;
+use Mcp\Schema\Request\ListToolsRequest;
+use Mcp\Server\Handler\Request\RequestHandlerInterface;
+use Mcp\Server\Session\SessionInterface;
+
+/**
+ * Answers `tools/list` first (TS listWrap): the next handler lists, then AgentCat injects its parameters into the page
+ * and appends get_more_tools to the last one (D66). Errors, exceptions and other answers pass unchanged (ac-02-10).
+ *
+ * @implements RequestHandlerInterface<mixed>
+ *
+ * @internal
+ */
+final readonly class ListToolsInterceptor implements RequestHandlerInterface
+{
+    public function __construct(
+        private TrackedServer $server,
+        private Delegates $delegates,
+        private Publisher $publisher,
+    ) {}
+
+    #[\Override]
+    public function supports(Request $request): bool
+    {
+        // Without a handler to delegate to (mcp/sdk internals changed), the library answers on its own.
+        return $request instanceof ListToolsRequest && $this->delegates->after($this, $request) instanceof RequestHandlerInterface;
+    }
+
+    /** @return Response<mixed>|Error */
+    #[\Override]
+    public function handle(Request $request, SessionInterface $session): Response|Error
+    {
+        $this->publisher->pump(); // stdio servers deliver between requests
+        $delegate = $this->delegates->after($this, $request);
+        if (!$delegate instanceof RequestHandlerInterface) {
+            return Delegates::notFound($request);
+        }
+        $response = $delegate->handle($request, $session); // throws and JSON-RPC errors pass unchanged (ac-02-10)
+        if (!$response instanceof Response) {
+            return $response;
+        }
+        try {
+            // The library's own wire tree: AgentCat changes only its `tools`. Null: another answer, or no tool list.
+            $listing = Trees::listing($response->result);
+            $lastPage = ToolListing::nextCursor($listing[1]->nextCursor ?? null) === null;
+            $tools = ToolListing::apply($this->server, $listing[2] ?? null, $lastPage);
+            if ($listing === null || $tools === null) {
+                return $response;
+            }
+            [$original, $tree] = $listing;
+            $tree->tools = $tools;
+
+            return new Response($response->getId(), new WireListToolsResult($original, $tree));
+        } catch (\Throwable $e) {
+            ToolListing::injectionFailed($e);
+
+            return $response;
+        }
+    }
+}

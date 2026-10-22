@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace AgentCat\Internal\Logging;
 
-use AgentCat\Internal\SdkVersion;
+use AgentCat\Internal\Support\Env;
 use Psr\Log\AbstractLogger;
 
 /** @internal */
@@ -18,22 +18,21 @@ final class FileLogger extends AbstractLogger
     public function __construct(?string $path = null, ?\Closure $homeLookup = null)
     {
         if ($path === null) {
-            $home = ($homeLookup ?? static fn(): ?string => self::resolveHome(getenv('HOME'), self::posixHome(...)))();
+            $home = ($homeLookup ?? static fn(): ?string => self::resolveHome(Env::lookup('HOME'), self::posixHome(...)))();
             $path = $home === null ? null : $home . '/agentcat.log';
         }
         $this->path = $path;
     }
 
+    /** @param mixed[] $context */
     #[\Override]
     public function log($level, string|\Stringable $message, array $context = []): void
     {
         if ($this->path === null) {
             return;
         }
-        $timestamp = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format('Y-m-d\TH:i:s.v\Z');
-        $line = sprintf("[%s] [sdk=%s php=%s] %s\n", $timestamp, SdkVersion::get(), PHP_VERSION, $message);
         // A telemetry log must never warn: suppress the E_WARNING for unwritable paths.
-        @file_put_contents($this->path, $line, FILE_APPEND | LOCK_EX);
+        @file_put_contents($this->path, LogLine::format((string) $message) . "\n", FILE_APPEND | LOCK_EX);
     }
 
     /**

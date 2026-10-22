@@ -4,9 +4,14 @@
 /.gitignore export-ignore
 /.editorconfig export-ignore
 /phpstan.neon.dist export-ignore
+/phpstan.no-bundle.neon export-ignore
 /.php-cs-fixer.dist.php export-ignore
 /rector.php export-ignore
 /phpunit.xml.dist export-ignore
 /infection.json5 export-ignore
 /docs export-ignore
+/recipe export-ignore
 /composer-dependency-analyser.php export-ignore
+/phpstan.php85.neon export-ignore
+/CONTRIBUTING.md export-ignore
+/phpunit-baseline.xml export-ignore

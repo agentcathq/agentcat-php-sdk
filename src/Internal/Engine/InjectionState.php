@@ -17,7 +17,8 @@ final class InjectionState
     /** @var array<array-key, true> */
     private array $reportedConflicts = [];
 
-    private bool $shadowWarned = false;
+    /** A page of this server named the customer's own get_more_tools. Only grows. */
+    private bool $customerGetMoreTools = false;
 
     /**
      * Tools whose own schema declares `session_id`. Only grows. PHP turns numeric-string names into int keys.
@@ -50,14 +51,20 @@ final class InjectionState
         return true;
     }
 
-    /** True the first time the get_more_tools shadowing is warned about. */
-    public function warnShadowOnce(): bool
+    /** Records that a page named the customer's own get_more_tools. True the first time: the shadowing is warned about once. */
+    public function markCustomerGetMoreTools(): bool
     {
-        if ($this->shadowWarned) {
+        if ($this->customerGetMoreTools) {
             return false;
         }
-        $this->shadowWarned = true;
+        $this->customerGetMoreTools = true;
 
         return true;
+    }
+
+    /** A page that this server read (in this process) named the customer's own get_more_tools. */
+    public function hasCustomerGetMoreTools(): bool
+    {
+        return $this->customerGetMoreTools;
     }
 }

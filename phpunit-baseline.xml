@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<!--
+  The PHP 8.6 jobs of the workflows read this baseline and ignore these issues: PHP raises them inside a dependency, and
+  this repository cannot fix them. Any other deprecation still fails the run. A line that changes no longer matches its
+  hash, and its issue fails the run again.
+
+  The file stays in the repository root: PHPUnit joins the baseline's directory and a path of the file without resolving
+  "..", so a baseline in another directory matches no issue from vendor/.
+-->
+<files version="1">
+ <file path="vendor/opis/json-schema/src/SchemaLoader.php">
+  <line number="442" hash="6513e4b8b13c63048d70ca68ba4b3978c8597861">
+   <issue><![CDATA[Function spl_object_hash() is deprecated since 8.6, consider using spl_object_id() instead]]></issue>
+  </line>
+ </file>
+</files>
