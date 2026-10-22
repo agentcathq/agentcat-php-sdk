@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-22
+
 ### Added
 
 - `AgentCat::track()` and the `mcp/sdk` adapter: one call on the `Mcp\Server\Builder` tracks every tool of the server.
@@ -27,4 +29,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Under PHP-FPM and the other runtimes that serve each request in a fresh process, your own `tools/list` handler (one that you add to the server, or a `laravel/mcp` class that answers `tools/list`) then runs once for each page that AgentCat reads during a `tools/call`, so its queries, metrics and log lines repeat that many times.
   A call to the last-page tool of a 300-tool `laravel/mcp` server takes 57.6 ms (2.7 ms before); a call to a page-1 tool costs the same as before.
 
-[Unreleased]: https://github.com/agentcathq/agentcat-php-sdk/commits/main
+[Unreleased]: https://github.com/agentcathq/agentcat-php-sdk/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/agentcathq/agentcat-php-sdk/releases/tag/v1.0.0
