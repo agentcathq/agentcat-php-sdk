@@ -10,6 +10,7 @@ use AgentCat\LaravelMcp\Internal\MethodKey;
 use AgentCat\Options;
 use AgentCat\Tests\Integration\Conformance\ConformanceHarness;
 use AgentCat\Tests\Support\ReusedId;
+use AgentCat\Tests\Support\ToolCalls;
 use Illuminate\Container\Container;
 use Laravel\Mcp\Server;
 use PHPUnit\Framework\Assert;

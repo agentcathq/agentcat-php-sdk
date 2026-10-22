@@ -6,10 +6,12 @@ namespace AgentCat\Tests\Integration\Laravel;
 
 use AgentCat\AgentCat;
 use AgentCat\Client;
+use AgentCat\CustomEvent;
 use AgentCat\Internal\Delivery\EventQueue;
 use AgentCat\Internal\Json\Json;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Tools\GetMoreTools;
+use AgentCat\Internal\Transport\Delivery;
 use AgentCat\Laravel\AgentCatServiceProvider;
 use AgentCat\Laravel\Internal\ServerTracker;
 use AgentCat\LaravelMcp\Internal\Access\ServerAccess;
@@ -27,6 +29,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Http\Request;
 use Illuminate\Testing\PendingCommand;
 use Laravel\Mcp\Server;
+use Laravel\Mcp\Server\Transport\FakeTransporter;
 use Laravel\Mcp\Server\Transport\HttpTransport;
 use Orchestra\Testbench\Attributes\DefineEnvironment;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -495,6 +498,44 @@ final class ServiceProviderTest extends BridgeTestCase
         $this->assertIsArray($lines);
         $this->assertCount(1, $lines);
         $this->assertStringEndsWith(' Warning: Failed to track server - RuntimeException: no log manager', $lines[0]);
+    }
+
+    /**
+     * D32: after a tracking failure of the bridge, a custom event for the server, as a tool publishes it, logs one line
+     * instead of throwing into the tool, as after a failure of `Client::track()`.
+     */
+    public function testACustomEventForTheServerOfATrackingFailureLogsALine(): void
+    {
+        $home = Environment::clear('HOME');
+        putenv('HOME=' . $this->laravelDirectory);
+        try {
+            $this->app?->bind('log', static fn(): never => throw new \RuntimeException('no log manager'));
+            $server = $this->app?->make(ConformanceServer::class, ['transport' => new FakeTransporter()]);
+            $this->assertInstanceOf(ConformanceServer::class, $server);
+
+            AgentCat::publishCustomEvent($server, LaravelTrackingFixture::PROJECT, new CustomEvent(message: 'from a tool'));
+            Log::reset(); // closes the file logger of this HOME
+        } finally {
+            $home->restore();
+        }
+
+        $lines = file($this->laravelDirectory . '/agentcat.log', FILE_IGNORE_NEW_LINES);
+        $this->assertIsArray($lines);
+        $this->assertCount(2, $lines);
+        $this->assertStringEndsWith(' Warning: Failed to track server - RuntimeException: no log manager', $lines[0]);
+        $this->assertStringEndsWith(' Warning: Failed to publish custom event - the server is not tracked (see the earlier AgentCat log line)', $lines[1]);
+        $this->assertFalse(EventQueue::global()->hasWork());
+    }
+
+    /** A test whose configuration names no `api_url` sends to a closed local port, never to the AgentCat API. */
+    public function testWithoutAnApiUrlTheEventGoesToAClosedLocalPort(): void
+    {
+        (new LaravelHarness(ConformanceServer::class))->callTool('echo', ['msg' => 'hi', 'session_id' => 'start']);
+
+        $this->assertTrue(EventQueue::global()->flush(1.0));
+        $urls = array_map(static fn(Delivery $delivery): string => $delivery->url, $this->transport->deliveries);
+        $this->assertCount(1, $urls);
+        $this->assertStringStartsWith('http://127.0.0.1:', $urls[0]);
     }
 
     public function testTheConfigurationIsPublishedUnderItsTag(): void

@@ -22,6 +22,9 @@ final class HttpHarness
 
     private const array MODERN_CLIENT = ['name' => 'modern-client', 'version' => '2.0.0'];
 
+    /** The notification that ends the handshake. */
+    public const array INITIALIZED = ['jsonrpc' => '2.0', 'method' => 'notifications/initialized'];
+
     private readonly Psr17Factory $factory;
 
     private int $nextId = 1;
@@ -44,18 +47,40 @@ final class HttpHarness
     /** Sends `initialize` and `notifications/initialized`; returns the `initialize` result. */
     public function initialize(string $clientName = 'harness-client', string $clientVersion = '1.0.0', string $protocolVersion = '2025-06-18'): \stdClass
     {
-        $result = self::result($this->request('initialize', [
+        $result = self::result($this->request('initialize', self::initializeParams($clientName, $clientVersion, $protocolVersion)));
+        $this->protocolVersion = self::negotiated($result, $protocolVersion);
+
+        $response = $this->post(self::INITIALIZED, [], true);
+        self::assertInitialized($response->getStatusCode(), (string) $response->getBody());
+
+        return $result;
+    }
+
+    /**
+     * The params of an `initialize` request.
+     *
+     * @return array<string, mixed>
+     */
+    public static function initializeParams(string $clientName, string $clientVersion, string $protocolVersion): array
+    {
+        return [
             'protocolVersion' => $protocolVersion,
             'capabilities' => new \stdClass(),
             'clientInfo' => ['name' => $clientName, 'version' => $clientVersion],
-        ]));
-        $this->protocolVersion = is_string($result->protocolVersion ?? null) ? $result->protocolVersion : $protocolVersion;
+        ];
+    }
 
-        $response = $this->post(['jsonrpc' => '2.0', 'method' => 'notifications/initialized'], [], true);
-        Assert::assertSame(202, $response->getStatusCode(), 'notifications/initialized');
-        Assert::assertSame('', (string) $response->getBody(), 'notifications/initialized');
+    /** The protocol version that the server chose in its `initialize` result, else the one the client asked for. */
+    public static function negotiated(\stdClass $result, string $requested): string
+    {
+        return is_string($result->protocolVersion ?? null) ? $result->protocolVersion : $requested;
+    }
 
-        return $result;
+    /** The server accepted `notifications/initialized`: 202 and no body. */
+    public static function assertInitialized(int $status, string $body): void
+    {
+        Assert::assertSame(202, $status, 'notifications/initialized');
+        Assert::assertSame('', $body, 'notifications/initialized');
     }
 
     /**
@@ -83,12 +108,25 @@ final class HttpHarness
      */
     public function callTool(string $name, array $arguments, ?array $meta = null): \stdClass
     {
+        return $this->request('tools/call', self::callParams($name, $arguments, $meta));
+    }
+
+    /**
+     * The params of a `tools/call` request.
+     *
+     * @param array<array-key, mixed>   $arguments
+     * @param array<string, mixed>|null $meta
+     *
+     * @return array<string, mixed>
+     */
+    public static function callParams(string $name, array $arguments, ?array $meta): array
+    {
         $params = ['name' => $name, 'arguments' => (object) $arguments];
         if ($meta !== null) {
             $params['_meta'] = (object) $meta;
         }
 
-        return $this->request('tools/call', $params);
+        return $params;
     }
 
     /**
@@ -145,7 +183,7 @@ final class HttpHarness
      */
     public function callToolModern(string $name, array $arguments, ?array $clientInfo = self::MODERN_CLIENT): \stdClass
     {
-        return $this->modern('tools/call', ['name' => $name, 'arguments' => (object) $arguments], $name, $clientInfo);
+        return $this->modern('tools/call', self::callParams($name, $arguments, null), $name, $clientInfo);
     }
 
     /** The `result` of a 2026-07-28 `tools/list` request. */

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AgentCat\Internal\Diagnostics;
 
 use AgentCat\Internal\Delivery\EventQueue;
+use AgentCat\Internal\Delivery\FinishRequest;
 use AgentCat\Internal\Delivery\QueueCompanion;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\SdkVersion;
@@ -16,11 +17,13 @@ use AgentCat\Internal\Transport\HttpRequest;
 /**
  * TypeScript diagnostics: every SDK log line (D07), as OTLP/JSON logs to AgentCat's collector. The first `init()` of
  * the process decides. Lines are buffered (1 000 at most, with at most 1 MiB of bodies; the oldest are dropped) and
- * posted as a background request (`flush()` does not wait for it; 250 ms connect and 1 s total timeouts, D49) at the
- * first queue pass (`pump()`, `flush()`, `shutdown()`) once the oldest of them is 2 s old, and once more when the queue
- * shuts down, after the events (D47: under PHP-FPM one post per request, after the response). Lines logged in the last
- * shutdown pass, after `finish()`, are dropped unless a later `shutdown()` runs. A failure is silent: a log line would
- * feed the buffer it reports on.
+ * posted as a background request (`flush()` does not wait for it; 250 ms connect and 1 s total timeouts, D49) when the
+ * queue shuts down, after the events. A process that outlives its requests (`FinishRequest::outlivesRequest()`: the
+ * command line, FrankenPHP worker mode) also posts them at the first queue pass (`pump()`, `flush()`, `shutdown()`)
+ * once the oldest of them is 2 s old, as TypeScript does; a per-request runtime (PHP-FPM, mod_php, `php -S`) posts only
+ * at shutdown, once per request, after the response, however long the request and its drain take (D47). Lines logged
+ * in the last shutdown pass, after `finish()`, are dropped unless a later `shutdown()` runs. A failure is silent: a log
+ * line would feed the buffer it reports on.
  *
  * @internal
  */
@@ -62,6 +65,7 @@ final class Diagnostics implements QueueCompanion
      * @param list<array{key: string, value: array{stringValue: string}}> $recordAttributes
      * @param \Closure(): float                                           $clock            monotonic seconds
      * @param \Closure(): int                                             $wallMillis       wall-clock milliseconds
+     * @param bool                                                        $window           whether queue passes post after 2 s
      */
     private function __construct(
         private readonly EventQueue $queue,
@@ -69,6 +73,7 @@ final class Diagnostics implements QueueCompanion
         private readonly array $recordAttributes,
         private readonly \Closure $clock,
         private readonly \Closure $wallMillis,
+        private readonly bool $window,
     ) {}
 
     /**
@@ -79,8 +84,9 @@ final class Diagnostics implements QueueCompanion
      * @param (\Closure(): bool)|null  $inTestEnvironment default `TestMode::inTestEnvironment()` (P5)
      * @param (\Closure(): float)|null $clock             tests: monotonic seconds
      * @param (\Closure(): int)|null   $wallMillis        tests: wall-clock milliseconds
+     * @param string|null              $sapi              tests: the SAPI, which decides the 2 s window; default `PHP_SAPI`
      */
-    public static function init(string $projectId, bool $disabled, EventQueue $queue, ?\Closure $inTestEnvironment = null, ?\Closure $clock = null, ?\Closure $wallMillis = null): void
+    public static function init(string $projectId, bool $disabled, EventQueue $queue, ?\Closure $inTestEnvironment = null, ?\Closure $clock = null, ?\Closure $wallMillis = null, ?string $sapi = null): void
     {
         try {
             if (self::$initialized) {
@@ -102,6 +108,7 @@ final class Diagnostics implements QueueCompanion
                 DiagnosticsAttributes::record(),
                 $clock ?? static fn(): float => hrtime(true) / 1e9,
                 $wallMillis ?? static fn(): int => (int) (microtime(true) * 1000), // whole milliseconds, like Date.now()
+                FinishRequest::outlivesRequest($sapi ?? PHP_SAPI, $_SERVER),
             );
             self::$active = $diagnostics;
             $queue->attach($diagnostics);
@@ -125,12 +132,15 @@ final class Diagnostics implements QueueCompanion
         Log::setDiagnosticsSink(null);
     }
 
-    /** Posts the buffer once its oldest line is 2 s old (the TypeScript timer, checked on queue passes). */
+    /**
+     * Posts the buffer once its oldest line is 2 s old (the TypeScript timer, checked on queue passes), in a process
+     * that outlives its requests only: a per-request runtime posts once, at shutdown (D47).
+     */
     #[\Override]
     public function tick(): void
     {
         $firstAt = $this->firstAt;
-        if ($firstAt !== null && ($this->clock)() - $firstAt >= self::BATCH_FLUSH_SECONDS) {
+        if ($this->window && $firstAt !== null && ($this->clock)() - $firstAt >= self::BATCH_FLUSH_SECONDS) {
             $this->flush();
         }
     }

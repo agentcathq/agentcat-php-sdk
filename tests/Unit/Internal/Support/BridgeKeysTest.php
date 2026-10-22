@@ -2,14 +2,17 @@
 
 declare(strict_types=1);
 
-namespace AgentCat\Tests\Unit\Laravel;
+namespace AgentCat\Tests\Unit\Internal\Support;
 
-use AgentCat\Laravel\Internal\BridgeKeys;
+use AgentCat\Internal\Support\BridgeKeys;
 use PHPUnit\Framework\TestCase;
 
-/** M2: the bridge's own keys of config/agentcat.php, with their types. */
+/** M2: a framework bridge's own keys of its `agentcat` configuration, with their types. */
 final class BridgeKeysTest extends TestCase
 {
+    /** Laravel's `exclude` default. */
+    private const array DEFAULT = ['Laravel\Boost\Mcp\Boost'];
+
     /** @var \ArrayObject<int, string> */
     private \ArrayObject $lines;
 
@@ -30,29 +33,33 @@ final class BridgeKeysTest extends TestCase
         $this->assertSame(['WARN: AgentCat option "agentcat.diagnostics_token" must be string or null, got int; the default is used'], $this->lines->getArrayCopy());
     }
 
-    public function testExcludeIsTheDefaultWhenUnsetOrNull(): void
+    public function testAListIsTheDefaultWhenUnsetOrNull(): void
     {
-        $this->assertSame(BridgeKeys::DEFAULT_EXCLUDE, $this->keys([])->exclude());
-        $this->assertSame(BridgeKeys::DEFAULT_EXCLUDE, $this->keys(['exclude' => null])->exclude());
-        $this->assertSame([], $this->keys(['exclude' => []])->exclude());
+        $this->assertSame(self::DEFAULT, $this->keys([])->strings('exclude', self::DEFAULT));
+        $this->assertSame(self::DEFAULT, $this->keys(['exclude' => null])->strings('exclude', self::DEFAULT));
+        $this->assertSame([], $this->keys(['exclude' => []])->strings('exclude', self::DEFAULT));
         $this->assertSame([], $this->lines->getArrayCopy());
     }
 
-    public function testAStringExcludeIsAListOfOneClass(): void
+    public function testAStringIsAListOfOne(): void
     {
-        $this->assertSame(['App\Mcp\Internal'], $this->keys(['exclude' => 'App\Mcp\Internal'])->exclude());
+        $this->assertSame(['App\Mcp\Internal'], $this->keys(['exclude' => 'App\Mcp\Internal'])->strings('exclude', self::DEFAULT));
         $this->assertSame([], $this->lines->getArrayCopy());
     }
 
-    public function testAnExcludeOfAnotherTypeIsTheDefaultWithOneLine(): void
+    public function testAListOfAnotherTypeIsTheDefaultWithOneLine(): void
     {
-        $this->assertSame(BridgeKeys::DEFAULT_EXCLUDE, $this->keys(['exclude' => 1.5])->exclude());
-        $this->assertSame(['WARN: AgentCat option "agentcat.exclude" must be array or string, got float; the default is used'], $this->lines->getArrayCopy());
+        $this->assertSame(self::DEFAULT, $this->keys(['exclude' => 1.5])->strings('exclude', self::DEFAULT));
+        $this->assertSame(['App\A', 'App\B'], $this->keys(['servers' => true])->strings('servers', ['App\A', 'App\B']));
+        $this->assertSame([
+            'WARN: AgentCat option "agentcat.exclude" must be array or string, got float; the default is used',
+            'WARN: AgentCat option "agentcat.servers" must be array or string, got bool; the default is used',
+        ], $this->lines->getArrayCopy());
     }
 
-    public function testAnExcludeEntryOfAnotherTypeIsIgnoredWithOneLineAndANullOneSilently(): void
+    public function testAListEntryOfAnotherTypeIsIgnoredWithOneLineAndANullOneSilently(): void
     {
-        $this->assertSame(['App\A', 'App\B'], $this->keys(['exclude' => ['App\A', null, ['App\C'], 'x' => 'App\B']])->exclude());
+        $this->assertSame(['App\A', 'App\B'], $this->keys(['exclude' => ['App\A', null, ['App\C'], 'x' => 'App\B']])->strings('exclude', self::DEFAULT));
         $this->assertSame(['WARN: AgentCat option "agentcat.exclude.2" must be string, got array; the entry is ignored'], $this->lines->getArrayCopy());
     }
 

@@ -219,8 +219,9 @@ final class EventQueue
     }
 
     /**
-     * Non-blocking: runs the pipeline for waiting events while fewer than 5 are in delivery, pumps the transport,
-     * ticks the companions and pumps the side channel. A re-entrant call (from a hook or an exporter) does nothing.
+     * Non-blocking: starts the events queued when it began while fewer than 5 are in delivery (the pipeline of a
+     * waiting one runs then), pumps the transport, ticks the companions and pumps the side channel. An event a hook
+     * queues meanwhile waits for the next pump. A re-entrant call (from a hook or an exporter) does nothing.
      *
      * `pump()` is non-blocking only when libcurl resolves host names asynchronously (threaded resolver or
      * c-ares). With a synchronous resolver, starting a transfer can block for the DNS lookup.
@@ -409,14 +410,19 @@ final class EventQueue
     }
 
     /**
-     * One pass: starts events while fewer than 5 are in delivery, oldest first (those through the pipeline, then the
-     * waiting ones, whose pipeline runs now), and pumps the transport, then ticks each companion (unless `$tick` is
-     * false) and pumps the side channel. Never throws.
+     * One pass: starts the events queued when it began while fewer than 5 are in delivery, oldest first (those through
+     * the pipeline, then the waiting ones, whose pipeline runs now), and pumps the transport, then ticks each companion
+     * (unless `$tick` is false) and pumps the side channel. Never throws.
+     *
+     * An event a hook queues meanwhile waits for the next pass: an event that starts no transfer (telemetry only, an
+     * encode failure, dropped by a hook) leaves the slots free, so a hook that keeps queueing such events cannot hold
+     * the pass. A signal drain during a hook (`finalShutdown()`) delivers the whole queue: the pass stops when the
+     * queue is empty.
      */
     private function pumpOnce(bool $tick = true): void
     {
         try {
-            while ($this->queued() > 0 && $this->transport->inFlight() < self::CONCURRENCY) {
+            for ($left = $this->queued(); $left > 0 && $this->queued() > 0 && $this->transport->inFlight() < self::CONCURRENCY; --$left) {
                 $ready = $this->ready->isEmpty() ? $this->prepare($this->waiting->dequeue()) : $this->ready->dequeue();
                 if ($ready instanceof ReadyEvent) {
                     $this->send($ready);
@@ -456,12 +462,12 @@ final class EventQueue
 
     /**
      * The pipeline of the events that waited when the pass began, whatever the free slots (`flush()`): the payloads wait
-     * in order. An event a hook queues meanwhile waits for the next pass. A hook can only add waiting events (the cap
-     * drops a prepared one first, and a waiting one only for a new one), so `$left` never outruns the queue.
+     * in order. An event a hook queues meanwhile waits for the next pass. A signal drain during a hook
+     * (`finalShutdown()`) delivers the whole queue: the pass stops when no event waits.
      */
     private function prepareWaiting(): void
     {
-        for ($left = $this->waiting->count(); $left > 0; --$left) {
+        for ($left = $this->waiting->count(); $left > 0 && !$this->waiting->isEmpty(); --$left) {
             $ready = $this->prepare($this->waiting->dequeue());
             if ($ready instanceof ReadyEvent) {
                 $this->ready->enqueue($ready);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AgentCat\Tests\Integration\Laravel;
 
+use AgentCat\AgentCat;
 use AgentCat\Event;
 use AgentCat\Internal\Delivery\EventQueue;
 use AgentCat\Internal\Delivery\RequestEndWait;
@@ -48,6 +49,7 @@ final class DeliveryTest extends BridgeTestCase
     #[\Override]
     public static function setUpBeforeClass(): void
     {
+        parent::setUpBeforeClass();
         self::$collector = MockCollector::start();
     }
 
@@ -56,6 +58,7 @@ final class DeliveryTest extends BridgeTestCase
     {
         self::$collector?->stop();
         self::$collector = null;
+        parent::tearDownAfterClass();
     }
 
     /**
@@ -237,6 +240,28 @@ final class DeliveryTest extends BridgeTestCase
         $bodies = array_map(static fn(Delivery $d): mixed => Json::decode($d->body), $this->transport->deliveries);
         $this->assertSame(['ann', 'bob', 'cid'], array_map(static fn(mixed $body): mixed => JsonAssert::at($body, 'identify_actor_given_id'), $bodies));
         $this->assertSame(['ann', 'bob', 'cid'], array_map(static fn(mixed $body): mixed => JsonAssert::at($body, 'parameters', 'extra', 'requestInfo', 'headers', 'x-user'), $bodies));
+    }
+
+    /**
+     * D41, as for the Symfony bundle: a fake records what production sends, the request of each call included.
+     * laravel/mcp's adapter reads the request from the server's own transport, whatever client tracks the server.
+     */
+    public function testAFakeRecordsTheRequestOfEachCallAsProductionSendsIt(): void
+    {
+        config(['agentcat.identify' => HeaderIdentity::class]);
+        $call = fn(): mixed => $this->postJson('/mcp/test', $this->toolCall('echo', ['msg' => 'hi', 'session_id' => 'start']), [...$this->modernHeaders('echo'), 'X-User' => 'alice'])->assertOk();
+        $call();
+        $sent = array_map(static fn(Delivery $d): mixed => Json::decode($d->body), $this->transport->deliveries);
+
+        $fake = AgentCat::fake();
+        $call();
+        $recorded = $fake->events();
+
+        $this->assertCount(1, $sent);
+        $this->assertCount(1, $recorded);
+        $this->assertSame(['alice', 'alice'], [JsonAssert::at($sent[0], 'identify_actor_given_id'), $recorded[0]->identifyActorGivenId]);
+        $this->assertSame('alice', JsonAssert::at($recorded[0]->parameters, 'extra', 'requestInfo', 'headers', 'x-user'));
+        $this->assertEquals(JsonAssert::at($sent[0], 'parameters', 'extra', 'requestInfo'), JsonAssert::at($recorded[0]->parameters, 'extra', 'requestInfo'));
     }
 
     /**

@@ -11,6 +11,7 @@ use AgentCat\Internal\Delivery\EventQueue;
 use AgentCat\Internal\Engine\TrackedServer;
 use AgentCat\Internal\Engine\TrackedServers;
 use AgentCat\Internal\Logging\Log;
+use AgentCat\Internal\Support\BridgeKeys;
 use AgentCat\Internal\Support\ConfigOptions;
 use AgentCat\Internal\Support\EnabledGate;
 use AgentCat\Internal\Support\ErrorText;
@@ -35,6 +36,9 @@ final class ServerTracker
     /** @var list<string> The keys of config/agentcat.php that the bridge reads itself; the others are options. */
     public const array BRIDGE_KEYS = ['enabled', 'project_id', 'exclude', 'projects', 'log_channel', 'diagnostics_endpoint', 'diagnostics_token'];
 
+    /** config/agentcat.php's `exclude`: the default of a value of a wrong type too. */
+    public const array DEFAULT_EXCLUDE = ['Laravel\Boost\Mcp\Boost'];
+
     private ?Client $client = null;
 
     private ?Options $options = null;
@@ -51,7 +55,7 @@ final class ServerTracker
             $keys = new BridgeKeys($config, static function (string $line) use ($bad): void {
                 $bad->append($line);
             });
-            if ($this->matches($server, $keys->exclude()) !== null) {
+            if ($this->matches($server, $keys->strings('exclude', self::DEFAULT_EXCLUDE)) !== null) {
                 return; // an excluded server touches neither the log nor diagnostics
             }
             $this->adoptLogger($app, $keys->string('log_channel'));
@@ -68,6 +72,7 @@ final class ServerTracker
                 AnswerLength::mark($server); // D59; a server that AgentCat did not track (off, or failed) keeps its answer
             }
         } catch (\Throwable $e) {
+            TrackedServers::markIncomplete(); // as Client::track(): publishCustomEvent() for the server then logs (D32)
             Log::write('Warning: Failed to track server - ' . ErrorText::of($e));
         }
     }

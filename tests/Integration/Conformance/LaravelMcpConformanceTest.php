@@ -13,7 +13,7 @@ use AgentCat\Tests\Support\LaravelMcp\LaravelStdioHarness;
 use AgentCat\Tests\Support\LaravelMcp\LaravelTestCase;
 use AgentCat\Tests\Support\LaravelMcp\LaravelTrackingFixture;
 use AgentCat\Tests\Support\LaravelMcp\RequestEchoServer;
-use AgentCat\Tests\Support\LaravelMcp\ToolCalls;
+use AgentCat\Tests\Support\ToolCalls;
 use Illuminate\Validation\ValidationException;
 use Laravel\Mcp\Exceptions\JsonRpcException;
 use PHPUnit\Framework\Attributes\Group;

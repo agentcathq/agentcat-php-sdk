@@ -16,6 +16,7 @@ use AgentCat\Internal\Json\Json;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Pipeline\QueuedEvent;
 use AgentCat\Tests\Support\Environment;
+use AgentCat\Tests\Support\EventApiGuard;
 use AgentCat\Tests\Support\JsonAssert;
 use AgentCat\Tests\Support\MemoryLogger;
 use AgentCat\Tests\Support\RecordingTransport;
@@ -38,6 +39,7 @@ final class AgentCatTest extends TestCase
     protected function setUp(): void
     {
         $this->environment = Environment::clear('AGENTCAT_ENABLED', 'AGENTCAT_API_URL', 'MCPCAT_API_URL', 'AGENTCAT_PROJECT_ID');
+        EventApiGuard::set(); // tests/bootstrap.php's closed event API again, after the clear
         $this->logger = new MemoryLogger();
         Log::setLogger($this->logger);
         $this->transport = new RecordingTransport();

@@ -2,20 +2,18 @@
 
 declare(strict_types=1);
 
-namespace AgentCat\Laravel\Internal;
+namespace AgentCat\Internal\Support;
 
 /**
- * The keys of config/agentcat.php that the bridge reads itself (not options), read with their types (Review Focus
- * 3): a value of a wrong type logs one line through `$warn`, and the default is used, so a typo never goes unseen. A
- * string `exclude` is a list of one class. Null is an unset value (`env()` of an unset variable): the default, no line.
+ * The keys of a framework bridge's `agentcat` configuration that the bridge reads itself (not options), read with their
+ * types (plan E1 Review Focus 3): a value of a wrong type logs one line through `$warn`, and the default is used, so a
+ * typo never goes unseen. Null is an unset value (`env()` of an unset variable, `%env(default::…)%` in Symfony): the
+ * default, no line. The lines name the key as the customer wrote it, `agentcat.<key>`.
  *
  * @internal
  */
 final readonly class BridgeKeys
 {
-    /** config/agentcat.php's `exclude`: the default of a value of a wrong type too. */
-    public const array DEFAULT_EXCLUDE = ['Laravel\Boost\Mcp\Boost'];
-
     private const string WRONG_TYPE = 'WARN: AgentCat option "agentcat.%s" must be %s, got %s; the default is used';
 
     private const string WRONG_ENTRY = 'WARN: AgentCat option "agentcat.%s.%s" must be %s, got %s; the entry is ignored';
@@ -29,7 +27,7 @@ final readonly class BridgeKeys
         private \Closure $warn,
     ) {}
 
-    /** `project_id`, `log_channel`, `diagnostics_endpoint` or `diagnostics_token`: a string, or null. */
+    /** A string, or null: a project ID, a log channel, a service ID, the diagnostics endpoint or token. */
     public function string(string $key): ?string
     {
         $value = $this->config[$key] ?? null;
@@ -42,35 +40,39 @@ final readonly class BridgeKeys
     }
 
     /**
-     * The server classes AgentCat never tracks.
+     * A list of strings, such as the server classes AgentCat never tracks. A string is a list of one; a null entry is
+     * unset.
+     *
+     * @param list<string> $default the value when the key is unset, and when it is of a wrong type
      *
      * @return list<string>
      */
-    public function exclude(): array
+    public function strings(string $key, array $default): array
     {
-        $value = $this->config['exclude'] ?? self::DEFAULT_EXCLUDE;
+        $value = $this->config[$key] ?? $default;
         if (is_string($value)) {
             return [$value];
         }
         if (!is_array($value)) {
-            $this->wrongType('exclude', 'array or string', $value);
+            $this->wrongType($key, 'array or string', $value);
 
-            return self::DEFAULT_EXCLUDE;
+            return $default;
         }
-        $classes = [];
-        foreach ($value as $index => $class) {
-            if (is_string($class)) {
-                $classes[] = $class;
-            } elseif ($class !== null) {
-                ($this->warn)(sprintf(self::WRONG_ENTRY, 'exclude', $index, 'string', get_debug_type($class)));
+        $strings = [];
+        foreach ($value as $index => $entry) {
+            if (is_string($entry)) {
+                $strings[] = $entry;
+            } elseif ($entry !== null) {
+                ($this->warn)(sprintf(self::WRONG_ENTRY, $key, $index, 'string', get_debug_type($entry)));
             }
         }
 
-        return $classes;
+        return $strings;
     }
 
     /**
-     * Server class => project ID; a null project is the configured `project_id`.
+     * `projects`: a server (its class in Laravel, its name in Symfony) => project ID; a null project is the configured
+     * `project_id`.
      *
      * @return array<array-key, string|null>
      */
@@ -83,11 +85,11 @@ final readonly class BridgeKeys
             return [];
         }
         $projects = [];
-        foreach ($value as $class => $project) {
+        foreach ($value as $server => $project) {
             if ($project === null || is_string($project)) {
-                $projects[$class] = $project;
+                $projects[$server] = $project;
             } else {
-                ($this->warn)(sprintf(self::WRONG_ENTRY, 'projects', $class, 'string or null', get_debug_type($project)));
+                ($this->warn)(sprintf(self::WRONG_ENTRY, 'projects', $server, 'string or null', get_debug_type($project)));
             }
         }
 

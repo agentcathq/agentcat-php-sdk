@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AgentCat\Tests\Integration\Support;
 
 use AgentCat\Internal\Json\Json;
+use PHPUnit\Framework\Assert;
 use Symfony\Component\Process\InputStream;
 use Symfony\Component\Process\Process;
 
@@ -23,6 +24,12 @@ final class MockCollector
 
     /** A new port is tried when the server exits at once (another process took the free port first). */
     private const int START_ATTEMPTS = 3;
+
+    /** How often `waitFor()` reads the requests again. */
+    private const int POLL_MICROSECONDS = 20_000;
+
+    /** The SDK's line for an event that the AgentCat API accepted, as diagnostics posts and AgentCat's log carry it. */
+    public const string SENT_EVENT = 'Successfully sent event ';
 
     private bool $stopped = false;
 
@@ -117,6 +124,50 @@ final class MockCollector
         usort($requests, static fn(\stdClass $a, \stdClass $b): int => self::number($a, 'n') <=> self::number($b, 'n'));
 
         return $requests;
+    }
+
+    /**
+     * Reads the requests of a scenario again until `$done` accepts them or `$timeout` seconds pass, and returns the last
+     * read. The caller asserts what it waited for.
+     *
+     * @param \Closure(list<\stdClass>): bool $done
+     *
+     * @return list<\stdClass> in arrival order, as `requests()` returns them
+     *
+     * @phpstan-impure the collector writes the log while the test runs
+     */
+    public function waitFor(string $baseUrl, \Closure $done, float $timeout): array
+    {
+        $deadline = microtime(true) + $timeout;
+        $requests = $this->requests($baseUrl);
+        while (!$done($requests) && microtime(true) < $deadline) {
+            usleep(self::POLL_MICROSECONDS);
+            $requests = $this->requests($baseUrl);
+        }
+
+        return $requests;
+    }
+
+    /**
+     * The diagnostics posts among `$requests` that carry a `Successfully sent event` line: of any event, or of the event
+     * `$eventId` (`evt_…`).
+     *
+     * @param list<\stdClass> $requests
+     *
+     * @return list<\stdClass>
+     */
+    public static function withASentEvent(array $requests, string $eventId = ''): array
+    {
+        return array_values(array_filter($requests, static fn(\stdClass $request): bool => str_contains(self::body($request), self::SENT_EVENT . $eventId)));
+    }
+
+    /** The body of a recorded request; the test fails when the record has none. */
+    public static function body(\stdClass $request): string
+    {
+        $body = $request->body ?? null;
+        Assert::assertIsString($body);
+
+        return $body;
     }
 
     /**

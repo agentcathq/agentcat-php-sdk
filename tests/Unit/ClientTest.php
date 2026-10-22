@@ -12,6 +12,7 @@ use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Pipeline\QueuedEvent;
 use AgentCat\Tests\Support\Autowire;
 use AgentCat\Tests\Support\Environment;
+use AgentCat\Tests\Support\EventApiGuard;
 use AgentCat\Tests\Support\MemoryLogger;
 use AgentCat\Tests\Support\RecordingTransport;
 use PHPUnit\Framework\TestCase;
@@ -29,6 +30,7 @@ final class ClientTest extends TestCase
     protected function setUp(): void
     {
         $this->environment = Environment::clear('AGENTCAT_ENABLED', 'APP_ENV', 'AGENTCAT_API_URL', 'MCPCAT_API_URL');
+        EventApiGuard::set(); // tests/bootstrap.php's closed event API again, after the clear
         $this->logger = new MemoryLogger();
         Log::setLogger($this->logger);
         $this->global = new EventQueue(transport: new RecordingTransport());

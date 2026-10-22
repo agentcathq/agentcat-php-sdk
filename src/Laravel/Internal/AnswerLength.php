@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AgentCat\Laravel\Internal;
 
+use AgentCat\Internal\Delivery\ContentLength;
 use AgentCat\Internal\Delivery\FinishRequest;
 use AgentCat\LaravelMcp\LaravelMcpAdapter;
 use Illuminate\Contracts\Foundation\Application;
@@ -14,10 +15,8 @@ use Laravel\Mcp\Server;
  * D59: laravel/mcp sends its answers without `Content-Length`. On a SAPI that sends a response only when the script
  * ends (mod_php, php-cgi, `php -S`: `FinishRequest::responseEndsWithTheScript()`), the client of such an answer then
  * waits for AgentCat's hooks and delivery. So there, in Laravel's `RequestHandled`, the plain answer of a tracked
- * server gets its length, and with D57 the client has all of it before the shutdown function delivers. A streamed
- * answer, one with a `Content-Length` or `Transfer-Encoding` of its own, and one after stray output (headers that went
- * out already, or bytes waiting in an output buffer, which would go out first and make the length short) stay as
- * laravel/mcp sends them. PHP-FPM, LiteSpeed, FrankenPHP and Octane get no listener.
+ * server gets its length, by `ContentLength`'s rule, and with D57 the client has all of it before the shutdown function
+ * delivers. PHP-FPM, LiteSpeed, FrankenPHP and Octane get no listener.
  *
  * The tracker marks the request that a tracked server answers with a request attribute: the mark lives and dies with
  * the request, so a worker that serves many requests carries none of it to the next one.
@@ -29,13 +28,12 @@ final readonly class AnswerLength
     /** The request attribute: a laravel/mcp server that AgentCat tracks answers this request. */
     public const string TRACKED = 'agentcat.tracked_mcp_server';
 
-    /** @var \Closure(): bool */
-    private \Closure $headersSent;
+    private ContentLength $length;
 
     /** @param (\Closure(): bool)|null $headersSent default `headers_sent()` */
     public function __construct(?\Closure $headersSent = null)
     {
-        $this->headersSent = $headersSent ?? static fn(): bool => headers_sent();
+        $this->length = new ContentLength($headersSent);
     }
 
     /**
@@ -60,32 +58,16 @@ final readonly class AnswerLength
     public function handle(RequestHandled $handled): void
     {
         try {
-            $headers = $handled->response->headers;
-            if ($handled->request->attributes->get(self::TRACKED) !== true || $headers->has('Content-Length') || $headers->has('Transfer-Encoding')) {
+            if ($handled->request->attributes->get(self::TRACKED) !== true) {
                 return;
             }
-            if (($this->headersSent)() || $this->outputWaits()) {
-                return; // stray output goes out before the answer: a length of the answer alone would cut its end
-            }
-            $content = $handled->response->getContent(); // false for a streamed answer (StreamedResponse)
-            if (is_string($content)) {
-                $headers->set('Content-Length', (string) strlen($content));
+            $response = $handled->response;
+            $length = $this->length->of($handled->request->getMethod(), $response->getStatusCode(), $response->headers->all(), $response->getContent());
+            if ($length !== null) {
+                $response->headers->set('Content-Length', $length);
             }
         } catch (\Throwable) {
             // the answer goes out as it is
         }
-    }
-
-    /** Some output buffer level holds bytes, which PHP sends before the answer. */
-    private function outputWaits(): bool
-    {
-        foreach (ob_get_status(true) as $status) {
-            $used = is_array($status) ? $status['buffer_used'] ?? null : null;
-            if (is_int($used) && $used > 0) {
-                return true;
-            }
-        }
-
-        return false;
     }
 }

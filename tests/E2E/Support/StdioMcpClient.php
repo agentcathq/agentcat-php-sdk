@@ -10,11 +10,11 @@ use Symfony\Component\Process\InputStream;
 use Symfony\Component\Process\Process;
 
 /**
- * A raw JSON-RPC client for an MCP stdio server: `php <script>` with pipes, one JSON message per line on stdin, every
- * stdout line kept for the test.
+ * A raw JSON-RPC client for an MCP stdio server: `php <script>` or any other command line (a `docker run`), with pipes,
+ * one JSON message per line on stdin, every stdout line kept for the test.
  *
- * The server has a 10 s timeout, checked whenever this client reads, so a hang fails the test instead of blocking it.
- * The server also ends when this process dies: its stdin then reaches EOF.
+ * The server has a timeout (10 s by default), checked whenever this client reads, so a hang fails the test instead of
+ * blocking it. The server also ends when this process dies: its stdin then reaches EOF.
  */
 final class StdioMcpClient
 {
@@ -35,15 +35,27 @@ final class StdioMcpClient
     ) {}
 
     /**
-     * Starts the server.
+     * Starts the server script with this process's PHP.
      *
      * @param string $script the server script
      * @param array<string, string> $env environment variables of the server, on top of this process's
      */
     public static function start(string $script, array $env): self
     {
+        return self::command([PHP_BINARY, $script], $env);
+    }
+
+    /**
+     * Starts the server as `$command`.
+     *
+     * @param list<string>          $command the command line, for example `DockerRuntime::command()`
+     * @param array<string, string> $env     environment variables of the command, on top of this process's
+     * @param float                 $timeout how long the command may run
+     */
+    public static function command(array $command, array $env = [], float $timeout = self::TIMEOUT_SECONDS): self
+    {
         $input = new InputStream();
-        $process = new Process([PHP_BINARY, $script], null, $env, $input, self::TIMEOUT_SECONDS);
+        $process = new Process($command, null, $env, $input, $timeout);
         $process->start();
 
         return new self($process, $input);

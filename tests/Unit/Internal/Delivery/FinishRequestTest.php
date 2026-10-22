@@ -11,6 +11,9 @@ use PHPUnit\Framework\TestCase;
 
 final class FinishRequestTest extends TestCase
 {
+    /** `$_SERVER['SERVER_SOFTWARE']` of `php -S` (recorded from PHP 8.3.6). */
+    private const string BUILT_IN_SERVER = 'PHP/8.3.6 (Development Server)';
+
     /** @var list<int> `ignore_user_abort()` as seen by each probe call */
     private static array $probeCalls = [];
 
@@ -35,7 +38,12 @@ final class FinishRequestTest extends TestCase
         yield 'FrankenPHP worker mode' => ['frankenphp', ['FRANKENPHP_WORKER' => '1'], ['frankenphp_finish_request', 'fastcgi_finish_request'], null];
         yield 'CLI' => ['cli', [], ['fastcgi_finish_request', 'litespeed_finish_request', 'frankenphp_finish_request'], null];
         yield 'built-in web server' => ['cli-server', [], ['fastcgi_finish_request'], null];
+        yield 'built-in web server with a fastcgi_finish_request() of its own' => ['cli-server', ['SERVER_SOFTWARE' => self::BUILT_IN_SERVER], ['fastcgi_finish_request'], null];
+        yield 'NGINX Unit' => ['cli-server', ['SERVER_SOFTWARE' => 'Unit/1.34.2'], ['fastcgi_finish_request'], 'fastcgi_finish_request'];
+        yield 'NGINX Unit without the function' => ['cli-server', ['SERVER_SOFTWARE' => 'Unit/1.34.2'], [], null];
+        yield 'a server software that only contains Unit/' => ['cli-server', ['SERVER_SOFTWARE' => 'NotUnit/1.0'], ['fastcgi_finish_request'], null];
         yield 'Apache mod_php' => ['apache2handler', [], ['fastcgi_finish_request'], null];
+        yield 'Apache mod_php with Unit\'s server software' => ['apache2handler', ['SERVER_SOFTWARE' => 'Unit/1.34.2'], ['fastcgi_finish_request'], null];
     }
 
     /**
@@ -94,6 +102,7 @@ final class FinishRequestTest extends TestCase
         yield 'PHP-FPM with a stray worker variable' => ['fpm-fcgi', ['FRANKENPHP_WORKER' => '1'], false];
         yield 'Apache mod_php' => ['apache2handler', [], false];
         yield 'built-in web server' => ['cli-server', [], false];
+        yield 'NGINX Unit' => ['cli-server', ['SERVER_SOFTWARE' => 'Unit/1.34.2'], false];
     }
 
     /** @param array<string, string> $server */
@@ -109,6 +118,9 @@ final class FinishRequestTest extends TestCase
         yield 'Apache mod_php' => ['apache2handler', [], [], true];
         yield 'php-cgi' => ['cgi-fcgi', [], [], true];
         yield 'built-in web server' => ['cli-server', [], ['fastcgi_finish_request'], true];
+        yield 'built-in web server with its server software' => ['cli-server', ['SERVER_SOFTWARE' => self::BUILT_IN_SERVER], ['fastcgi_finish_request'], true];
+        yield 'NGINX Unit' => ['cli-server', ['SERVER_SOFTWARE' => 'Unit/1.34.2'], ['fastcgi_finish_request'], false];
+        yield 'NGINX Unit without the function' => ['cli-server', ['SERVER_SOFTWARE' => 'Unit/1.34.2'], [], true];
         yield 'PHP-FPM' => ['fpm-fcgi', [], ['fastcgi_finish_request'], false];
         yield 'PHP-FPM with the function disabled' => ['fpm-fcgi', [], [], true];
         yield 'LiteSpeed' => ['litespeed', [], ['litespeed_finish_request'], false];
@@ -140,6 +152,15 @@ final class FinishRequestTest extends TestCase
         $this->assertFalse(FinishRequest::responseEndsWithTheScript('frankenphp', [], $none, $this->environment('1')));
         $this->assertTrue(FinishRequest::responseEndsWithTheScript('frankenphp', [], $none, $this->environment(false)));
         $this->assertTrue(FinishRequest::outlivesRequest('frankenphp', [], $this->environment('1')));
+    }
+
+    /** Only a string names the server software: `$_SERVER` is an array that any code can write to. */
+    public function testUnitIsNamedByAStringServerSoftware(): void
+    {
+        $exists = static fn(string $name): bool => true;
+
+        $this->assertNull(FinishRequest::functionFor('cli-server', ['SERVER_SOFTWARE' => ['Unit/1.34.2']], $exists));
+        $this->assertNull(FinishRequest::functionFor('cli-server', ['SERVER_SOFTWARE' => null], $exists));
     }
 
     public function testDetectFindsNothingUnderTheCliTestRunner(): void

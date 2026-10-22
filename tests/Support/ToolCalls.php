@@ -2,9 +2,12 @@
 
 declare(strict_types=1);
 
-namespace AgentCat\Tests\Support\LaravelMcp;
+namespace AgentCat\Tests\Support;
 
-/** The arguments each test tool received, per tool name. The tools record here; `LaravelTestCase` resets it. */
+/**
+ * The arguments each test tool received, per tool name. The laravel/mcp and symfony/mcp-bundle test tools record here;
+ * their base test cases reset it.
+ */
 final class ToolCalls
 {
     /** @var array<string, list<array<string, mixed>>> */
@@ -22,10 +25,9 @@ final class ToolCalls
         return self::$calls[$tool] ?? [];
     }
 
-    /** Forgets every call, `CustomCallTool`'s too. */
+    /** Forgets every call. */
     public static function reset(): void
     {
         self::$calls = [];
-        CustomCallTool::reset();
     }
 }
