@@ -15,6 +15,9 @@ final class Log
     /** True once `setLogger()` or `adopt()` chose the logger; the lazy file fallback does not count. */
     private static bool $chosen = false;
 
+    /** @var array{logger: ?LoggerInterface, chosen: bool}|null the routing `divert()` replaced; null without one */
+    private static ?array $beforeDiversion = null;
+
     /** A non-null logger wins over every later `adopt()`; null goes back to the file fallback. */
     public static function setLogger(?LoggerInterface $logger): void
     {
@@ -35,11 +38,34 @@ final class Log
         self::$chosen = true;
     }
 
+    /**
+     * Sends every later line to `$logger` only, until `endDiversion()`; `adopt()` changes nothing meanwhile. A second
+     * `divert()` changes the target and keeps the routing from before the first one. `AgentCat::fake()` uses it.
+     */
+    public static function divert(LoggerInterface $logger): void
+    {
+        self::$beforeDiversion ??= ['logger' => self::$logger, 'chosen' => self::$chosen];
+        self::$logger = $logger;
+        self::$chosen = true;
+    }
+
+    /** Puts back the routing from before the first `divert()`: the logger, and whether `adopt()` can choose one. */
+    public static function endDiversion(): void
+    {
+        if (self::$beforeDiversion === null) {
+            return;
+        }
+        self::$logger = self::$beforeDiversion['logger'];
+        self::$chosen = self::$beforeDiversion['chosen'];
+        self::$beforeDiversion = null;
+    }
+
     /** Tests only. */
     public static function reset(): void
     {
         self::$logger = null;
         self::$chosen = false;
+        self::$beforeDiversion = null;
     }
 
     /** Never throws. The level comes from the line prefix only. */

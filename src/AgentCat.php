@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace AgentCat;
 
+use AgentCat\Internal\Logging\Log;
+use AgentCat\Testing\AgentCatFake;
+use AgentCat\Testing\Internal\FakeLog;
+
 /**
  * The AgentCat entry point: `AgentCat::track($builder, 'proj_…')` before `$builder->build()`.
  *
@@ -43,6 +47,37 @@ final class AgentCat
     }
 
     /**
+     * Publishes a custom event, for a tracked server or for a session.
+     *
+     * With a server tracked by any client (the Builder, or the server built from it), the event goes to the project
+     * the server was tracked with, whatever `$projectId` says, and carries the server name and version and the SDK
+     * fields. The server's `redactEvent` option applies to it; `redactSensitiveInformation` does not. When the server
+     * was tracked with `enableTracing: false`, the event is dropped. Without `$event->sessionId`, the event has no
+     * session.
+     *
+     * With a session ID string, the event goes to `$projectId` for that session, used as it is; `$event->sessionId`
+     * wins over it. No server or SDK fields and no hooks apply.
+     *
+     * The event is queued, not sent: AgentCat delivers it like any other event. Apart from the two errors below, it
+     * never throws: a failure is logged. When a `track()` in this process could not track a server, or ran while
+     * AgentCat was off, a server that is not tracked logs a warning instead of the second error. In test environments
+     * it validates `$projectId` and then does nothing, like `track()` (see `AGENTCAT_ENABLED` there).
+     *
+     * In a file without `declare(strict_types=1)`, PHP turns an int, float or bool first argument into a session ID
+     * string.
+     *
+     * @param object|string $serverOrSessionId A tracked server, or the session ID of the event.
+     * @param string|null $projectId Your AgentCat project ID (`proj_…`); required, even for a tracked server.
+     * @param CustomEvent|null $event The event data; null sends an event with no data.
+     *
+     * @throws \InvalidArgumentException when `$projectId` is null or empty, or when the server is not tracked
+     */
+    public static function publishCustomEvent(object|string $serverOrSessionId, ?string $projectId, ?CustomEvent $event = null): void
+    {
+        self::client()->publishCustomEvent($serverOrSessionId, $projectId, $event);
+    }
+
+    /**
      * Sends the queued events now and waits for them. Rarely needed: AgentCat delivers on its own, between requests
      * and when the process ends.
      *
@@ -65,6 +100,28 @@ final class AgentCat
         self::client()->shutdown();
     }
 
+    /**
+     * Starts recording for your test suite: installs a client that records every event and sends nothing, and
+     * returns the fake to assert on. Restore the real client with `AgentCat::setClient(null)` in `tearDown()`.
+     *
+     * Call it first, before the application builds its servers. In a test environment, a server tracked before
+     * `fake()` is not tracked at all: no tool call of it is recorded. With `AGENTCAT_ENABLED=true`, a server tracked
+     * before `fake()` keeps the client that tracked it.
+     *
+     * While the fake is the shared client, AgentCat logs to the fake's `logs()` only, and adopts no Builder's PSR-3
+     * logger. `setClient()` brings back the log routing from before the first `fake()`.
+     *
+     * The fake records whatever `AGENTCAT_ENABLED` says, so a CI that sets `AGENTCAT_ENABLED=false` still works. Test
+     * environments without `fake()` stay silent: `track()` does nothing there.
+     */
+    public static function fake(): AgentCatFake
+    {
+        $fake = new AgentCatFake();
+        self::setClient($fake->client());
+
+        return $fake;
+    }
+
     /** The shared client; the first call creates it. */
     public static function client(): Client
     {
@@ -73,10 +130,16 @@ final class AgentCat
 
     /**
      * Replaces the shared client, for example with one from your dependency-injection container. Null goes back to
-     * a new default client.
+     * a new default client. Replacing the client of a fake brings back the log routing from before the first
+     * `fake()`.
      */
     public static function setClient(?Client $client): void
     {
         self::$client = $client;
+        Log::endDiversion();
+        $fakeLog = $client instanceof Client ? FakeLog::of($client) : null;
+        if ($fakeLog instanceof FakeLog) {
+            Log::divert($fakeLog); // a fake's client: AgentCat logs to the fake only
+        }
     }
 }

@@ -14,6 +14,13 @@ use PHPUnit\Framework\TestCase;
 
 final class TrackedServersTest extends TestCase
 {
+    #[\Override]
+    protected function tearDown(): void
+    {
+        TrackedServers::resetIncomplete();
+        TrackedServers::resetSkipped();
+    }
+
     public function testAServerHasTheStateItWasAddedWith(): void
     {
         $server = new \stdClass();
@@ -36,6 +43,36 @@ final class TrackedServersTest extends TestCase
         gc_collect_cycles();
 
         $this->assertNull($gone->get());
+    }
+
+    public function testTheIncompleteFlagIsProcessWideUntilReset(): void
+    {
+        $server = new \stdClass();
+        $state = $this->state($server);
+        TrackedServers::add($server, $state);
+        TrackedServers::resetIncomplete();
+        $this->assertFalse(TrackedServers::incomplete());
+
+        TrackedServers::markIncomplete();
+        TrackedServers::markIncomplete();
+
+        $this->assertTrue(TrackedServers::incomplete());
+        TrackedServers::resetIncomplete();
+        $this->assertFalse(TrackedServers::incomplete());
+        $this->assertSame($state, TrackedServers::get($server), 'the reset keeps the tracked servers');
+    }
+
+    public function testTheSkippedFlagIsProcessWideUntilReset(): void
+    {
+        TrackedServers::resetSkipped();
+        $this->assertFalse(TrackedServers::skipped());
+
+        TrackedServers::markSkipped();
+
+        $this->assertTrue(TrackedServers::skipped());
+        $this->assertFalse(TrackedServers::incomplete(), 'a separate flag');
+        TrackedServers::resetSkipped();
+        $this->assertFalse(TrackedServers::skipped());
     }
 
     private function state(object $server): TrackedServer

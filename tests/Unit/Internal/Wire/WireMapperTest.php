@@ -261,6 +261,17 @@ final class WireMapperTest extends TestCase
         $this->assertFalse(property_exists($this->body($this->base()), 'duration'));
     }
 
+    /** PHP 8.5 warns when it casts a float outside the int range: such a duration is left out on every PHP version. */
+    #[Group('ac-07-30')]
+    public function testADurationOutsideTheIntRangeIsLeftOut(): void
+    {
+        foreach ([1e19, -1e19, 9.223372036854775808E18, 1e30] as $duration) {
+            $this->assertFalse(property_exists($this->body(new Event(projectId: 'p', duration: $duration)), 'duration'), (string) $duration);
+        }
+        $this->assertSame(9_223_372_036_854_774_784, $this->body(new Event(projectId: 'p', duration: 9.223372036854774784E18))->duration, 'the last float below 2^63');
+        $this->assertSame(PHP_INT_MIN, $this->body(new Event(projectId: 'p', duration: -9.223372036854775808E18))->duration, '-2^63 fits');
+    }
+
     #[Group('ac-07-31')]
     public function testMapperNeverShortensStrings(): void
     {

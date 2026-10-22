@@ -49,6 +49,9 @@ final class EventQueue
     /** True while `pump()` or `flush()` runs: guards against re-entrant calls from hooks and exporters. */
     private bool $busy = false;
 
+    /** Fixed by the first `shutdown()`: later shutdowns deliver only until then (one budget per queue). */
+    private ?float $shutdownDeadline = null;
+
     /**
      * @param (\Closure(): void)|null        $onEnqueue the delivery-trigger registrar, called on every `add()`
      * @param (\Closure(Event): string)|null $encode    builds the HTTP body; default `WireEncoder::encode(...)`
@@ -66,12 +69,19 @@ final class EventQueue
         $this->endpoint = ApiBaseUrl::endpoint(ApiBaseUrl::resolve()); // environment or default, until configure()
     }
 
-    /** The queue of this process; on first use it registers the shutdown delivery for the first event. */
+    /**
+     * The queue of this process; its first event registers the shutdown delivery and installs the signal drain
+     * (CLI servers with ext-pcntl).
+     */
     public static function global(): self
     {
         if (!self::$global instanceof self) {
             $flusher = new ShutdownFlusher(static fn(): self => self::global(), null, FinishRequest::detect());
-            self::$global = new self(onEnqueue: $flusher->ensureRegistered(...));
+            $signals = new SignalDrain(static fn(): self => self::global());
+            self::$global = new self(onEnqueue: static function () use ($flusher, $signals): void {
+                $flusher->ensureRegistered();
+                $signals->install();
+            });
         }
 
         return self::$global;
@@ -139,52 +149,31 @@ final class EventQueue
      */
     public function flush(?float $timeoutSeconds = null): bool
     {
-        if ($this->busy) {
-            return false;
-        }
-        $this->busy = true;
-
-        try {
-            // A NaN or negative timeout means "no time left". max() is no guard: max(0.0, NAN) is NaN on PHP 8.4+.
-            $deadline = $timeoutSeconds === null
-                ? INF
-                : $this->transport->now() + (is_nan($timeoutSeconds) ? 0.0 : max(0.0, $timeoutSeconds));
-            while (true) {
-                $this->pumpOnce();
-                if ($this->waiting->isEmpty() && $this->transport->inFlight() === 0) {
-                    return true;
-                }
-                if ($this->transport->now() >= $deadline) {
-                    return false;
-                }
-                // Slots freed by the last pump are refilled at once; waiting would sleep with idle slots.
-                if ($this->waiting->isEmpty() || $this->transport->inFlight() >= self::CONCURRENCY) {
-                    $this->transport->waitForActivity($deadline);
-                }
-            }
-        } catch (\Throwable $e) {
-            Log::write(self::GAVE_UP . ErrorText::of($e));
-
-            return false;
-        } finally {
-            $this->busy = false;
-        }
+        return $this->deliverUntil(fn(): float => $timeoutSeconds === null ? INF : $this->transport->now() + $this->budget($timeoutSeconds));
     }
 
-    /** Stops accepting events, then delivers for at most the shutdown timeout (TypeScript `destroy()`). */
+    /**
+     * Stops accepting events, then delivers for at most the shutdown timeout (TypeScript `destroy()`). The first call
+     * fixes the deadline; a later call delivers only until that same deadline, and dispatches nothing once it has
+     * passed. So a signal drain and the shutdown function after it, or a signal during the shutdown function's flush,
+     * share one budget.
+     */
     public function shutdown(): void
     {
         $this->accepting = false;
-        $this->flush($this->shutdownTimeoutSeconds);
+        if (!$this->shutdownDeadlinePassed()) {
+            $this->deliverUntil(fn(): float => $this->shutdownDeadline ??= $this->transport->now() + $this->budget($this->shutdownTimeoutSeconds));
+        }
         if (!$this->waiting->isEmpty()) {
             Log::write(sprintf('Shutting down with %d events still in queue', $this->waiting->count()));
         }
     }
 
     /**
-     * `shutdown()` from the last shutdown function. No `pump()` or `flush()` frame is live then, but an `exit()`
-     * or a fatal error inside one (in a hook or an exporter) skips the rest of it, `finally` included, and leaves
-     * the re-entrancy guard set: clear it first, so that the waiting events are still delivered.
+     * `shutdown()` from the last shutdown function or from the signal drain. An `exit()` or a fatal error inside a
+     * `pump()` or `flush()` frame (in a hook or an exporter) skips the rest of it, `finally` included, and leaves the
+     * re-entrancy guard set; a signal can arrive while such a frame runs. Clear the guard first, so that the waiting
+     * events are still delivered.
      */
     public function finalShutdown(): void
     {
@@ -196,6 +185,58 @@ final class EventQueue
     public function stats(): array
     {
         return ['queueLength' => $this->waiting->count(), 'activeRequests' => $this->transport->inFlight()];
+    }
+
+    /** True when an earlier `shutdown()` fixed the deadline and that deadline has passed. */
+    private function shutdownDeadlinePassed(): bool
+    {
+        try {
+            return $this->shutdownDeadline !== null && $this->transport->now() >= $this->shutdownDeadline;
+        } catch (\Throwable) {
+            return false; // the delivery loop logs the transport's failure
+        }
+    }
+
+    /** A NaN or negative timeout means "no time left". max() is no guard: max(0.0, NAN) is NaN on PHP 8.4+. */
+    private function budget(float $timeoutSeconds): float
+    {
+        return is_nan($timeoutSeconds) ? 0.0 : max(0.0, $timeoutSeconds);
+    }
+
+    /**
+     * The delivery loop of `flush()` and `shutdown()`. A re-entrant call returns false at once.
+     *
+     * @param \Closure(): float $deadline read once, after the re-entrancy guard is taken
+     */
+    private function deliverUntil(\Closure $deadline): bool
+    {
+        if ($this->busy) {
+            return false;
+        }
+        $this->busy = true;
+
+        try {
+            $until = $deadline();
+            while (true) {
+                $this->pumpOnce();
+                if ($this->waiting->isEmpty() && $this->transport->inFlight() === 0) {
+                    return true;
+                }
+                if ($this->transport->now() >= $until) {
+                    return false;
+                }
+                // Slots freed by the last pump are refilled at once; waiting would sleep with idle slots.
+                if ($this->waiting->isEmpty() || $this->transport->inFlight() >= self::CONCURRENCY) {
+                    $this->transport->waitForActivity($until);
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::write(self::GAVE_UP . ErrorText::of($e));
+
+            return false;
+        } finally {
+            $this->busy = false;
+        }
     }
 
     private function pumpOnce(): void

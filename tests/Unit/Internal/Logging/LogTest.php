@@ -163,6 +163,55 @@ final class LogTest extends TestCase
         $this->assertSame(['hello'], $second->messages());
     }
 
+    public function testADiversionTakesEveryLineAndBlocksAdoption(): void
+    {
+        $set = new MemoryLogger();
+        Log::setLogger($set);
+        $first = new MemoryLogger();
+        $second = new MemoryLogger();
+
+        Log::divert($first);
+        Log::write('one');
+        Log::divert($second);
+        Log::adopt(new MemoryLogger());
+        Log::write('two');
+        Log::endDiversion();
+        Log::write('three');
+
+        $this->assertSame(['one'], $first->messages());
+        $this->assertSame(['two'], $second->messages());
+        $this->assertSame(['three'], $set->messages(), 'the routing from before the first diversion');
+    }
+
+    public function testEndingADiversionReopensAdoption(): void
+    {
+        Log::divert(new MemoryLogger());
+        Log::endDiversion();
+        Log::endDiversion(); // without a diversion: nothing changes
+        $adopted = new MemoryLogger();
+
+        Log::adopt($adopted);
+        Log::write('hello');
+
+        $this->assertSame(['hello'], $adopted->messages());
+    }
+
+    public function testResetForgetsADiversion(): void
+    {
+        $set = new MemoryLogger();
+        Log::setLogger($set);
+        Log::divert(new MemoryLogger());
+        Log::reset();
+        $adopted = new MemoryLogger();
+        Log::adopt($adopted);
+
+        Log::endDiversion();
+        Log::write('hello');
+
+        $this->assertSame(['hello'], $adopted->messages(), 'nothing to end after reset()');
+        $this->assertSame([], $set->messages());
+    }
+
     public function testTheFileFallbackDoesNotStopALaterAdoption(): void
     {
         $home = sys_get_temp_dir() . '/agentcat-logtest-' . bin2hex(random_bytes(6));

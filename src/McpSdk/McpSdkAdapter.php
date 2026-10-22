@@ -7,11 +7,13 @@ namespace AgentCat\McpSdk;
 use AgentCat\Internal\Engine\CallInterceptor;
 use AgentCat\Internal\Engine\Publisher;
 use AgentCat\Internal\Engine\TrackedServer;
+use AgentCat\Internal\Engine\TrackedServers;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\SdkVersion;
 use AgentCat\Internal\Support\ErrorText;
 use AgentCat\Internal\Support\StrictErrors;
 use AgentCat\McpSdk\Internal\Access\BuilderAccess;
+use AgentCat\McpSdk\Internal\Access\ServerAccess;
 use AgentCat\McpSdk\Internal\CallToolInterceptor;
 use AgentCat\McpSdk\Internal\CapturingReferenceHandler;
 use AgentCat\McpSdk\Internal\Delegates;
@@ -131,6 +133,41 @@ final class McpSdkAdapter
                 return [null, null];
             }
         };
+    }
+
+    /**
+     * The tracking state of a server built from a tracked Builder (01 AC-69): AgentCat's `tools/call` handler, among
+     * the server's request handlers, holds it. A state found is kept for the server. Never throws.
+     *
+     * When the request handlers cannot be read (C6), the compatibility line is logged once per server, and
+     * `TrackedServers::incomplete()` turns true.
+     *
+     * @return TrackedServer|null null when the object is not an mcp/sdk server, its Builder was not tracked, or its
+     *                            request handlers cannot be read
+     */
+    public static function trackedServer(object $server): ?TrackedServer
+    {
+        if (!$server instanceof Server) {
+            return null;
+        }
+        try {
+            $handlers = StrictErrors::run(static fn(): array => ServerAccess::requestHandlers(ServerAccess::protocol($server)));
+        } catch (\Throwable) {
+            Drift::report($server);
+            TrackedServers::markIncomplete();
+
+            return null;
+        }
+        foreach ($handlers as $handler) {
+            if ($handler instanceof CallToolInterceptor) {
+                $tracked = $handler->server();
+                TrackedServers::add($server, $tracked);
+
+                return $tracked;
+            }
+        }
+
+        return null;
     }
 
     /**

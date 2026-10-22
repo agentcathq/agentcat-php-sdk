@@ -5,15 +5,19 @@ declare(strict_types=1);
 namespace AgentCat;
 
 use AgentCat\Internal\ClientSeams;
+use AgentCat\Internal\Constants;
 use AgentCat\Internal\Delivery\EventQueue;
 use AgentCat\Internal\Engine\CallInterceptor;
 use AgentCat\Internal\Engine\Publisher;
 use AgentCat\Internal\Engine\TrackedServer;
 use AgentCat\Internal\Engine\TrackedServers;
 use AgentCat\Internal\Logging\Log;
+use AgentCat\Internal\Pipeline\QueuedEvent;
 use AgentCat\Internal\Support\Env;
 use AgentCat\Internal\Support\ErrorText;
 use AgentCat\Internal\Support\TestMode;
+use AgentCat\Internal\Support\Values;
+use AgentCat\Internal\Tags\TagValidator;
 use AgentCat\McpSdk\McpSdkAdapter;
 use Psr\Log\LoggerInterface;
 
@@ -72,6 +76,8 @@ final readonly class Client
     {
         try {
             if (!($this->enabled)()) {
+                TrackedServers::markSkipped(); // a fake() after this finds no tracked server: it must not throw then
+
                 return $server; // D44 AGENTCAT_ENABLED, else D31: nothing in test environments unless fake()
             }
             $options ??= new Options();
@@ -118,9 +124,101 @@ final readonly class Client
 
             return $server;
         } catch (\Throwable $e) {
+            // Every failure ends here, after the shape or compatibility line where there is one.
+            TrackedServers::markIncomplete();
             Log::write('Warning: Failed to track server - ' . ErrorText::of($e));
 
             return $server;
+        }
+    }
+
+    /**
+     * Publishes a custom event, for a tracked server or for a session.
+     *
+     * With a server tracked by any client (the Builder, or the server built from it), the event goes to the project
+     * the server was tracked with, whatever `$projectId` says, and carries the server name and version and the SDK
+     * fields. The server's `redactEvent` option applies to it; `redactSensitiveInformation` does not. When the server
+     * was tracked with `enableTracing: false`, the event is dropped. Without `$event->sessionId`, the event has no
+     * session.
+     *
+     * With a session ID string, the event goes to `$projectId` for that session, used as it is; `$event->sessionId`
+     * wins over it. No server or SDK fields and no hooks apply.
+     *
+     * The event is queued, not sent: AgentCat delivers it like any other event. Apart from the two errors below, it
+     * never throws: a failure is logged. When a `track()` in this process could not track a server, or ran while
+     * AgentCat was off, a server that is not tracked logs a warning instead of the second error. In test environments
+     * it validates `$projectId` and then does nothing, like `track()` (see `AGENTCAT_ENABLED` there).
+     *
+     * In a file without `declare(strict_types=1)`, PHP turns an int, float or bool first argument into a session ID
+     * string.
+     *
+     * @param object|string $serverOrSessionId A tracked server, or the session ID of the event.
+     * @param string|null $projectId Your AgentCat project ID (`proj_…`); required, even for a tracked server.
+     * @param CustomEvent|null $event The event data; null sends an event with no data.
+     *
+     * @throws \InvalidArgumentException when `$projectId` is null or empty, or when the server is not tracked
+     */
+    public function publishCustomEvent(object|string $serverOrSessionId, ?string $projectId, ?CustomEvent $event = null): void
+    {
+        if ($projectId === null || $projectId === '') {
+            throw new \InvalidArgumentException('projectId is required for publishCustomEvent');
+        }
+        if (!($this->enabled)()) {
+            return; // D44 AGENTCAT_ENABLED, else D31: track() tracked nothing here, so no server is looked up
+        }
+        $event ??= new CustomEvent();
+        $sessionId = $event->sessionId ?? '';
+        $server = null;
+        if (is_string($serverOrSessionId)) {
+            $sessionId = $sessionId !== '' ? $sessionId : $serverOrSessionId; // verbatim: no derivation, '' is sessionless
+        } else {
+            $server = TrackedServers::get($serverOrSessionId) ?? McpSdkAdapter::trackedServer($serverOrSessionId);
+            if (!$server instanceof TrackedServer) {
+                if (TrackedServers::incomplete()) {
+                    // AgentCat's own failure, logged before: it must not throw into the customer's code
+                    Log::write('Warning: Failed to publish custom event - the server is not tracked (see the earlier AgentCat log line)');
+
+                    return;
+                }
+                if (TrackedServers::skipped()) {
+                    // a test that tracked the server before fake(): its code must not get the exception
+                    Log::write('Warning: Failed to publish custom event - the server is not tracked (track() ran while AgentCat was off; call AgentCat::fake() before track())');
+
+                    return;
+                }
+
+                throw new \InvalidArgumentException('Server is not tracked. Please call agentcat.track() first or provide a session ID string.');
+            }
+            if ($sessionId === '') {
+                Log::write('publishCustomEvent: no sessionId provided; event will be published without a session. Pass eventData.sessionId to attribute it to a task.');
+            }
+        }
+
+        try {
+            $custom = new Event(
+                sessionId: $sessionId,
+                projectId: $projectId,
+                eventType: Constants::CUSTOM_EVENT_TYPE,
+                duration: $event->duration,
+                resourceName: $event->resourceName,
+                parameters: $event->parameters,
+                response: $event->response,
+                userIntent: $event->message,
+                isError: $event->isError,
+                error: $event->error, // sent as it is: no exception capture
+                tags: TagValidator::validate($event->tags), // null for null or no valid entry
+            );
+            if (Values::isObjectLike($event->properties) && Values::entries($event->properties) !== []) {
+                $custom->properties = $event->properties;
+            }
+            if ($server instanceof TrackedServer) {
+                $server->publisher()->publishCustom($server, $custom); // the queue of the client that tracked the server
+            } else {
+                $this->publisher->queue()->add(new QueuedEvent($custom));
+            }
+            Log::write(sprintf("Published custom event %s with type 'agentcat:custom'", $sessionId !== '' ? 'for session ' . $sessionId : 'without a session'));
+        } catch (\Throwable $e) {
+            Log::write('Warning: Failed to publish custom event - ' . ErrorText::of($e));
         }
     }
 

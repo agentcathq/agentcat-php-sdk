@@ -100,6 +100,19 @@ final class HttpHarness
      */
     public function modern(string $method, array $params, ?string $name = null, ?array $clientInfo = self::MODERN_CLIENT): \stdClass
     {
+        return $this->send($method, self::modernParams($params, $clientInfo), self::modernHeaders($method, $name), false);
+    }
+
+    /**
+     * The params of a 2026-07-28 request: the protocol version, client capabilities and client info in `_meta`.
+     *
+     * @param array<string, mixed> $params
+     * @param array{name: string, version: string}|null $clientInfo
+     *
+     * @return array<string, mixed>
+     */
+    public static function modernParams(array $params, ?array $clientInfo): array
+    {
         $meta = is_array($params['_meta'] ?? null) ? $params['_meta'] : [];
         $meta['io.modelcontextprotocol/protocolVersion'] = self::MODERN_PROTOCOL_VERSION;
         $meta['io.modelcontextprotocol/clientCapabilities'] = new \stdClass();
@@ -107,12 +120,23 @@ final class HttpHarness
             $meta['io.modelcontextprotocol/clientInfo'] = $clientInfo;
         }
         $params['_meta'] = $meta;
+
+        return $params;
+    }
+
+    /**
+     * The standard headers of a 2026-07-28 request.
+     *
+     * @return array<string, string>
+     */
+    public static function modernHeaders(string $method, ?string $name): array
+    {
         $headers = ['MCP-Protocol-Version' => self::MODERN_PROTOCOL_VERSION, 'Mcp-Method' => $method];
         if ($name !== null) {
             $headers['Mcp-Name'] = $name;
         }
 
-        return $this->send($method, $params, $headers, false);
+        return $headers;
     }
 
     /**
@@ -149,7 +173,7 @@ final class HttpHarness
         $message = ['jsonrpc' => '2.0', 'id' => $id, 'method' => $method, 'params' => $params === [] ? new \stdClass() : $params];
         $response = $this->post($message, $headers, $withSession);
 
-        return $this->decode((string) $response->getBody(), $response->getHeaderLine('Content-Type'), $id);
+        return self::decode((string) $response->getBody(), $response->getHeaderLine('Content-Type'), $id);
     }
 
     /**
@@ -180,7 +204,7 @@ final class HttpHarness
     }
 
     /** A JSON body, or the `data:` line of an SSE body that answers request `$id`. */
-    private function decode(string $body, string $contentType, int $id): \stdClass
+    public static function decode(string $body, string $contentType, int $id): \stdClass
     {
         if (str_starts_with($contentType, 'text/event-stream')) {
             foreach (explode("\n", $body) as $line) {

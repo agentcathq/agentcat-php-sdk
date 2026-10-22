@@ -613,6 +613,36 @@ final class CurlTransportTest extends TestCase
         $this->assertCount(1, self::collector()->requests($base));
     }
 
+    /**
+     * A signal can run a nested drain right after `curl_multi_add_handle()`. The transfer must count as in flight by
+     * then, or the drain loses its result and the entry written afterwards never finishes.
+     */
+    #[MaximumDuration(1000)]
+    public function testATransferIsInFlightWhenItsHandleIsAdded(): void
+    {
+        $base = self::collector()->scenario();
+        $probe = new class {
+            public ?CurlTransport $transport = null;
+
+            /** @var list<int> `inFlight()` when `curl_multi_add_handle()` returned */
+            public array $inFlightAtAdd = [];
+        };
+        $multiStatus = static function (string $function, int $code) use ($probe): int {
+            if ($function === 'curl_multi_add_handle' && $probe->transport instanceof CurlTransport) {
+                $probe->inFlightAtAdd[] = $probe->transport->inFlight();
+            }
+
+            return $code;
+        };
+        $transport = new CurlTransport(multiStatus: $multiStatus);
+        $probe->transport = $transport;
+
+        $this->assertTrue($transport->send($this->delivery($base), $this->deadline()));
+
+        $this->assertSame([1], $probe->inFlightAtAdd);
+        $this->assertSame([self::SUCCESS], $this->logger->messages());
+    }
+
     #[Group('ac-07-13')]
     #[MaximumDuration(1000)]
     public function testAFailingExecFailsTheTransfersSoNothingWaitsForever(): void
