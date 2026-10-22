@@ -12,11 +12,13 @@ use AgentCat\Internal\Tools\GetMoreTools;
 use AgentCat\Options;
 use AgentCat\Tests\Support\Golden;
 use AgentCat\Tests\Support\JsonAssert;
+use AgentCat\Tests\Support\ListingLines;
 use AgentCat\Tests\Support\McpSdk\CustomerHandler;
 use AgentCat\Tests\Support\McpSdk\GreetingTool;
 use AgentCat\Tests\Support\McpSdk\HttpHarness;
 use AgentCat\Tests\Support\McpSdk\McpSdkVersion;
 use AgentCat\Tests\Support\McpSdk\NameService;
+use AgentCat\Tests\Support\McpSdk\RecordingTool;
 use AgentCat\Tests\Support\McpSdk\Tools;
 use AgentCat\Tests\Support\McpSdk\TrackingFixture;
 use AgentCat\ToolCall;
@@ -31,6 +33,8 @@ use Mcp\Schema\JsonRpc\Request;
 use Mcp\Schema\Request\CallToolRequest;
 use Mcp\Schema\Request\ListToolsRequest;
 use Mcp\Schema\Result\CallToolResult;
+use Mcp\Schema\Result\ListToolsResult;
+use Mcp\Schema\Tool;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -38,6 +42,8 @@ use PHPUnit\Framework\TestCase;
 final class CallToolTest extends TestCase
 {
     private const string SESSION = 'ses_bbbbbbbbbbbbbbbbbbbbbbbbbbb';
+
+    private const string REBUILT = 'Rebuilt injection registries on demand (tools/call before tools/list on this instance)';
 
     private TrackingFixture $fixture;
 
@@ -171,6 +177,193 @@ final class CallToolTest extends TestCase
         $this->assertCount(2, $this->fixture->events());
     }
 
+    /** @return iterable<string, array{bool}> */
+    public static function eras(): iterable
+    {
+        yield 'handshake' => [false];
+        yield '2026-07-28' => [true];
+    }
+
+    /**
+     * D66 (B10 fixed): a server that never listed (every PHP-FPM request) rebuilds from page 1 to the page that names
+     * the tool, so the 51st tool, alone on page 2 of mcp/sdk's pages of 50, keeps its own required `session_id`.
+     */
+    #[DataProvider('eras')]
+    #[Group('ac-02-19')]
+    #[Group('ac-02-20')]
+    public function testTheFiftyFirstToolKeepsItsOwnSessionId(bool $modern): void
+    {
+        $builder = TrackingFixture::builder();
+        foreach (range(1, 50) as $i) {
+            Tools::named($builder, sprintf('t%02d', $i));
+        }
+        $own = Tools::own($builder);
+        $this->fixture->track($builder);
+        $harness = $this->fixture->harness($builder);
+        $arguments = ['session_id' => 'theirs', 'agent_id' => 'a1'];
+
+        $answer = $modern ? $harness->callToolModern('own', $arguments) : $harness->callTool('own', $arguments);
+
+        $this->assertObjectNotHasProperty('error', $answer); // without D66: -32602, "Missing required properties"
+        $this->assertSame([['session_id' => 'theirs', 'agent_id' => 'a1']], $own->calls);
+        $this->assertSame('foreign', $this->tag($this->fixture->event(), Constants::TAG_SESSION_SOURCE));
+        $this->assertSame([ListingLines::ownSessionId('own'), self::REBUILT], $this->fixture->lines());
+    }
+
+    /** D66 (B10 fixed): each listed page merges into the registries, so a tool of an earlier page is stripped exactly. */
+    #[Group('ac-02-8')]
+    public function testListedPagesMergeIntoTheRegistries(): void
+    {
+        $builder = TrackingFixture::builder()->setPaginationLimit(1);
+        $echo = Tools::echo($builder);
+        $own = Tools::own($builder);
+        $this->fixture->track($builder);
+        $harness = $this->fixture->harness($builder);
+        $cursor = JsonAssert::at($harness->listTools(), 'nextCursor');
+        $this->assertIsString($cursor);
+        $harness->listTools($cursor);
+
+        $harness->callTool('echo', ['msg' => 'hi', 'agent_id' => 'a1', 'session_id' => 'start']);
+        $harness->callTool('own', ['session_id' => 'mine']);
+
+        $this->assertSame([['msg' => 'hi', 'agent_id' => 'a1']], $echo->calls, 'agent tracking is off: agent_id is not ours');
+        $this->assertSame([['session_id' => 'mine']], $own->calls);
+        $this->assertSame([ListingLines::ownSessionId('own')], $this->fixture->lines(), 'both tools were listed: no rebuild');
+    }
+
+    /**
+     * D66 (B10 fixed): the rebuild stops at the first page that names the tool. A customer list handler that ignores
+     * the cursor gives the same next cursor again. The rebuild for a tool that no page names reads two pages and stops
+     * at that cursor, as at the last page; the call is served with the heuristic strip.
+     */
+    #[Group('ac-02-20')]
+    #[Group('ac-04-30')]
+    public function testAListHandlerThatIgnoresTheCursorEndsTheRebuild(): void
+    {
+        $builder = TrackingFixture::builder();
+        $echo = Tools::echo($builder);
+        $this->fixture->track($builder);
+        $listed = new Tool(name: 'listed', title: null, inputSchema: ['type' => 'object', 'properties' => [], 'required' => []], description: 'Listed', annotations: null);
+        $list = new CustomerHandler(ListToolsRequest::class, static fn(): ListToolsResult => new ListToolsResult([$listed], 'again'));
+        $builder->addRequestHandler($list);
+        $harness = $this->fixture->harness($builder);
+
+        $answer = $harness->callTool('echo', ['msg' => 'hi', 'agent_id' => 'a1', 'session_id' => 'start', 'context' => 'why']);
+
+        $this->assertSame(2, $list->calls); // page 1, then page "again", whose cursor was already followed
+        $this->assertSame([['msg' => 'hi']], $echo->calls); // no page names echo: the heuristic strip
+        $this->assertSame('echo: hi', JsonAssert::at(HttpHarness::result($answer), 'content', 1, 'text'));
+        $this->assertSame([self::REBUILT], $this->fixture->lines());
+    }
+
+    /**
+     * D66: the rebuild reads the cursor that the client gets. mcp/sdk sends no `nextCursor` for a falsy one, so a page
+     * whose next cursor is `'0'` is the last page for the rebuild too, as for the listing.
+     */
+    #[Group('ac-02-20')]
+    public function testANextCursorTheLibraryDoesNotSendEndsTheRebuild(): void
+    {
+        $builder = TrackingFixture::builder();
+        $echo = Tools::echo($builder);
+        $this->fixture->track($builder);
+        $listed = new Tool(name: 'listed', title: null, inputSchema: ['type' => 'object', 'properties' => [], 'required' => []], description: 'Listed', annotations: null);
+        $list = new CustomerHandler(ListToolsRequest::class, static fn(): ListToolsResult => new ListToolsResult([$listed], '0'));
+        $builder->addRequestHandler($list);
+        $harness = $this->fixture->harness($builder);
+
+        $harness->callTool('echo', ['msg' => 'hi', 'session_id' => 'start']);
+
+        $this->assertSame(1, $list->calls);
+        $this->assertSame([['msg' => 'hi']], $echo->calls);
+        $this->assertSame([self::REBUILT], $this->fixture->lines());
+    }
+
+    /**
+     * D66: a get_more_tools call rebuilds like any other tool. A server that never listed (PHP-FPM): the rebuild finds
+     * the customer's own get_more_tools on page 2. AgentCat answers the call (report-missing shadows the customer's
+     * tool), and the `session_id` that tool declares stays the customer's: no session is read from it.
+     */
+    #[DataProvider('eras')]
+    #[Group('ac-02-19')]
+    #[Group('ac-02-14')]
+    public function testAShadowedCustomerGetMoreToolsKeepsItsOwnSessionId(bool $modern): void
+    {
+        $builder = TrackingFixture::builder();
+        foreach (range(1, 50) as $i) {
+            Tools::named($builder, sprintf('t%02d', $i));
+        }
+        $customer = new RecordingTool();
+        $schema = ['type' => 'object', 'properties' => ['session_id' => ['type' => 'string']], 'required' => ['session_id']];
+        $builder->add(new Tool(name: GetMoreTools::NAME, title: null, inputSchema: $schema, description: 'Mine', annotations: null), $customer);
+        $this->fixture->track($builder);
+        $harness = $this->fixture->harness($builder);
+        $arguments = ['session_id' => 'theirs', 'context' => 'need X'];
+
+        $answer = $modern ? $harness->callToolModern(GetMoreTools::NAME, $arguments) : $harness->callTool(GetMoreTools::NAME, $arguments);
+
+        $this->assertSame([$this->cannedText()], $this->texts(HttpHarness::result($answer)));
+        $this->assertSame([], $customer->calls, 'AgentCat answers its calls');
+        $event = $this->fixture->event();
+        $this->assertSame('', $event->sessionId);
+        $this->assertSame('foreign', $this->tag($event, Constants::TAG_SESSION_SOURCE));
+        $this->assertSame(ListingLines::shadowedCall(6), $this->fixture->lines());
+    }
+
+    /**
+     * D66 (B10 fixed): a server that never listed rebuilds up to the page that names the tool, so a page-2 tool with an
+     * `outputSchema` is in the output registry and gets the `mcp_session` mirror. Page 1 alone would leave it out.
+     */
+    #[Group('ac-02-36')]
+    #[Group('ac-02-20')]
+    public function testAPageTwoToolWithAnOutputSchemaGetsTheSessionMirror(): void
+    {
+        $builder = TrackingFixture::builder();
+        foreach (range(1, 50) as $i) {
+            Tools::named($builder, sprintf('t%02d', $i));
+        }
+        Tools::structured($builder);
+        $this->fixture->track($builder);
+        $harness = $this->fixture->harness($builder);
+
+        $result = HttpHarness::result($harness->callTool('structured', ['session_id' => 'start']));
+
+        $structured = JsonAssert::at($result, 'structuredContent');
+        $this->assertSame([Constants::MCP_SESSION_KEY, 'echoed'], $this->keys($structured));
+        $this->assertSame('issued', JsonAssert::at($structured, Constants::MCP_SESSION_KEY, 'status'));
+        $this->assertSame([self::REBUILT], $this->fixture->lines());
+    }
+
+    /**
+     * D66 (B10 fixed): on a long-running server a page listed again replaces only its own entries. After page 1, page 2
+     * and page 1 again, the tools of page 2 keep their entry, their own `session_id` and their mirror, with no rebuild.
+     */
+    #[Group('ac-02-8')]
+    #[Group('ac-02-19')]
+    public function testListingAnEarlierPageAgainKeepsTheLaterPagesEntries(): void
+    {
+        $builder = TrackingFixture::builder()->setPaginationLimit(2);
+        Tools::echo($builder);
+        Tools::named($builder, 't01');
+        $own = Tools::own($builder);
+        Tools::structured($builder);
+        $this->fixture->track($builder);
+        $harness = $this->fixture->harness($builder);
+        $cursor = JsonAssert::at($harness->listTools(), 'nextCursor');
+        $this->assertIsString($cursor);
+        $second = JsonAssert::at($harness->listTools($cursor), 'tools');
+        $this->assertIsList($second);
+        $this->assertSame(['own', 'structured', GetMoreTools::NAME], array_map(static fn(mixed $tool): mixed => JsonAssert::at($tool, 'name'), $second));
+        $harness->listTools();
+
+        $harness->callTool('own', ['session_id' => 'mine', 'agent_id' => 'a1']);
+        $result = HttpHarness::result($harness->callTool('structured', ['session_id' => 'start']));
+
+        $this->assertSame([['session_id' => 'mine', 'agent_id' => 'a1']], $own->calls, 'agent tracking is off: agent_id is not ours');
+        $this->assertSame('foreign', $this->tag($this->fixture->event(0, 2), Constants::TAG_SESSION_SOURCE));
+        $this->assertSame([Constants::MCP_SESSION_KEY, 'echoed'], $this->keys(JsonAssert::at($result, 'structuredContent')));
+        $this->assertSame([ListingLines::ownSessionId('own')], $this->fixture->lines(), 'no rebuild');
+    }
+
     /** @return iterable<string, array{array<string, string>}> */
     public static function sessionlessArguments(): iterable
     {
@@ -262,8 +455,8 @@ final class CallToolTest extends TestCase
     }
 
     /**
-     * Header conflict 4: mcp/sdk cannot tell `{}` from `[]`, so an empty structuredContent is an empty object to the
-     * mirror and to the event. On main (C3), mcp/sdk itself rejects `[]` against an object outputSchema first.
+     * mcp/sdk cannot tell `{}` from `[]`, so an empty structuredContent is an empty object to the mirror and to the
+     * event. On 0.9.0 and main, mcp/sdk itself rejects `[]` against an object outputSchema first.
      */
     public function testAnEmptyStructuredContentCountsAsAnEmptyObject(): void
     {
@@ -276,7 +469,7 @@ final class CallToolTest extends TestCase
         $result = HttpHarness::result($harness->callTool('structured', ['session_id' => 'start']));
 
         $event = $this->fixture->event();
-        if (McpSdkVersion::isMain()) {
+        if (McpSdkVersion::hasModernEra()) {
             $this->assertTrue(JsonAssert::at($result, 'isError'));
             $texts = $this->texts($result);
             $this->assertCount(2, $texts);
@@ -370,7 +563,7 @@ final class CallToolTest extends TestCase
         $this->assertSame([Constants::TAG_SESSION_SOURCE => 'supplied'], $event->tags);
     }
 
-    /** Review Focus 2: integer-like keys and nested empty objects reach the tool as mcp/sdk decodes them. */
+    /** Integer-like keys and nested empty objects reach the tool as mcp/sdk decodes them. */
     public function testTheToolGetsTheSameArrayAsWithoutAgentCat(): void
     {
         $properties = ['0' => ['type' => 'string'], '123' => ['type' => 'string'], 'nested' => ['type' => 'object']];
@@ -391,7 +584,7 @@ final class CallToolTest extends TestCase
         $this->assertSame(['msg', '0', '123', 'nested', 'session_id'], $this->keys(JsonAssert::at($this->fixture->event()->parameters, 'request', 'params', 'arguments')));
     }
 
-    /** Review Focus 3: a reference handler set after track() replaces AgentCat's; only the stashed exception is lost. */
+    /** A reference handler set after track() replaces AgentCat's; only the stashed exception is lost. */
     public function testAReferenceHandlerSetAfterTrackStillGivesEvents(): void
     {
         $builder = TrackingFixture::builder();
@@ -430,7 +623,7 @@ final class CallToolTest extends TestCase
         $this->assertSame('RuntimeException', JsonAssert::at($this->fixture->event()->error, 'type'));
     }
 
-    /** Review Focus 3: a tools/call handler added after track() answers, and AgentCat records its answer. */
+    /** A tools/call handler added after track() answers, and AgentCat records its answer. */
     public function testACustomerCallHandlerAddedAfterTrackIsRecorded(): void
     {
         $builder = TrackingFixture::builder();
@@ -463,7 +656,7 @@ final class CallToolTest extends TestCase
     public static function containerMoments(): iterable
     {
         yield 'set before track()' => [true];
-        yield 'set after track() (Review Focus 3)' => [false];
+        yield 'set after track()' => [false];
     }
 
     /** The customer's container builds the tool handlers, whenever it was set. */
@@ -510,7 +703,7 @@ final class CallToolTest extends TestCase
         $this->assertSame($tool, JsonAssert::at($completion, 'completion', 'values'));
     }
 
-    /** Review Focus 5: each event of a long-lived server keeps its own handles and identity. */
+    /** Each event of a long-lived server keeps its own handles and identity. */
     public function testInterleavedCallsKeepTheirOwnValues(): void
     {
         $builder = TrackingFixture::builder();

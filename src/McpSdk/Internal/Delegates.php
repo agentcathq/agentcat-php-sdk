@@ -27,7 +27,7 @@ final class Delegates
 
     /**
      * The first handler after `$self` that supports the request. mcp/sdk always has one of its own, so null means
-     * that its internals changed (C6): the list cannot be read, `$self` is not in it, or nothing after `$self`
+     * that its internals changed: the list cannot be read, `$self` is not in it, or nothing after `$self`
      * answers. That drift is logged once per Builder, and AgentCat's handlers step aside.
      *
      * @return RequestHandlerInterface<mixed>|null

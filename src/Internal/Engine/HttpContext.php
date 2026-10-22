@@ -103,7 +103,7 @@ final readonly class HttpContext
 
     /**
      * The full URL as a web server passes it to PHP: the scheme `HTTPS` gives, the `HTTP_HOST` and the raw
-     * `REQUEST_URI`, query and trailing slash as sent. Null without a host (C15).
+     * `REQUEST_URI`, query and trailing slash as sent. Null without a host: no URL is made up.
      *
      * @param array<array-key, mixed> $server
      */
@@ -111,7 +111,7 @@ final readonly class HttpContext
     {
         $host = $server['HTTP_HOST'] ?? null;
         if (!is_string($host) || $host === '') {
-            return null; // no host, no full URL (C15)
+            return null; // no host, no full URL
         }
         $https = $server['HTTPS'] ?? null;
         $scheme = is_string($https) && $https !== '' && strtolower($https) !== 'off' ? 'https' : 'http';

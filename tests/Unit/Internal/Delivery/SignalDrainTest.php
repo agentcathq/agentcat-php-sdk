@@ -11,6 +11,7 @@ use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\Pipeline\QueuedEvent;
 use AgentCat\Tests\Support\MemoryLogger;
 use AgentCat\Tests\Support\RecordingTransport;
+use AgentCat\Tests\Support\Thrown;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
@@ -27,6 +28,12 @@ final class SignalDrainTest extends TestCase
     private const int SIGTERM = 15;
 
     private const int SIG_DFL = 0;
+
+    private const string DISABLED = 'WARN: AgentCat cannot send waiting events at SIGTERM or SIGINT: ext-pcntl functions are disabled (%s); remove them from disable_functions';
+
+    private const string NO_PCNTL = 'WARN: AgentCat cannot send waiting events at SIGTERM or SIGINT: ext-pcntl is not loaded; install ext-pcntl';
+
+    private const int SIGWINCH = 28;
 
     private MemoryLogger $logger;
 
@@ -144,11 +151,96 @@ final class SignalDrainTest extends TestCase
     {
         $this->resetHandlers();
 
-        $this->drain(static fn(string $function): bool => $function !== $missing)->install();
+        $drain = $this->drain(static fn(string $function): bool => $function !== $missing);
+        $drain->install();
+        $drain->install();
 
         $this->assertSame(\SIG_DFL, pcntl_signal_get_handler(\SIGTERM));
         $this->assertSame(\SIG_DFL, pcntl_signal_get_handler(\SIGINT));
         $this->assertFalse(pcntl_async_signals());
+        $this->assertSame([sprintf(self::DISABLED, $missing)], $this->logger->messages(), 'ext-pcntl is loaded: a host disabled the function');
+    }
+
+    public function testTheLineNamesEveryDisabledPcntlFunction(): void
+    {
+        $drain = new SignalDrain(fn(): EventQueue => $this->queue, $this->raise(...), static fn(string $function): bool => $function === 'pcntl_signal_get_handler', 'cli', static fn(string $extension): bool => $extension === 'pcntl');
+
+        $drain->install();
+
+        $this->assertSame([sprintf(self::DISABLED, 'pcntl_signal, pcntl_async_signals')], $this->logger->messages());
+        $this->assertTrue($drain->disable(), 'nothing was installed');
+    }
+
+    /** A CLI without ext-pcntl (the official Docker images) has no drain: one line says how to get it. */
+    public function testWithoutExtPcntlOneLineSaysToInstallIt(): void
+    {
+        $asked = new \ArrayObject();
+        $drain = new SignalDrain(fn(): EventQueue => $this->queue, $this->raise(...), static function (string $function) use ($asked): bool {
+            $asked[] = $function;
+
+            return false;
+        }, 'cli', static fn(string $extension): bool => false, osFamily: 'Linux');
+
+        $drain->install();
+        $drain->install();
+
+        $this->assertSame([self::NO_PCNTL], $this->logger->messages());
+        $this->assertSame(['pcntl_signal', 'pcntl_signal_get_handler', 'pcntl_async_signals'], $asked->getArrayCopy(), 'checked once');
+        $this->assertTrue($drain->disable(), 'nothing was installed');
+    }
+
+    /** Windows has no ext-pcntl to install: no line. */
+    public function testOnWindowsWithoutExtPcntlNothingIsLogged(): void
+    {
+        $drain = new SignalDrain(fn(): EventQueue => $this->queue, $this->raise(...), static fn(string $function): bool => false, 'cli', static fn(string $extension): bool => false, osFamily: 'Windows');
+
+        $drain->install();
+
+        $this->assertSame([], $this->logger->messages());
+    }
+
+    /** Where the drain never installs (another SAPI, a coroutine server, the switch), no line names the missing extension. */
+    public function testWhereTheDrainNeverInstallsNothingIsLogged(): void
+    {
+        $none = static fn(string $function): bool => false;
+        (new SignalDrain(fn(): EventQueue => $this->queue, $this->raise(...), $none, 'fpm-fcgi', static fn(string $extension): bool => false, osFamily: 'Linux'))->install();
+        (new SignalDrain(fn(): EventQueue => $this->queue, $this->raise(...), $none, 'cli', static fn(string $extension): bool => $extension === 'swoole', osFamily: 'Linux'))->install();
+        $disabled = new SignalDrain(fn(): EventQueue => $this->queue, $this->raise(...), $none, 'cli', static fn(string $extension): bool => false, osFamily: 'Linux');
+        $disabled->disable();
+        $disabled->install();
+
+        $this->assertSame([], $this->logger->messages());
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function posixFunctions(): iterable
+    {
+        yield 'posix_getpid' => ['posix_getpid'];
+        yield 'posix_kill' => ['posix_kill'];
+    }
+
+    /**
+     * Without one of the two posix functions the default raise exits with the shell's status for the signal. SIGWINCH,
+     * whose default disposition is "ignore", shows it: a raise by `posix_kill()` would leave this process running.
+     */
+    #[DataProvider('posixFunctions')]
+    #[RequiresPhpExtension('pcntl')]
+    public function testWithoutAPosixFunctionTheRaiseExitsWithTheSignalsStatus(string $missing): void
+    {
+        $exits = new \ArrayObject();
+        $drain = new SignalDrain(fn(): EventQueue => $this->queue, null, static fn(string $function): bool => $function !== $missing, exit: static function (int $status) use ($exits): never {
+            $exits[] = $status;
+
+            throw new \LogicException('exit');
+        });
+        $this->queue->add($this->queued('before-the-exit'));
+        pcntl_signal(\SIGWINCH, static function (): void {});
+
+        Thrown::by(\LogicException::class, static fn() => $drain->onSignal(\SIGWINCH, \SIG_DFL));
+
+        $this->assertSame([128 + self::SIGWINCH], $exits->getArrayCopy());
+        $this->assertCount(1, $this->transport->deliveries, 'the queue drained before the exit');
+        $this->assertSame(\SIG_DFL, pcntl_signal_get_handler(\SIGWINCH));
     }
 
     /** @return iterable<string, array{string}> */
@@ -224,7 +316,7 @@ final class SignalDrainTest extends TestCase
         $this->assertSame($later, pcntl_signal_get_handler(\SIGTERM), 'the second install() changed nothing');
     }
 
-    /** Review Focus 2: the application chose to ignore the signal, so AgentCat leaves it alone. */
+    /** The application chose to ignore the signal, so AgentCat leaves it alone. */
     #[RequiresPhpExtension('pcntl')]
     public function testAnIgnoredSignalStaysIgnored(): void
     {

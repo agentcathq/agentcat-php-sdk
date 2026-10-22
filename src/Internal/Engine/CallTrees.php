@@ -16,8 +16,8 @@ use AgentCat\Internal\Json\JsonTree;
 final class CallTrees
 {
     /**
-     * The protocol version the call claims in its `_meta`: never a version the session negotiated (02 §3.3). Null
-     * when the claim is not a non-empty string.
+     * The protocol version the call claims in its `_meta`: never a version the session negotiated. Null when the claim
+     * is not a non-empty string.
      *
      * @param array<array-key, mixed>|null $meta
      */
@@ -30,7 +30,7 @@ final class CallTrees
 
     /**
      * `{"method":"tools/call","params":{…}}`, raw arguments included. The arguments are an object: empty arguments are
-     * `{}` and integer keys stay keys (N8). A sent `_meta` is an object too, so a sent `{}` stays `{}`.
+     * `{}` and integer keys stay keys. A sent `_meta` is an object too, so a sent `{}` stays `{}`.
      *
      * @param array<array-key, mixed> $params the request's params, as the library holds them
      * @param array<array-key, mixed> $arguments

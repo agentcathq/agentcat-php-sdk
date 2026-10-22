@@ -30,6 +30,18 @@ final class FakeCallSeam implements CallSeam
     /** @var list<mixed>|\Throwable|null the library's first `tools/list` page, or what listing it throws */
     public array|\Throwable|null $listing = null;
 
+    /** The first page's next cursor. */
+    public ?string $nextCursor = null;
+
+    /**
+     * @var array<string, array{list<mixed>|\Throwable|null, ?string}> the later pages by the cursor that asks for them:
+     *                                                                  tools (as `$listing`) and next cursor
+     */
+    public array $pages = [];
+
+    /** @var list<?string> the cursor of each listing, in order */
+    public array $cursors = [];
+
     public ?\Throwable $replaceFailure = null;
 
     /**
@@ -118,14 +130,16 @@ final class FakeCallSeam implements CallSeam
     }
 
     #[\Override]
-    public function listOriginal(): ?array
+    public function listOriginal(?string $cursor): ?array
     {
         ++$this->listCalls;
-        if ($this->listing instanceof \Throwable) {
-            throw $this->listing;
+        $this->cursors[] = $cursor;
+        [$tools, $next] = $cursor === null ? [$this->listing, $this->nextCursor] : ($this->pages[$cursor] ?? [null, null]);
+        if ($tools instanceof \Throwable) {
+            throw $tools;
         }
 
-        return $this->listing;
+        return $tools === null ? null : [$tools, $next];
     }
 
     #[\Override]

@@ -78,7 +78,7 @@ final class PostHogExportTest extends TestCase
         yield 'a network error' => [HttpResponse::failed('cURL error 7: x'), 'PostHog export error: cURL error 7: x'];
     }
 
-    /** 06 AC-16: the exporter sends `parameters` and `response` as the event holds them (after the pipeline's redaction). */
+    /** ac-06-16: the exporter sends `parameters` and `response` as the event holds them (after the pipeline's redaction). */
     #[Group('ac-06-16')]
     public function testParametersAndResponseAreSentAsTheEventHoldsThem(): void
     {

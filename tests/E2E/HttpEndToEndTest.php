@@ -50,7 +50,7 @@ final class HttpEndToEndTest extends TestCase
 
     private static ?BuiltInServer $server = null;
 
-    /** HOME (agentcat.log), sessions and markers of the server, under the test HOME (Ruling R8). */
+    /** HOME (agentcat.log), sessions and markers of the server, under the test HOME. */
     private static string $dir = '';
 
     /** `AGENTCAT_API_URL` of the server: a closed port on 127.0.0.1, so a request without a collector stays local. */
@@ -103,7 +103,7 @@ final class HttpEndToEndTest extends TestCase
         $this->scenario = $this->collector()->scenario();
     }
 
-    /** M6: one tracked call through the handshake, the session store and the shutdown delivery. */
+    /** One tracked call through the handshake, the session store and the shutdown delivery. */
     #[Group('ac-02-53')]
     #[Group('ac-02-43')]
     #[Group('ac-04-49')]
@@ -179,9 +179,9 @@ final class HttpEndToEndTest extends TestCase
     }
 
     /**
-     * Header conflict 6: the tool result does not wait for the hooks. The fixture's `identify` sleeps 3 s and then
-     * writes the marker; it runs in the shutdown delivery, after the response. The 2 s bound leaves room for a slow
-     * runner; the marker proves the order.
+     * The tool result does not wait for the hooks. The fixture's `identify` sleeps 3 s and then writes the marker; it
+     * runs in the shutdown delivery, after the response. The 2 s bound leaves room for a slow runner; the marker proves
+     * the order.
      */
     #[Group('ac-01-37')]
     #[Group('ac-02-48')]
@@ -261,9 +261,9 @@ final class HttpEndToEndTest extends TestCase
     }
 
     /**
-     * Review Focus 5. Repeated Accept lines differ by PHP version (Ruling R7): `php -S` on PHP 8.3 keeps the first
-     * line, on PHP 8.4 and 8.5 it joins them with `, `. The fixture records the value the SAPI gave PHP, and the
-     * event must carry exactly that.
+     * The event carries the headers as the SAPI gave them. Repeated Accept lines differ by PHP version: `php -S` on
+     * PHP 8.3 keeps the first line, on PHP 8.4 and 8.5 it joins them with `, `. The fixture records the value the SAPI
+     * gave PHP, and the event must carry exactly that.
      */
     #[MaximumDuration(10000)]
     public function testOddHeadersReachTheEventAsStrings(): void
@@ -291,9 +291,9 @@ final class HttpEndToEndTest extends TestCase
     }
 
     /**
-     * D47 (open question Q3): under `php -S`, like PHP-FPM, each request posts its own diagnostics once, at its end,
-     * after its response. Each POST is tied to its request by the session in its `Successfully sent event` line: each
-     * call mints its own session.
+     * D47: under `php -S`, like PHP-FPM, each request posts its own diagnostics once, at its end, after its response.
+     * Each POST is tied to its request by the session in its `Successfully sent event` line: each call mints its own
+     * session.
      */
     #[Group('ac-06-62')]
     #[MaximumDuration(15000)]

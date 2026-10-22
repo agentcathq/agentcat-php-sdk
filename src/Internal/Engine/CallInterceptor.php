@@ -18,8 +18,8 @@ use AgentCat\Internal\Tokens\TokenEstimator;
 use AgentCat\Internal\Tools\GetMoreTools;
 
 /**
- * Port of the TypeScript tools/call wrapper (callWrap.ts, docs/audit/02-engine.md §2.8). One event per traced call;
- * customer hooks never run here (D04). Rethrows the library's exceptions unchanged and adds none of its own (D32).
+ * Port of the TypeScript tools/call wrapper (callWrap.ts). One event per traced call; customer hooks never run here
+ * (D04). Rethrows the library's exceptions unchanged and adds none of its own (D32).
  *
  * @internal
  */
@@ -59,7 +59,7 @@ final readonly class CallInterceptor
 
         $start = ($this->clock)();
         try {
-            ToolListing::ensureRegistries($server, $seam->listOriginal(...));
+            ToolListing::ensureRegistries($server, $name, $seam->listOriginal(...));
             $arguments = $seam->arguments();
             $resolution = HandleResolver::resolve($arguments, $server->hookMode(), $options->enableAgentTracking, !$server->injection->hasDeclaredSessionParam($name));
             $call = $this->start($server, $name, $arguments, $resolution, $seam->describe(), $start, $intercept);
@@ -155,7 +155,7 @@ final readonly class CallInterceptor
             sessionId: $resolution->sessionId,
             eventType: Constants::TOOLS_CALL_EVENT_TYPE,
             timestamp: $start,
-            // Header conflict 4: mcp/sdk cannot tell empty arguments from absent ones.
+            // mcp/sdk cannot tell empty arguments from absent ones, so empty arguments count no input tokens.
             inputTokens: $arguments instanceof \stdClass && get_object_vars($arguments) === [] ? null : TokenEstimator::input($arguments),
             resourceName: $name === '' ? 'Unknown Tool' : $name,
             parameters: (object) ['request' => $context->request, 'extra' => $context->extra],
@@ -191,7 +191,7 @@ final readonly class CallInterceptor
         try {
             $observed ??= $seam->observe($result);
             if ($observed->protocolError !== null) {
-                // A JSON-RPC error answer: the TS catch path, no mint-back (header conflict 3).
+                // A JSON-RPC error answer: the TS catch path, no mint-back.
                 $this->publishFailure($call, $observed->thrown ?? $observed->protocolError);
 
                 return $result;
@@ -240,7 +240,7 @@ final readonly class CallInterceptor
     {
         if ($call->invalidIntent !== null) {
             // B16: a number, a boolean or an object as the intent. TypeScript loses this event at truncation, after
-            // its hooks ran; here they never run (N10). A list intent is published with no intent (PHP divergence:
+            // its hooks ran; here they never run. A list intent is published with no intent (PHP divergence:
             // TypeScript sends the raw list).
             Log::write(sprintf('Failed to truncate event: UnexpectedValueException: userIntent is not a string (%s)', $call->invalidIntent));
 

@@ -8,6 +8,7 @@ use AgentCat\Internal\Json\Json;
 use AgentCat\Tests\Integration\Support\MockCollector;
 use AgentCat\Tests\Support\JsonAssert;
 use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
@@ -113,6 +114,36 @@ final class SignalDrainDeliveryTest extends TestCase
         $this->assertSame('', $process->getOutput());
         $this->assertSame('', $process->getErrorOutput());
         $this->assertSame([], $this->resourceNames($base));
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function posixFunctions(): iterable
+    {
+        yield 'posix_getpid' => ['posix_getpid'];
+        yield 'posix_kill' => ['posix_kill'];
+    }
+
+    /** A host can disable `posix_getpid()` or `posix_kill()`: the drain then ends the process with the shell's status for SIGTERM. */
+    #[DataProvider('posixFunctions')]
+    #[MaximumDuration(10000)]
+    public function testWithoutAPosixFunctionTheDrainEndsTheProcessWithTheExitStatusOfTheSignal(string $disabled): void
+    {
+        $base = $this->collector()->scenario();
+        $process = $this->fixture($base, 'outside', '', ['-d', 'disable_functions=' . $disabled]);
+
+        $process->start();
+        $ready = microtime(true) + self::SIGNAL_DEADLINE;
+        while ($process->isRunning() && $process->getOutput() === '' && microtime(true) < $ready) {
+            usleep(10_000);
+        }
+        $this->assertSame("ready\n", $process->getOutput(), $process->getErrorOutput());
+        $process->signal(15);
+        $process->wait();
+
+        $this->assertFalse($process->hasBeenSignaled());
+        $this->assertSame(128 + 15, $process->getExitCode(), $process->getErrorOutput());
+        $this->assertSame('', $process->getErrorOutput());
+        $this->assertSame(['signal-drain'], $this->resourceNames($base));
     }
 
     #[MaximumDuration(10000)]
@@ -222,10 +253,11 @@ final class SignalDrainDeliveryTest extends TestCase
         fclose($hole);
     }
 
-    private function fixture(string $base, string $mode, string $marker = ''): Process
+    /** @param list<string> $php options of the PHP binary, before the script */
+    private function fixture(string $base, string $mode, string $marker = '', array $php = []): Process
     {
         $process = new Process(
-            [PHP_BINARY, __DIR__ . '/../Fixtures/signal-drain.php', $base, $mode, $marker],
+            [PHP_BINARY, ...$php, __DIR__ . '/../Fixtures/signal-drain.php', $base, $mode, $marker],
             null,
             ['HOME' => $this->dir],
         );
@@ -250,13 +282,23 @@ final class SignalDrainDeliveryTest extends TestCase
         return [$socket, 'http://' . $name];
     }
 
-    /** Waits (within the process timeout) until the fixture prints `$line`; false when it ended first. */
+    /**
+     * Waits (within the process timeout) until the fixture prints `$line`; false when it ended first. `start()` reads
+     * the pipes once, into the output buffer and not to a later `waitUntil()` callback, so a fixture that printed the
+     * line before then (the test process lost the CPU inside `start()` on a loaded host) printed it there: the buffer
+     * comes first.
+     */
     private function waitForLine(Process $process, string $line): bool
     {
-        $output = '';
+        $output = $process->getOutput();
+        if (str_contains($output, $line . "\n")) {
+            return true;
+        }
 
         return $process->waitUntil(static function (string $type, string $chunk) use (&$output, $line): bool {
-            $output .= $chunk;
+            if ($type === Process::OUT) {
+                $output .= $chunk;
+            }
 
             return str_contains($output, $line . "\n");
         });

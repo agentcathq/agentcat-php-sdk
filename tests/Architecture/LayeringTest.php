@@ -34,7 +34,7 @@ final class LayeringTest
             ->excluding(Selector::inNamespace('AgentCat\McpSdk'), Selector::inNamespace('AgentCat\Symfony'), Selector::inNamespace('AgentCat\Tests'))
             ->shouldNot()->dependOn()
             ->classes(Selector::inNamespace('Mcp'))
-            ->because('mcp/sdk is optional: only AgentCat\McpSdk and the Symfony bundle, which configures Mcp\Server\Builder services, may reference it (01 AC-90)');
+            ->because('mcp/sdk is optional: only AgentCat\McpSdk and the Symfony bundle, which configures Mcp\Server\Builder services, may reference it (ac-01-90)');
     }
 
     #[TestRule]
@@ -45,7 +45,7 @@ final class LayeringTest
             ->excluding(Selector::inNamespace('AgentCat\LaravelMcp'), Selector::inNamespace('AgentCat\Laravel'), Selector::inNamespace('AgentCat\Tests'))
             ->shouldNot()->dependOn()
             ->classes(Selector::inNamespace('Laravel'), Selector::inNamespace('Illuminate'))
-            ->because('laravel/mcp and Laravel are optional (01 AC-90)');
+            ->because('laravel/mcp and Laravel are optional (ac-01-90)');
     }
 
     #[TestRule]
@@ -73,7 +73,7 @@ final class LayeringTest
                 Selector::inNamespace('Symfony\Component\EventDispatcher'),
                 Selector::inNamespace('Symfony\Bundle'),
             )
-            ->because('Symfony is optional (01 AC-90)');
+            ->because('Symfony is optional (ac-01-90)');
     }
 
     #[TestRule]

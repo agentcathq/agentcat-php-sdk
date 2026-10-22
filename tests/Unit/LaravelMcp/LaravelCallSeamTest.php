@@ -139,20 +139,26 @@ final class LaravelCallSeamTest extends TestCase
         $this->assertSame([], $this->sent);
     }
 
-    public function testTheRebuildListsTheFirstPageWithTheListHandler(): void
+    /** D66 (B10 fixed): the rebuild lists the page at a cursor, and reads the page's next cursor. */
+    public function testTheRebuildListsAPageAtACursorWithTheListHandler(): void
     {
         $listed = [];
         $seam = $this->seam(['name' => 'echo'], list: static function (JsonRpcRequest $request) use (&$listed): JsonRpcResponse {
             $listed[] = $request;
 
-            return JsonRpcResponse::result($request->id, ['tools' => [['name' => 'echo']]]);
+            return JsonRpcResponse::result($request->id, ['tools' => [['name' => 'echo']], 'nextCursor' => 'p2']);
         });
 
-        $this->assertEquals([(object) ['name' => 'echo']], $seam->listOriginal());
-        $this->assertCount(1, $listed);
+        $this->assertEquals([[(object) ['name' => 'echo']], 'p2'], $seam->listOriginal(null));
+        $this->assertEquals([[(object) ['name' => 'echo']], 'p2'], $seam->listOriginal('p2'));
+        $this->assertCount(2, $listed);
         $this->assertSame(['agentcat-rebuild', 'tools/list', []], [$listed[0]->id, $listed[0]->method, $listed[0]->params]);
-        $this->assertNull($this->seam(['name' => 'echo'])->listOriginal(), 'no list handler');
-        $this->assertNull($this->seam(['name' => 'echo'], list: static fn(JsonRpcRequest $request): array => [JsonRpcResponse::result($request->id, ['tools' => []])])->listOriginal(), 'a streamed listing');
+        $this->assertSame(['agentcat-rebuild', 'tools/list', ['cursor' => 'p2']], [$listed[1]->id, $listed[1]->method, $listed[1]->params]);
+        $last = $this->seam(['name' => 'echo'], list: static fn(JsonRpcRequest $request): JsonRpcResponse => JsonRpcResponse::result($request->id, ['tools' => [], 'nextCursor' => '']));
+        $this->assertSame([[], null], $last->listOriginal(null), 'an empty cursor ends the listing');
+        $this->assertNull($this->seam(['name' => 'echo'])->listOriginal(null), 'no list handler');
+        $this->assertNull($this->seam(['name' => 'echo'], list: static fn(JsonRpcRequest $request): array => [JsonRpcResponse::result($request->id, ['tools' => []])])->listOriginal(null), 'a streamed listing');
+        $this->assertNull($this->seam(['name' => 'echo'], list: static fn(JsonRpcRequest $request): JsonRpcResponse => JsonRpcResponse::error($request->id, -32603, 'down'))->listOriginal(null), 'a JSON-RPC error');
     }
 
     public function testAnOrdinaryResultDoesNotCompleteLater(): void

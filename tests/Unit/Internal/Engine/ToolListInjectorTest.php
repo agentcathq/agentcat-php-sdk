@@ -22,7 +22,7 @@ final class ToolListInjectorTest extends TestCase
 {
     private const string CONFLICT_ERROR = 'ERROR: Tool "own" already declares a \'session_id\' parameter. AgentCat will not inject its own, and calls to this tool are published without a session, so they cannot be correlated. Your parameter is untouched and still reaches your handler. If you already manage sessions, pass a resolveSessionId hook to track() — AgentCat will derive its session from your identifier and stop injecting session_id entirely.';
 
-    private const string SHADOW_WARN = 'WARN: This server registers its own "get_more_tools" tool, which is shadowed by AgentCat\'s report-missing tool: calls to it are answered by AgentCat and never reach your handler. Rename your tool, or set enableReportMissing: false to keep yours reachable.';
+    private const string SHADOW_WARN = 'WARN: This server registers its own "get_more_tools" tool, which is shadowed by AgentCat\'s report-missing tool: calls to it are answered by AgentCat and never reach your handler. Rename your tool, or set enableReportMissing: false to keep yours reachable. If your tool is not on the last page of tools/list, AgentCat\'s get_more_tools is listed too, on the last page, by every process that has not read your tool\'s page (under PHP-FPM, every request), so clients see two tools of that name: rename your tool.';
 
     private const string INJECTED_ONLY = '{"type":"object","properties":{"session_id":"@SID","context":"@CTX"},"required":["session_id","context"]}';
 
@@ -106,8 +106,10 @@ final class ToolListInjectorTest extends TestCase
         $this->assertFalse($state->reportConflictOnce('a'));
         $this->assertTrue($state->reportConflictOnce('b'));
 
-        $this->assertTrue($state->warnShadowOnce());
-        $this->assertFalse($state->warnShadowOnce());
+        $this->assertFalse($state->hasCustomerGetMoreTools());
+        $this->assertTrue($state->markCustomerGetMoreTools());
+        $this->assertFalse($state->markCustomerGetMoreTools());
+        $this->assertTrue($state->hasCustomerGetMoreTools());
     }
 
     /**
@@ -338,6 +340,59 @@ final class ToolListInjectorTest extends TestCase
         $this->assertSame(2, $this->logCount(self::SHADOW_WARN));
     }
 
+    /** D66 (B10 fixed): TypeScript appends get_more_tools to every page; only the page without a next cursor gets it. */
+    #[Group('ac-02-8')]
+    #[Group('ac-04-24')]
+    public function testGetMoreToolsIsAppendedOnlyToTheLastPage(): void
+    {
+        $state = new InjectionState();
+        $customer = $this->decode('{"name":"get_more_tools","inputSchema":{"type":"object","properties":{}}}');
+
+        $first = ToolListInjector::inject([$this->decode('{"name":"a"}')], new InjectionConfig(), $state, lastPage: false);
+        $last = ToolListInjector::inject([$this->decode('{"name":"b"}')], new InjectionConfig(), $state, lastPage: true);
+        $shadowing = ToolListInjector::inject([$customer], new InjectionConfig(), $state, lastPage: false);
+
+        $this->assertSame(['a'], $this->names($first));
+        $this->assertSame(['a' => ['session_id', 'context']], $first->registry);
+        $this->assertSame(['b', 'get_more_tools'], $this->names($last));
+        $this->assertSame(['get_more_tools'], $this->names($shadowing)); // listed once, with no second copy
+        $this->assertSame([self::SHADOW_WARN], $this->logger->messages());
+    }
+
+    /**
+     * A customer's own get_more_tools on a page before the last: the last page of the same server gets no second one. A
+     * server that never read that page (a new process under PHP-FPM) appends AgentCat's, and the warning says so.
+     */
+    #[Group('ac-02-14')]
+    #[Group('ac-04-24')]
+    public function testACustomerGetMoreToolsOnAnEarlierPageKeepsAgentCatsOffTheLastPage(): void
+    {
+        $state = new InjectionState();
+        $customer = $this->decode('{"name":"get_more_tools","inputSchema":{"type":"object","properties":{}}}');
+
+        $first = ToolListInjector::inject([$customer, $this->decode('{"name":"a"}')], new InjectionConfig(), $state, lastPage: false);
+        $last = ToolListInjector::inject([$this->decode('{"name":"b"}')], new InjectionConfig(), $state, lastPage: true);
+        $elsewhere = ToolListInjector::inject([$this->decode('{"name":"b"}')], new InjectionConfig(), new InjectionState(), lastPage: true);
+
+        $this->assertSame(['get_more_tools', 'a'], $this->names($first));
+        $this->assertSame(['b'], $this->names($last));
+        $this->assertSame(['b' => ['session_id', 'context']], $last->registry);
+        $this->assertSame(['b', 'get_more_tools'], $this->names($elsewhere));
+        $this->assertSame([self::SHADOW_WARN], $this->logger->messages());
+    }
+
+    /** With report-missing off, a customer's get_more_tools is an ordinary tool: nothing is recorded for the last page. */
+    public function testWithReportMissingOffACustomerGetMoreToolsIsNotRecorded(): void
+    {
+        $state = new InjectionState();
+        $customer = $this->decode('{"name":"get_more_tools","inputSchema":{"type":"object","properties":{}}}');
+
+        ToolListInjector::inject([$customer], new InjectionConfig(enableReportMissing: false), $state, lastPage: false);
+
+        $this->assertFalse($state->hasCustomerGetMoreTools());
+        $this->assertSame([], $this->logger->messages());
+    }
+
     #[Group('ac-04-48')]
     public function testContextPassSkipsCustomerGetMoreToolsEvenWithReportMissingOff(): void
     {
@@ -380,6 +435,7 @@ final class ToolListInjectorTest extends TestCase
 
     #[DataProvider('nonObjectSchemas')]
     #[Group('ac-04-25')]
+    #[Group('ac-02-12')]
     public function testNonObjectInputSchemaIsListedUnmodified(string $schema): void
     {
         $bad = '{"name":"bad","inputSchema":' . $schema . '}';
@@ -544,6 +600,7 @@ final class ToolListInjectorTest extends TestCase
         $this->assertSame(['dup' => []], $result->registry);
     }
 
+    #[Group('ac-02-12')]
     public function testInvalidUtf8ToolIsListedUnmodified(): void
     {
         $tool = (object) ['name' => 'bin', 'description' => "\xB1", 'inputSchema' => (object) ['type' => 'object']];
@@ -558,6 +615,26 @@ final class ToolListInjectorTest extends TestCase
         $this->assertSame([
             'WARN: Handle injection failed for tool "bin"; listing it unmodified - the tool cannot be encoded as JSON',
             'WARN: Context injection failed for tool "bin"; listing it unmodified - the tool cannot be encoded as JSON',
+        ], $this->logger->messages());
+    }
+
+    #[Group('ac-02-12')]
+    public function testASelfReferencingToolIsListedUnmodified(): void
+    {
+        $schema = (object) ['type' => 'object', 'properties' => new \stdClass()];
+        $schema->properties->loop = $schema;
+        $tool = (object) ['name' => 'loop', 'inputSchema' => $schema];
+        $before = serialize($tool);
+
+        $result = $this->inject([$tool, $this->decode('{"name":"ok"}')]);
+
+        $this->assertSame($tool, $result->tools[0] ?? null);
+        $this->assertSame($before, serialize($tool));
+        $this->assertSame($this->expand('{"name":"ok","inputSchema":' . self::INJECTED_ONLY . '}'), $this->toolJson($result, 1));
+        $this->assertSame(['ok' => ['session_id', 'context'], 'loop' => []], $result->registry);
+        $this->assertSame([
+            'WARN: Handle injection failed for tool "loop"; listing it unmodified - the tool cannot be encoded as JSON',
+            'WARN: Context injection failed for tool "loop"; listing it unmodified - the tool cannot be encoded as JSON',
         ], $this->logger->messages());
     }
 
@@ -784,6 +861,7 @@ final class ToolListInjectorTest extends TestCase
         $this->assertNotSame($tool->inputSchema, $listed->inputSchema);
     }
 
+    #[Group('ac-02-13')]
     public function testWholePipelineFailureServesTheOriginalList(): void
     {
         $hostile = new class extends \stdClass {
@@ -819,7 +897,6 @@ final class ToolListInjectorTest extends TestCase
     }
 
     /** A legacy exception message is logged without a warning or a throw, also under a throwing error handler. */
-    #[Group('review-focus-2')]
     #[DataProvider('legacyMessageProvider')]
     public function testLegacyExceptionMessagesAreLoggedSafely(mixed $message, string $text): void
     {
@@ -875,6 +952,12 @@ final class ToolListInjectorTest extends TestCase
     private function inject(array $tools, InjectionConfig $config = new InjectionConfig(enableReportMissing: false), InjectionState $state = new InjectionState()): InjectedList
     {
         return ToolListInjector::inject($tools, $config, $state);
+    }
+
+    /** @return list<mixed> the names of the listed tools */
+    private function names(InjectedList $result): array
+    {
+        return array_map(static fn(mixed $tool): mixed => $tool instanceof \stdClass ? ($tool->name ?? null) : null, $result->tools);
     }
 
     private function logCount(string $message): int

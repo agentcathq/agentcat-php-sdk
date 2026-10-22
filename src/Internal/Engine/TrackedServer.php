@@ -22,13 +22,16 @@ final class TrackedServer
     /** @var list<string>|null tools whose outputSchema declares `mcp_session` */
     public ?array $outputRegistry = null;
 
+    /** True once a rebuild read every page (D66): a tool the registry lacks is then in no listing. */
+    public bool $everyPageRead = false;
+
     /**
      * @param string $projectId '' in telemetry-only mode
      * @param \Closure(): array{0: ?string, 1: ?string} $serverInfo server name and version, read when an event is published
      * @param Publisher $publisher the publisher of the client that tracked the server
      * @param (\Closure(): ?HttpContext)|null $httpContext the HTTP request of a call, from the framework; null reads the
      *                                                    SAPI globals. The laravel/mcp adapter reads the server's own
-     *                                                    transport instead (plan E1 header conflict 9)
+     *                                                    transport instead
      */
     public function __construct(
         public readonly string $projectId,
@@ -63,17 +66,24 @@ final class TrackedServer
         );
     }
 
-    /** Mirror the minted session into a result only when the tool declares `mcp_session` (02 §2.8). */
+    /** Mirror the minted session into a result only when the tool declares `mcp_session`. */
     public function mirrorAllowed(string $toolName): bool
     {
         return $this->outputRegistry === null || in_array($toolName, $this->outputRegistry, true);
     }
 
-    /** Replaces both registries wholesale. */
+    /**
+     * Merges one page's registries into the server's (D66, B10 fixed; TypeScript replaces them): the page's entries
+     * replace those of the same tools, and the output registry keeps the tools of the other pages. `array_replace()`
+     * keeps the int keys that PHP makes of numeric-string names, and `array_diff()` compares them as strings. A tool
+     * without a name is in the output registry as `unknown` and can have no registry entry, so `array_unique()` keeps
+     * one copy of it when the page is listed again.
+     */
     public function adopt(InjectedList $list): void
     {
-        $this->registry = $list->registry;
-        $this->outputRegistry = $list->outputRegistry;
+        $this->registry = array_replace($this->registry ?? [], $list->registry);
+        $kept = array_diff($this->outputRegistry ?? [], array_keys($list->registry));
+        $this->outputRegistry = [...array_unique([...$kept, ...$list->outputRegistry])];
     }
 
     /** @return array{0: ?string, 1: ?string} */

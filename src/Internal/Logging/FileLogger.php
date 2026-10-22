@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AgentCat\Internal\Logging;
 
+use AgentCat\Internal\Support\Env;
 use Psr\Log\AbstractLogger;
 
 /** @internal */
@@ -17,7 +18,7 @@ final class FileLogger extends AbstractLogger
     public function __construct(?string $path = null, ?\Closure $homeLookup = null)
     {
         if ($path === null) {
-            $home = ($homeLookup ?? static fn(): ?string => self::resolveHome(getenv('HOME'), self::posixHome(...)))();
+            $home = ($homeLookup ?? static fn(): ?string => self::resolveHome(Env::lookup('HOME'), self::posixHome(...)))();
             $path = $home === null ? null : $home . '/agentcat.log';
         }
         $this->path = $path;

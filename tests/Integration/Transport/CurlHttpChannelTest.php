@@ -26,7 +26,7 @@ final class CurlHttpChannelTest extends TestCase
 
     private MemoryLogger $logger;
 
-    /** @var list<\Throwable> what the channels of this test swallowed (I2: the normal paths swallow nothing) */
+    /** @var list<\Throwable> what the channels of this test swallowed (the normal paths swallow nothing) */
     private array $swallowed = [];
 
     #[\Override]
@@ -111,7 +111,7 @@ final class CurlHttpChannelTest extends TestCase
         $this->assertSame([], $this->logger->messages(), 'a failed request reaches only its callback');
     }
 
-    /** Review Focus 5: no file is read and no redirect is followed. */
+    /** No file is read and no redirect is followed. */
     #[MaximumDuration(3000)]
     public function testOnlyHttpAndHttpsAreFetched(): void
     {
@@ -223,7 +223,7 @@ final class CurlHttpChannelTest extends TestCase
         $this->assertSame(CurlHttpChannel::MAX_BODY_BYTES, strlen((string) $body));
     }
 
-    /** I1: a background request in transfer is left out of `pending(false)` too. */
+    /** A background request in transfer is left out of `pending(false)` too. */
     #[MaximumDuration(3000)]
     public function testABackgroundRequestInTransferIsLeftOutOfTheForegroundCount(): void
     {
@@ -241,11 +241,11 @@ final class CurlHttpChannelTest extends TestCase
     }
 
     /**
-     * I2 and the N1 ruling: a signal handler (the SIGTERM drain) that runs inside a callback pumps, waits on and posts
-     * to the channel it interrupted. In the `header` callback the seam clears the busy flag first, as at PHP 8.4+'s
-     * callback entry: the nested pump's add and run are refused, the refusal marks the channel busy, and the request
-     * waits. In the `write` callback the channel is busy already. Either way: nothing pending, no wait, nothing failed,
-     * and every request completes.
+     * A signal handler (the SIGTERM drain) that runs inside a callback pumps, waits on and posts to the channel it
+     * interrupted. In the `header` callback the seam clears the busy flag first, as at PHP 8.4+'s callback entry: the
+     * nested pump's add and run are refused, the refusal marks the channel busy, and the request waits. In the `write`
+     * callback the channel is busy already. Either way: nothing pending, no wait, nothing failed, and every request
+     * completes.
      */
     #[MaximumDuration(5000)]
     public function testAPumpFromInsideATransferCallbackLeavesTheChannelAlone(): void
@@ -347,7 +347,7 @@ final class CurlHttpChannelTest extends TestCase
         $this->assertCount(12, $this->collector()->requests($url));
     }
 
-    /** Ruling P11: a multi handle that cannot run fails its transfers, so a flush without a deadline cannot hang. */
+    /** A multi handle that cannot run fails its transfers, so a flush without a deadline cannot hang. */
     #[MaximumDuration(3000)]
     public function testAFailingExecFailsEveryTransferInsteadOfWaitingForever(): void
     {
@@ -461,14 +461,18 @@ final class CurlHttpChannelTest extends TestCase
         $this->assertSame(1, $channel->inTransfer(), 'the next request started in the same pass');
         $this->assertTrue($this->drain($channel, 2.0));
         $this->assertCount(3, $responses);
-        $nul = 'ValueError: curl_setopt_array(): cURL option must not contain any null bytes';
-        $this->assertSame([$nul, $nul, null], array_map(static fn(HttpResponse $response): ?string => $response->error, $responses));
+        $errors = array_map(static fn(HttpResponse $response): ?string => $response->error, $responses);
+        // PHP 8.6 names the option ("cURL option CURLOPT_URL must not …"); 8.3 to 8.5 do not.
+        $nul = '~^ValueError: curl_setopt_array\(\): cURL option .*must not contain any null bytes$~';
+        $this->assertMatchesRegularExpression($nul, (string) $errors[0]);
+        $this->assertMatchesRegularExpression($nul, (string) $errors[1]);
+        $this->assertNull($errors[2]);
         $this->assertSame(202, $responses[2]->status);
         $this->assertCount(1, $this->collector()->requests($url));
     }
 
     /**
-     * M2: curl_setopt_array() stops at the first option it rejects (libcurl takes no URL over 8 MB). Such a request
+     * curl_setopt_array() stops at the first option it rejects (libcurl takes no URL over 8 MB). Such a request
      * fails through its callback and is never added; the options that take the response come first, so nothing of
      * any response reaches STDOUT (the stdio MCP stream; PHPUnit fails a test that prints).
      */
@@ -494,7 +498,7 @@ final class CurlHttpChannelTest extends TestCase
         $this->assertSame('/next', $requests[0]->path);
     }
 
-    /** I2: a throwable inside a pump never reaches the caller; the seam sees it, and the next pump goes on. */
+    /** A throwable inside a pump never reaches the caller; the seam sees it, and the next pump goes on. */
     #[MaximumDuration(3000)]
     public function testAThrowableInAPumpIsSwallowedAndTheTransfersGoOn(): void
     {
@@ -579,9 +583,11 @@ final class CurlHttpChannelTest extends TestCase
     }
 
     /**
-     * Ruling P7: only a wait with a transfer in progress reaches the NaN guard. Without the guard, PHP 8.4+ computes
+     * Only a wait with a transfer in progress reaches the NaN guard. Without the guard, PHP 8.4+ computes
      * a NAN bound (`max(0.0, NAN)`), which curl_multi_select() rejects with a ValueError: tearDown() sees it swallowed.
-     * CurlSupportTest pins the bound itself.
+     * CurlSupportTest pins the bound itself. The test counts waits instead of timing one: libcurl ends a wait early at a
+     * timer of its own (on libcurl 7.88, one due about 200 ms after the transfer starts), and until a pump() runs that
+     * timer, every later wait returns at once.
      */
     #[MaximumDuration(3000)]
     public function testAWaitWithANanOrNegativeBoundReturnsAtOnceDuringATransfer(): void
@@ -611,12 +617,22 @@ final class CurlHttpChannelTest extends TestCase
 
         foreach ([NAN, -1.0] as $seconds) {
             $begin = hrtime(true);
-            $channel->waitForActivity($seconds);
-            $this->assertLessThan(0.5, (hrtime(true) - $begin) / 1e9);
+            for ($i = 0; $i < 10; ++$i) {
+                $channel->pump(); // runs libcurl's due timers, which would end a wait early
+                $channel->waitForActivity($seconds);
+            }
+            $this->assertLessThan(1.0, (hrtime(true) - $begin) / 1e9, 'ten waits return at once, not after a second each');
         }
-        $begin = hrtime(true);
-        $channel->waitForActivity(0.2);
-        $this->assertGreaterThanOrEqual(0.15, (hrtime(true) - $begin) / 1e9, 'a positive bound does block');
+        // A positive bound does block: pump() and a wait of 0.2 s, for 0.6 s, run about three times. Each libcurl timer
+        // can end one wait early (one on libcurl 7.88); fewer than 8 passes means waits of more than about 80 ms.
+        $passes = 0;
+        $until = hrtime(true) + 600_000_000;
+        while (hrtime(true) < $until) {
+            $channel->pump();
+            $channel->waitForActivity(0.2);
+            ++$passes;
+        }
+        $this->assertLessThan(8, $passes, 'a positive bound does block');
 
         fclose($connection);
         fclose($server);

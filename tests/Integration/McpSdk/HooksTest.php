@@ -8,6 +8,7 @@ use AgentCat\Event;
 use AgentCat\Identity;
 use AgentCat\Internal\Constants;
 use AgentCat\Internal\Id\SessionId;
+use AgentCat\Internal\Json\Json;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Options;
 use AgentCat\Tests\Support\JsonAssert;
@@ -17,12 +18,15 @@ use AgentCat\Tests\Support\McpSdk\TrackingFixture;
 use AgentCat\ToolCall;
 use Mcp\Schema\Request\CallToolRequest;
 use Mcp\Server\Session\SessionInterface;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 /** Customer hooks through a real server: what they see, and that they run after the response (D04). */
 final class HooksTest extends TestCase
 {
+    private const string SESSION = 'ses_bbbbbbbbbbbbbbbbbbbbbbbbbbb';
+
     private TrackingFixture $fixture;
 
     #[\Override]
@@ -99,6 +103,64 @@ final class HooksTest extends TestCase
         $this->assertNull($event->identifyActorGivenId);
         $this->assertSame('{}', $this->json($event->identifyActorData));
         $this->assertContains('Error: identify callback threw - RuntimeException: who?', $this->fixture->lines());
+    }
+
+    /**
+     * An `Identity` always has a userId, so an identity without one reaches AgentCat as an array or another object.
+     *
+     * @return iterable<string, array{mixed}>
+     */
+    public static function identitiesWithoutAUserId(): iterable
+    {
+        yield 'an array' => [['userName' => 'Ada', 'userData' => ['plan' => 'pro']]];
+        yield 'a plain object' => [(object) ['userName' => 'Ada', 'userData' => ['plan' => 'pro']]];
+    }
+
+    #[DataProvider('identitiesWithoutAUserId')]
+    #[Group('ac-01-36')]
+    public function testAnIdentityWithoutAUserIdLeavesTheEventAnonymous(mixed $identity): void
+    {
+        $harness = $this->tracked(Options::fromArray(['identify' => static fn(): mixed => $identity]));
+
+        $answer = $harness->callTool('echo', ['msg' => 'hi', 'session_id' => self::SESSION]);
+
+        $this->assertSame('echo: hi', JsonAssert::at(HttpHarness::result($answer), 'content', 0, 'text'));
+        $this->fixture->event();
+        $this->assertCount(1, $this->fixture->transport->deliveries);
+        $body = Json::decode($this->fixture->transport->deliveries[0]->body);
+        $this->assertInstanceOf(\stdClass::class, $body);
+        foreach (['actor_id', 'identify_actor_given_id', 'identify_actor_name'] as $key) {
+            $this->assertObjectNotHasProperty($key, $body);
+        }
+        $this->assertSame('{}', $this->json(JsonAssert::at($body, 'identify_data')));
+        $this->assertContains(sprintf('WARN: identify returned %s, expected AgentCat\Identity or null; the event stays anonymous', get_debug_type($identity)), $this->fixture->lines());
+    }
+
+    /**
+     * What AgentCat keeps for a tracked server is its project ID, its options and its listing; the rest of its state
+     * is read-only. The calls it serves leave nothing there, an identity or a session no more than anything else: each
+     * event has its own call's identity.
+     */
+    #[Group('ac-01-39')]
+    public function testTheStateOfAServerKeepsNothingOfItsCalls(): void
+    {
+        $builder = TrackingFixture::builder();
+        Tools::echo($builder);
+        $options = new Options(identify: static fn(ToolCall $call): Identity => new Identity('user-' . (is_string($call->arguments['msg'] ?? null) ? $call->arguments['msg'] : '')));
+        $state = $this->fixture->track($builder, $options);
+        $harness = $this->fixture->harness($builder);
+        $harness->listTools();
+        $listed = [$state->registry, $state->outputRegistry, $state->everyPageRead];
+        $injection = clone $state->injection;
+
+        $harness->callTool('echo', ['msg' => '1', 'session_id' => 'start']);
+        $harness->callTool('echo', ['msg' => '2', 'session_id' => self::SESSION]);
+
+        $events = $this->fixture->events();
+        $this->assertSame(['user-1', 'user-2'], array_map(static fn(Event $event): ?string => $event->identifyActorGivenId, $events));
+        $this->assertSame([TrackingFixture::PROJECT, $options], [$state->projectId, $state->options]);
+        $this->assertSame($listed, [$state->registry, $state->outputRegistry, $state->everyPageRead], 'the calls changed nothing in the listing');
+        $this->assertEquals($injection, $state->injection, 'nor in the injection state');
     }
 
     #[Group('ac-01-30')]

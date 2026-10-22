@@ -26,8 +26,10 @@ final class LibrariesTest extends TestCase
 
     public function testABuilderGoesToTheMcpSdkLibrary(): void
     {
-        $this->assertInstanceOf(McpSdkLibrary::class, Libraries::for(Server::builder()));
-        $this->assertSame('mcp-sdk/builder', Libraries::for(Server::builder())->sdk());
+        $builder = Server::builder();
+
+        $this->assertInstanceOf(McpSdkLibrary::class, Libraries::for($builder));
+        $this->assertSame('mcp-sdk/builder', Libraries::for($builder)->sdk($builder));
     }
 
     #[Group('ac-02-2')]
@@ -41,6 +43,8 @@ final class LibrariesTest extends TestCase
         $this->assertSame('mcpSdkServer', Libraries::fingerprint(Server::builder()->build()));
         $this->assertSame('mcpSdkBuilder,built', Libraries::fingerprint($built));
         $this->assertNull(Libraries::trackedServer(new \stdClass()));
+        $this->assertNull(Libraries::trackerOf(new \stdClass()));
+        $this->assertNull(Libraries::trackerOf(Server::builder()->build()), 'a Server whose Builder is not tracked');
     }
 
     public function testTheSupportMatrixHasOneSentencePerLibrary(): void

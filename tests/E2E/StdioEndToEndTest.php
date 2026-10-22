@@ -33,7 +33,7 @@ final class StdioEndToEndTest extends TestCase
     /** The 5 s shutdown budget, plus room for a slow runner. */
     private const float EOF_EXIT_SECONDS = 6.0;
 
-    /** Review Focus 3: the 5 s shutdown budget with every delivery slot held by a collector that answers after 8 s. */
+    /** The 5 s shutdown budget with every delivery slot held by a collector that answers after 8 s. */
     private const float SLOW_COLLECTOR_EXIT_SECONDS = 6.5;
 
     private const float SIGTERM_EXIT_SECONDS = 3.0;
@@ -49,7 +49,7 @@ final class StdioEndToEndTest extends TestCase
 
     private static ?MockCollector $collector = null;
 
-    /** The HOME (agentcat.log) of every server of this class, under the test HOME (Ruling R8). */
+    /** The HOME (agentcat.log) of every server of this class, under the test HOME. */
     private static string $dir = '';
 
     /** The collector scenario of the current test. */
@@ -94,7 +94,7 @@ final class StdioEndToEndTest extends TestCase
         $this->client = null;
     }
 
-    /** M6: one stdio session through the handshake; both events reach the collector by the time stdin closes. */
+    /** One stdio session through the handshake; both events reach the collector by the time stdin closes. */
     #[Group('ac-02-53')]
     #[MaximumDuration(15000)]
     public function testAHandshakeSessionIsTrackedAndDeliveredAtEof(): void
@@ -197,8 +197,8 @@ final class StdioEndToEndTest extends TestCase
     }
 
     /**
-     * Review Focus 3: stdin closes while the collector holds every delivery. The pump at each handler entry starts at
-     * most 5 deliveries, so 2 of the 7 events still wait when the 5 s shutdown budget ends.
+     * Stdin closes while the collector holds every delivery. The pump at each handler entry starts at most 5
+     * deliveries, so 2 of the 7 events still wait when the 5 s shutdown budget ends.
      */
     #[Group('ac-03-9')]
     #[MaximumDuration(15000)]
@@ -244,7 +244,7 @@ final class StdioEndToEndTest extends TestCase
     }
 
     /**
-     * 06 AC-62 in a real process: stdin EOF posts the diagnostics buffer exactly once, with the setup beacons and the
+     * ac-06-62 in a real process: stdin EOF posts the diagnostics buffer exactly once, with the setup beacons and the
      * per-event line logged during the EOF drain.
      */
     #[Group('ac-06-62')]
@@ -272,11 +272,11 @@ final class StdioEndToEndTest extends TestCase
         $this->assertSame(1, substr_count($body, 'Successfully sent event '), 'the per-event line of the EOF drain');
     }
 
-    /** mcp/sdk main serves the 2026-07-28 era over stdio when the first request carries its envelope. */
+    /** mcp/sdk 0.9.0 and main serve the 2026-07-28 era over stdio when the first request carries its envelope. */
     #[MaximumDuration(15000)]
     public function testAModernEraFirstRequestIsTrackedWithoutAHandshake(): void
     {
-        if (!McpSdkVersion::isMain()) {
+        if (!McpSdkVersion::hasModernEra()) {
             self::markTestSkipped('mcp/sdk 0.8.1 serves only the handshake era over stdio');
         }
         $client = $this->start();

@@ -199,7 +199,7 @@ final class ClientTrackTest extends TestCase
     public static function unsupportedServers(): iterable
     {
         yield 'any object' => [static fn(): object => new \stdClass(), '(none)'];
-        yield 'a built mcp/sdk server' => [static fn(): object => Server::builder()->build(), 'mcpSdkServer'];
+        yield 'a built mcp/sdk server whose Builder is not tracked' => [static fn(): object => Server::builder()->build(), 'mcpSdkServer'];
     }
 
     /** @param \Closure(): object $make */
@@ -240,6 +240,24 @@ final class ClientTrackTest extends TestCase
         ], $this->logger->messages());
         $this->assertSame(['echo'], $this->names($this->initialized($server)->listTools()));
         $this->assertSame(['echo'], $this->names($this->harness($builder)->listTools()), 'no AgentCat handler was added');
+    }
+
+    /** When `Builder::$parts` cannot be read, track() returns the Builder untracked, and the lines name the member. */
+    public function testABuilderWhosePartsCannotBeReadIsReturnedUntracked(): void
+    {
+        $builder = TrackingFixture::builder();
+        Tools::echo($builder);
+        BuilderMembers::uninitialize('parts')($builder);
+
+        $this->assertSame($builder, $this->client->track($builder, self::PROJECT));
+
+        $reason = sprintf('mcp/sdk %s internals changed (Error: Typed property Mcp\Server\Builder::$parts must not be accessed before initialization).', McpSdkAdapter::version());
+        $this->assertSame([
+            'AgentCat SDK Compatibility: ' . McpSdkAdapter::SUPPORT_MATRIX,
+            'Warning: Failed to track server - UnexpectedValueException: AgentCat SDK compatibility error: ' . $reason . ' ' . McpSdkAdapter::SUPPORT_MATRIX,
+        ], $this->logger->messages());
+        $this->assertNull(TrackedServers::get($builder), 'nothing is tracked');
+        $this->assertNull(BuilderAccess::container($builder), 'nothing is installed');
     }
 
     #[Group('ac-01-3')]
@@ -470,6 +488,36 @@ final class ClientTrackTest extends TestCase
             self::ALREADY_TRACKED,
         ], $this->logger->messages());
         $this->assertSame(['echo', GetMoreTools::NAME], $this->names($harness->listTools()));
+    }
+
+    /** The Server that a tracked Builder built is tracked through it: track() on the Server changes nothing. */
+    #[Group('ac-01-8')]
+    public function testTrackingTheServerOfATrackedBuilderChangesNothing(): void
+    {
+        $builder = TrackingFixture::builder();
+        Tools::echo($builder);
+        $this->client->track($builder, self::PROJECT, new Options(identify: static fn(ToolCall $call): Identity => new Identity('first')));
+        $server = $builder->build();
+        $this->logger->records = [];
+
+        $this->assertSame($server, $this->client->track($server, self::PROJECT, new Options(
+            enableReportMissing: false,
+            identify: static fn(ToolCall $call): Identity => new Identity('second'),
+        )));
+
+        $this->assertSame([
+            'AgentCat setup started | project ' . self::PROJECT . ' | sdk mcp-sdk/server | signals mcpSdkServer',
+            self::ALREADY_TRACKED,
+        ], $this->logger->messages());
+        $this->assertNotContains(LogLevel::WARNING, array_column($this->logger->records, 'level'));
+        $this->assertFalse(TrackedServers::incomplete(), 'no failure is recorded');
+        $this->assertSame(TrackedServers::get($builder), TrackedServers::get($server), 'the Builder keeps the one tracking');
+        $harness = $this->initialized($server);
+        $this->assertSame(['echo', GetMoreTools::NAME], $this->names($harness->listTools()));
+        $texts = $this->texts(HttpHarness::result($harness->callTool('echo', ['msg' => 'hi'])));
+        $this->assertCount(1, array_filter($texts, static fn(mixed $text): bool => is_string($text) && str_starts_with($text, Constants::MINT_BACK_HEADER_ISSUED)));
+        $this->assertSame('echo: hi', $texts[1] ?? null);
+        $this->assertSame('first', $this->event()->identifyActorGivenId);
     }
 
     #[Group('ac-01-9')]

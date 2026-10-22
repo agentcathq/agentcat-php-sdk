@@ -114,7 +114,7 @@ final class ClientExportersTest extends TestCase
         $this->assertContains('AgentCat setup complete | project ' . self::PROJECT . ' | tracing=true context=true reportMissing=true exporters=1', $this->logger->messages());
     }
 
-    /** Review Focus 3: a new Builder per request in a long-running worker, the same exporters every time. */
+    /** A new Builder per request in a long-running worker, the same exporters every time. */
     public function testPerRequestBuildersWithTheSameExportersShareOneManager(): void
     {
         for ($request = 0; $request < 3; ++$request) {

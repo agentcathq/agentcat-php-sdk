@@ -7,7 +7,6 @@ namespace AgentCat\Tests\Unit\Internal\Support;
 use AgentCat\Internal\Support\ErrorText;
 use AgentCat\Tests\Fixtures\Errors\LegacyMessageException;
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 final class ErrorTextTest extends TestCase
@@ -49,7 +48,6 @@ final class ErrorTextTest extends TestCase
     }
 
     #[DataProvider('legacyMessageProvider')]
-    #[Group('review-focus-2')]
     public function testNonStringMessageUnderAThrowingErrorHandler(mixed $message, string $expected): void
     {
         $error = new LegacyMessageException($message);

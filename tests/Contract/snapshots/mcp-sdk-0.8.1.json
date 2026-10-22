@@ -1,0 +1,2277 @@
+{
+    "classes": {
+        "Mcp\\Schema\\Result\\CallToolResult": {
+            "abstract": false,
+            "abstractMethods": [],
+            "constants": [],
+            "final": false,
+            "methods": {
+                "__construct": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "content",
+                            "type": "array",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "isError",
+                            "type": "bool",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "structuredContent",
+                            "type": "mixed",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "meta",
+                            "type": "?array",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "error": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "content",
+                            "type": "array",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "meta",
+                            "type": "?array",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Schema\\Result\\CallToolResult",
+                    "static": true,
+                    "visibility": "public"
+                },
+                "fromArray": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "data",
+                            "type": "array",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Schema\\Result\\CallToolResult",
+                    "static": true,
+                    "visibility": "public"
+                },
+                "jsonSerialize": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [],
+                    "return": "array",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "success": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "content",
+                            "type": "array",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "meta",
+                            "type": "?array",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Schema\\Result\\CallToolResult",
+                    "static": true,
+                    "visibility": "public"
+                }
+            },
+            "properties": {
+                "content": {
+                    "hasDefault": false,
+                    "readonly": true,
+                    "static": false,
+                    "type": "array",
+                    "visibility": "public"
+                },
+                "isError": {
+                    "hasDefault": false,
+                    "readonly": true,
+                    "static": false,
+                    "type": "bool",
+                    "visibility": "public"
+                },
+                "meta": {
+                    "hasDefault": false,
+                    "readonly": true,
+                    "static": false,
+                    "type": "?array",
+                    "visibility": "public"
+                },
+                "structuredContent": {
+                    "hasDefault": false,
+                    "readonly": true,
+                    "static": false,
+                    "type": "mixed",
+                    "visibility": "public"
+                }
+            },
+            "readonly": false
+        },
+        "Mcp\\Schema\\Result\\ListToolsResult": {
+            "abstract": false,
+            "abstractMethods": [],
+            "constants": [],
+            "final": false,
+            "methods": {
+                "__construct": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "tools",
+                            "type": "array",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "nextCursor",
+                            "type": "?string",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "fromArray": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "data",
+                            "type": "array",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Schema\\Result\\ListToolsResult",
+                    "static": true,
+                    "visibility": "public"
+                },
+                "jsonSerialize": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [],
+                    "return": "array",
+                    "static": false,
+                    "visibility": "public"
+                }
+            },
+            "properties": {
+                "nextCursor": {
+                    "hasDefault": false,
+                    "readonly": true,
+                    "static": false,
+                    "type": "?string",
+                    "visibility": "public"
+                },
+                "tools": {
+                    "hasDefault": false,
+                    "readonly": true,
+                    "static": false,
+                    "type": "array",
+                    "visibility": "public"
+                }
+            },
+            "readonly": false
+        },
+        "Mcp\\Server": {
+            "abstract": false,
+            "abstractMethods": [],
+            "constants": [],
+            "final": true,
+            "methods": {
+                "__construct": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "protocol",
+                            "type": "Mcp\\Server\\Protocol",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "logger",
+                            "type": "Psr\\Log\\LoggerInterface",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "statelessProtocol",
+                            "type": "?Mcp\\Server\\Stateless\\StatelessProtocol",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "builder": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": true,
+                    "visibility": "public"
+                },
+                "run": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "transport",
+                            "type": "Mcp\\Server\\Transport\\TransportInterface",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "mixed",
+                    "static": false,
+                    "visibility": "public"
+                }
+            },
+            "properties": {
+                "logger": {
+                    "hasDefault": false,
+                    "readonly": true,
+                    "static": false,
+                    "type": "Psr\\Log\\LoggerInterface",
+                    "visibility": "private"
+                },
+                "protocol": {
+                    "hasDefault": false,
+                    "readonly": true,
+                    "static": false,
+                    "type": "Mcp\\Server\\Protocol",
+                    "visibility": "private"
+                },
+                "statelessProtocol": {
+                    "hasDefault": false,
+                    "readonly": true,
+                    "static": false,
+                    "type": "?Mcp\\Server\\Stateless\\StatelessProtocol",
+                    "visibility": "private"
+                }
+            },
+            "readonly": false
+        },
+        "Mcp\\Server\\Builder": {
+            "abstract": false,
+            "abstractMethods": [],
+            "constants": [],
+            "final": true,
+            "methods": {
+                "add": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "definition",
+                            "type": "Mcp\\Schema\\Tool|Mcp\\Schema\\ResourceDefinition|Mcp\\Schema\\ResourceTemplate|Mcp\\Schema\\Prompt",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "handler",
+                            "type": "Mcp\\Server\\Handler\\ElementHandlerInterface",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "completionProviders",
+                            "type": "array",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "addLoader": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "loader",
+                            "type": "Mcp\\Capability\\Registry\\Loader\\LoaderInterface",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "addLoaders": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "loaders",
+                            "type": "iterable",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "addNotificationHandler": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "handler",
+                            "type": "Mcp\\Server\\Handler\\Notification\\NotificationHandlerInterface",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "addNotificationHandlers": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "handlers",
+                            "type": "iterable",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "addPrompt": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "handler",
+                            "type": "Closure|array|string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "name",
+                            "type": "?string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "title",
+                            "type": "?string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "description",
+                            "type": "?string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "icons",
+                            "type": "?array",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "meta",
+                            "type": "?array",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "addRequestHandler": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "handler",
+                            "type": "Mcp\\Server\\Handler\\Request\\RequestHandlerInterface",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "addRequestHandlers": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "handlers",
+                            "type": "iterable",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "addResource": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "handler",
+                            "type": "Closure|array|string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "uri",
+                            "type": "string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "name",
+                            "type": "?string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "title",
+                            "type": "?string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "description",
+                            "type": "?string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "mimeType",
+                            "type": "?string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "size",
+                            "type": "?int",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "annotations",
+                            "type": "?Mcp\\Schema\\Annotations",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "icons",
+                            "type": "?array",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "meta",
+                            "type": "?array",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "addResourceTemplate": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "handler",
+                            "type": "Closure|array|string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "uriTemplate",
+                            "type": "string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "name",
+                            "type": "?string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "title",
+                            "type": "?string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "description",
+                            "type": "?string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "mimeType",
+                            "type": "?string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "annotations",
+                            "type": "?Mcp\\Schema\\Annotations",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "meta",
+                            "type": "?array",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "addTool": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "handler",
+                            "type": "callable|array|string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "name",
+                            "type": "?string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "title",
+                            "type": "?string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "description",
+                            "type": "?string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "annotations",
+                            "type": "?Mcp\\Schema\\ToolAnnotations",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "inputSchema",
+                            "type": "?array",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "icons",
+                            "type": "?array",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "meta",
+                            "type": "?array",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "outputSchema",
+                            "type": "?array",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "assemble": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [],
+                    "return": "array",
+                    "static": false,
+                    "visibility": "private"
+                },
+                "build": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [],
+                    "return": "Mcp\\Server",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "buildStateless": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "supportedVersions",
+                            "type": "array",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Stateless\\StatelessProtocol",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "createDiscoverer": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "logger",
+                            "type": "Psr\\Log\\LoggerInterface",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Capability\\Discovery\\DiscovererInterface",
+                    "static": false,
+                    "visibility": "private"
+                },
+                "detectCapabilities": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "registry",
+                            "type": "Mcp\\Capability\\RegistryInterface",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "eagerlyLoaded",
+                            "type": "bool",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "eventDispatcher",
+                            "type": "?Psr\\EventDispatcher\\EventDispatcherInterface",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Schema\\ServerCapabilities",
+                    "static": false,
+                    "visibility": "private"
+                },
+                "enableExtension": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "extensions",
+                            "type": "Mcp\\Schema\\Extension\\ExtensionInterface",
+                            "variadic": true
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "requestStateCodec": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [],
+                    "return": "?Mcp\\Server\\Stateless\\RequestStateCodec",
+                    "static": false,
+                    "visibility": "private"
+                },
+                "resolve": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [],
+                    "return": "array",
+                    "static": false,
+                    "visibility": "private"
+                },
+                "setCachePolicy": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "policy",
+                            "type": "Mcp\\Server\\Wire\\CachePolicy",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "setCapabilities": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "serverCapabilities",
+                            "type": "Mcp\\Schema\\ServerCapabilities",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "setContainer": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "container",
+                            "type": "Psr\\Container\\ContainerInterface",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "setDiscoverer": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "discoverer",
+                            "type": "Mcp\\Capability\\Discovery\\DiscovererInterface",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "setDiscovery": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "basePath",
+                            "type": "string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "scanDirs",
+                            "type": "array",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "excludeDirs",
+                            "type": "array",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "cache",
+                            "type": "?Psr\\SimpleCache\\CacheInterface",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "namePatterns",
+                            "type": "array",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "setEventDispatcher": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "eventDispatcher",
+                            "type": "Psr\\EventDispatcher\\EventDispatcherInterface",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "setHeaderValidator": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "headerValidation",
+                            "type": "bool",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "setInputRequiredLimits": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "maxRounds",
+                            "type": "int",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "roundTimeout",
+                            "type": "int",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "setInstructions": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "instructions",
+                            "type": "?string",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "setLazyLoading": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "lazyLoading",
+                            "type": "bool",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "setLogger": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "logger",
+                            "type": "Psr\\Log\\LoggerInterface",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "setModernVersions": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "versions",
+                            "type": "array",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "setNotificationBus": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "bus",
+                            "type": "Mcp\\Server\\Subscription\\NotificationBusInterface",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "setPaginationLimit": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "paginationLimit",
+                            "type": "int",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "setProtocolVersion": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "protocolVersion",
+                            "type": "Mcp\\Schema\\Enum\\ProtocolVersion",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "setReferenceHandler": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "referenceHandler",
+                            "type": "Mcp\\Capability\\Registry\\ReferenceHandlerInterface",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "setRegistry": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "registry",
+                            "type": "Mcp\\Capability\\RegistryInterface",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "setRequestState": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "key",
+                            "type": "string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "ttl",
+                            "type": "int",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "setResourceSubscriptionManager": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "subscriptionManager",
+                            "type": "Mcp\\Server\\Resource\\SubscriptionManagerInterface",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "setSchemaGenerator": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "schemaGenerator",
+                            "type": "Mcp\\Capability\\Discovery\\SchemaGeneratorInterface",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "setServerInfo": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "name",
+                            "type": "string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "version",
+                            "type": "string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "description",
+                            "type": "?string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "icons",
+                            "type": "?array",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "websiteUrl",
+                            "type": "?string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "title",
+                            "type": "?string",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "setSession": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "sessionStore",
+                            "type": "?Mcp\\Server\\Session\\SessionStoreInterface",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "sessionManager",
+                            "type": "?Mcp\\Server\\Session\\SessionManagerInterface",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "gcProbability",
+                            "type": "int",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "gcDivisor",
+                            "type": "int",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "setSubscriptionLifetime": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "seconds",
+                            "type": "float",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "withoutInputRequiredShim": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "withoutModernEra": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [],
+                    "return": "Mcp\\Server\\Builder",
+                    "static": false,
+                    "visibility": "public"
+                }
+            },
+            "properties": {
+                "cachePolicy": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "?Mcp\\Server\\Wire\\CachePolicy",
+                    "visibility": "private"
+                },
+                "container": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "?Psr\\Container\\ContainerInterface",
+                    "visibility": "private"
+                },
+                "discoverer": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "?Mcp\\Capability\\Discovery\\DiscovererInterface",
+                    "visibility": "private"
+                },
+                "discoveryBasePath": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "?string",
+                    "visibility": "private"
+                },
+                "discoveryCache": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "?Psr\\SimpleCache\\CacheInterface",
+                    "visibility": "private"
+                },
+                "discoveryExcludeDirs": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "array",
+                    "visibility": "private"
+                },
+                "discoveryNamePatterns": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "?array",
+                    "visibility": "private"
+                },
+                "discoveryScanDirs": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "array",
+                    "visibility": "private"
+                },
+                "eventDispatcher": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "?Psr\\EventDispatcher\\EventDispatcherInterface",
+                    "visibility": "private"
+                },
+                "explicitPrompts": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "array",
+                    "visibility": "private"
+                },
+                "explicitResourceTemplates": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "array",
+                    "visibility": "private"
+                },
+                "explicitResources": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "array",
+                    "visibility": "private"
+                },
+                "explicitTools": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "array",
+                    "visibility": "private"
+                },
+                "extensionMessages": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "array",
+                    "visibility": "private"
+                },
+                "extensionMethods": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "array",
+                    "visibility": "private"
+                },
+                "extensions": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "array",
+                    "visibility": "private"
+                },
+                "gcDivisor": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "int",
+                    "visibility": "private"
+                },
+                "gcProbability": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "int",
+                    "visibility": "private"
+                },
+                "hasCustomRegistry": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "bool",
+                    "visibility": "private"
+                },
+                "headerValidation": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "bool",
+                    "visibility": "private"
+                },
+                "inputRequiredRounds": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "int",
+                    "visibility": "private"
+                },
+                "inputRequiredShim": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "bool",
+                    "visibility": "private"
+                },
+                "inputRequiredTimeout": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "int",
+                    "visibility": "private"
+                },
+                "instructions": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "?string",
+                    "visibility": "private"
+                },
+                "lazyLoading": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "bool",
+                    "visibility": "private"
+                },
+                "loaders": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "array",
+                    "visibility": "private"
+                },
+                "logger": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "?Psr\\Log\\LoggerInterface",
+                    "visibility": "private"
+                },
+                "modernVersions": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "?array",
+                    "visibility": "private"
+                },
+                "notificationBus": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "?Mcp\\Server\\Subscription\\NotificationBusInterface",
+                    "visibility": "private"
+                },
+                "notificationHandlers": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "array",
+                    "visibility": "private"
+                },
+                "paginationLimit": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "int",
+                    "visibility": "private"
+                },
+                "parts": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "?array",
+                    "visibility": "private"
+                },
+                "prompts": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "array",
+                    "visibility": "private"
+                },
+                "protocolVersion": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "?Mcp\\Schema\\Enum\\ProtocolVersion",
+                    "visibility": "private"
+                },
+                "referenceHandler": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "?Mcp\\Capability\\Registry\\ReferenceHandlerInterface",
+                    "visibility": "private"
+                },
+                "registry": {
+                    "hasDefault": false,
+                    "readonly": false,
+                    "static": false,
+                    "type": "Mcp\\Capability\\RegistryInterface",
+                    "visibility": "private"
+                },
+                "requestHandlers": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "array",
+                    "visibility": "private"
+                },
+                "requestStateKey": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "?string",
+                    "visibility": "private"
+                },
+                "requestStateTtl": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "int",
+                    "visibility": "private"
+                },
+                "resourceTemplates": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "array",
+                    "visibility": "private"
+                },
+                "resources": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "array",
+                    "visibility": "private"
+                },
+                "schemaGenerator": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "?Mcp\\Capability\\Discovery\\SchemaGeneratorInterface",
+                    "visibility": "private"
+                },
+                "serverCapabilities": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "?Mcp\\Schema\\ServerCapabilities",
+                    "visibility": "private"
+                },
+                "serverInfo": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "?Mcp\\Schema\\Implementation",
+                    "visibility": "private"
+                },
+                "sessionManager": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "?Mcp\\Server\\Session\\SessionManagerInterface",
+                    "visibility": "private"
+                },
+                "sessionStore": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "?Mcp\\Server\\Session\\SessionStoreInterface",
+                    "visibility": "private"
+                },
+                "subscriptionLifetime": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "float",
+                    "visibility": "private"
+                },
+                "subscriptionManager": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "?Mcp\\Server\\Resource\\SubscriptionManagerInterface",
+                    "visibility": "private"
+                },
+                "tools": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "array",
+                    "visibility": "private"
+                }
+            },
+            "readonly": false
+        },
+        "Mcp\\Server\\Protocol": {
+            "abstract": false,
+            "abstractMethods": [],
+            "constants": {
+                "INTERNAL_ERROR_MESSAGE": {
+                    "visibility": "private"
+                },
+                "SESSION_ACTIVE_REQUEST_META": {
+                    "visibility": "public"
+                },
+                "SESSION_LOGGING_LEVEL": {
+                    "visibility": "public"
+                },
+                "SESSION_OUTGOING_QUEUE": {
+                    "visibility": "private"
+                },
+                "SESSION_PENDING_REQUESTS": {
+                    "visibility": "private"
+                },
+                "SESSION_REQUEST_ID_COUNTER": {
+                    "visibility": "private"
+                },
+                "SESSION_RESPONSES": {
+                    "visibility": "private"
+                }
+            },
+            "final": false,
+            "methods": {
+                "__construct": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "requestHandlers",
+                            "type": "array",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "notificationHandlers",
+                            "type": "array",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "messageFactory",
+                            "type": "Mcp\\JsonRpc\\MessageFactory",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "sessionManager",
+                            "type": "Mcp\\Server\\Session\\SessionManagerInterface",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "logger",
+                            "type": "Psr\\Log\\LoggerInterface",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "eventDispatcher",
+                            "type": "?Psr\\EventDispatcher\\EventDispatcherInterface",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "inputRequiredShim",
+                            "type": "?Mcp\\Server\\InputRequiredShim",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "requestStateCodec",
+                            "type": "?Mcp\\Server\\Stateless\\RequestStateCodec",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "checkResponse": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "requestId",
+                            "type": "int",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "sessionId",
+                            "type": "Symfony\\Component\\Uid\\Uuid",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Schema\\JsonRpc\\Response|Mcp\\Schema\\JsonRpc\\Error|null",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "connect": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "transport",
+                            "type": "Mcp\\Server\\Transport\\TransportInterface",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "void",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "consumeOutgoingMessages": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "sessionId",
+                            "type": "Symfony\\Component\\Uid\\Uuid",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "array",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "destroySession": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "sessionId",
+                            "type": "Symfony\\Component\\Uid\\Uuid",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "void",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "dispatchEvent": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "event",
+                            "type": "object",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "object",
+                    "static": false,
+                    "visibility": "private"
+                },
+                "doProcessInput": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "transport",
+                            "type": "Mcp\\Server\\Transport\\TransportInterface",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "input",
+                            "type": "string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "sessionId",
+                            "type": "?Symfony\\Component\\Uid\\Uuid",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "void",
+                    "static": false,
+                    "visibility": "private"
+                },
+                "findResponseId": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "input",
+                            "type": "string",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "string|int|null",
+                    "static": true,
+                    "visibility": "private"
+                },
+                "getPendingRequests": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "sessionId",
+                            "type": "Symfony\\Component\\Uid\\Uuid",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "array",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "handleFiberYield": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "yieldedValue",
+                            "type": "mixed",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "sessionId",
+                            "type": "?Symfony\\Component\\Uid\\Uuid",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "void",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "handleInvalidMessage": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "transport",
+                            "type": "Mcp\\Server\\Transport\\TransportInterface",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "exception",
+                            "type": "Mcp\\Exception\\InvalidInputMessageException",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "session",
+                            "type": "Mcp\\Server\\Session\\SessionInterface",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "void",
+                    "static": false,
+                    "visibility": "private"
+                },
+                "handleNotification": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "notification",
+                            "type": "Mcp\\Schema\\JsonRpc\\Notification",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "session",
+                            "type": "Mcp\\Server\\Session\\SessionInterface",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "void",
+                    "static": false,
+                    "visibility": "private"
+                },
+                "handleRequest": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "transport",
+                            "type": "Mcp\\Server\\Transport\\TransportInterface",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "request",
+                            "type": "Mcp\\Schema\\JsonRpc\\Request",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "session",
+                            "type": "Mcp\\Server\\Session\\SessionInterface",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "void",
+                    "static": false,
+                    "visibility": "private"
+                },
+                "handleResponse": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "response",
+                            "type": "Mcp\\Schema\\JsonRpc\\Response|Mcp\\Schema\\JsonRpc\\Error",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "session",
+                            "type": "Mcp\\Server\\Session\\SessionInterface",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "void",
+                    "static": false,
+                    "visibility": "private"
+                },
+                "hasInitializeRequest": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "messages",
+                            "type": "array",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "bool",
+                    "static": false,
+                    "visibility": "private"
+                },
+                "processInput": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "transport",
+                            "type": "Mcp\\Server\\Transport\\TransportInterface",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "input",
+                            "type": "string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "sessionId",
+                            "type": "?Symfony\\Component\\Uid\\Uuid",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "void",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "queueOutgoing": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "message",
+                            "type": "Mcp\\Schema\\JsonRpc\\Request|Mcp\\Schema\\JsonRpc\\Notification|Mcp\\Schema\\JsonRpc\\Response|Mcp\\Schema\\JsonRpc\\Error",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "context",
+                            "type": "array",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "session",
+                            "type": "Mcp\\Server\\Session\\SessionInterface",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "void",
+                    "static": false,
+                    "visibility": "private"
+                },
+                "resolveSession": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "transport",
+                            "type": "Mcp\\Server\\Transport\\TransportInterface",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "sessionId",
+                            "type": "?Symfony\\Component\\Uid\\Uuid",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "messages",
+                            "type": "array",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "?Mcp\\Server\\Session\\SessionInterface",
+                    "static": false,
+                    "visibility": "private"
+                },
+                "sendNotification": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "notification",
+                            "type": "Mcp\\Schema\\JsonRpc\\Notification",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "session",
+                            "type": "Mcp\\Server\\Session\\SessionInterface",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "void",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "sendRequest": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "request",
+                            "type": "Mcp\\Schema\\JsonRpc\\Request",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "timeout",
+                            "type": "int",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "session",
+                            "type": "Mcp\\Server\\Session\\SessionInterface",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "int",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "sendResponse": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "transport",
+                            "type": "Mcp\\Server\\Transport\\TransportInterface",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "response",
+                            "type": "Mcp\\Schema\\JsonRpc\\Response|Mcp\\Schema\\JsonRpc\\Error",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "session",
+                            "type": "?Mcp\\Server\\Session\\SessionInterface",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "context",
+                            "type": "array",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "void",
+                    "static": false,
+                    "visibility": "private"
+                }
+            },
+            "properties": {
+                "eventDispatcher": {
+                    "hasDefault": false,
+                    "readonly": true,
+                    "static": false,
+                    "type": "?Psr\\EventDispatcher\\EventDispatcherInterface",
+                    "visibility": "private"
+                },
+                "inputRequiredShim": {
+                    "hasDefault": false,
+                    "readonly": true,
+                    "static": false,
+                    "type": "?Mcp\\Server\\InputRequiredShim",
+                    "visibility": "private"
+                },
+                "logger": {
+                    "hasDefault": false,
+                    "readonly": true,
+                    "static": false,
+                    "type": "Psr\\Log\\LoggerInterface",
+                    "visibility": "private"
+                },
+                "messageFactory": {
+                    "hasDefault": false,
+                    "readonly": true,
+                    "static": false,
+                    "type": "Mcp\\JsonRpc\\MessageFactory",
+                    "visibility": "private"
+                },
+                "notificationHandlers": {
+                    "hasDefault": false,
+                    "readonly": true,
+                    "static": false,
+                    "type": "array",
+                    "visibility": "private"
+                },
+                "requestHandlers": {
+                    "hasDefault": false,
+                    "readonly": true,
+                    "static": false,
+                    "type": "array",
+                    "visibility": "private"
+                },
+                "requestStateCodec": {
+                    "hasDefault": false,
+                    "readonly": true,
+                    "static": false,
+                    "type": "?Mcp\\Server\\Stateless\\RequestStateCodec",
+                    "visibility": "private"
+                },
+                "sessionManager": {
+                    "hasDefault": false,
+                    "readonly": true,
+                    "static": false,
+                    "type": "Mcp\\Server\\Session\\SessionManagerInterface",
+                    "visibility": "private"
+                }
+            },
+            "readonly": false
+        }
+    },
+    "library": "mcp/sdk",
+    "version": "0.8.1"
+}

@@ -72,7 +72,7 @@ final class DiagnosticsSwitchTest extends TestCase
         $this->assertFalse(DiagnosticsSwitch::enabled(false, $value, null, true));
     }
 
-    /** A10 (D50): `DISABLE_DIAGNOSTICS`, the unprefixed name, can only turn diagnostics off. */
+    /** D50: `DISABLE_DIAGNOSTICS`, the unprefixed name, can only turn diagnostics off. */
     #[Group('ac-06-49')]
     public function testTheUnprefixedFallbackCanOnlyTurnDiagnosticsOff(): void
     {
@@ -83,7 +83,7 @@ final class DiagnosticsSwitchTest extends TestCase
         $this->assertTrue(DiagnosticsSwitch::enabled(false, null, '', false));
     }
 
-    /** D50 ruling: when the two names disagree, any off value wins; a false value never turns them on over a true one. */
+    /** D50: when the two names disagree, any off value wins; a false value never turns them on over a true one. */
     #[Group('ac-06-49')]
     public function testWhenTheTwoVariablesDisagreeOffWins(): void
     {

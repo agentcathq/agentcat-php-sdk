@@ -149,7 +149,7 @@ final class EventProcessorTest extends TestCase
     }
 
     #[Group('ac-05-P6')]
-    #[Group('ac-08-5')]
+    #[Group('ac-05-P1')]
     public function testPendingFailureSkipsTheRestButTheEventContinues(): void
     {
         $hookRan = false;
@@ -277,7 +277,6 @@ final class EventProcessorTest extends TestCase
      * @param list<string|int> $path
      * @param (\Closure(string): string)|null $redactor
      */
-    #[Group('review-focus-3')]
     #[DataProvider('arrayCastProvider')]
     #[MaximumDuration(500)]
     public function testArrayCastOfAnObjectIsSentWithItsPublicPropertiesOnly(array $fields, array $path, ?\Closure $redactor): void
@@ -305,7 +304,6 @@ final class EventProcessorTest extends TestCase
         yield 'error' => ['error', 'Failed to truncate event: RangeException: Maximum call stack size exceeded'];
     }
 
-    #[Group('review-focus-3')]
     #[DataProvider('endlessFieldProvider')]
     public function testEndlessJsonSerializableDropsTheEventWithOneLine(string $field, string $line): void
     {
@@ -316,7 +314,6 @@ final class EventProcessorTest extends TestCase
         $this->assertSame([$line], $this->logger->messages());
     }
 
-    #[Group('review-focus-3')]
     public function testLongJsonSerializableChainDropsTheEventWithOneLine(): void
     {
         $event = new Event(response: ['o' => WrappedValue::chain(40_000)]);

@@ -20,12 +20,16 @@ use AgentCat\Tests\Support\LaravelMcp\LaravelStdioHarness;
 use AgentCat\Tests\Support\LaravelMcp\LaravelTestCase;
 use AgentCat\Tests\Support\LaravelMcp\LaravelTrackingFixture;
 use AgentCat\Tests\Support\LaravelMcp\LineTransport;
+use AgentCat\Tests\Support\LaravelMcp\ListingServer;
+use AgentCat\Tests\Support\LaravelMcp\PagedGetMoreToolsServer;
+use AgentCat\Tests\Support\LaravelMcp\PagedOwnServer;
 use AgentCat\Tests\Support\LaravelMcp\RecordingCallServer;
 use AgentCat\Tests\Support\LaravelMcp\RecordingMethod;
 use AgentCat\Tests\Support\LaravelMcp\RequestEchoServer;
 use AgentCat\Tests\Support\LaravelMcp\StreamingServer;
 use AgentCat\Tests\Support\LaravelMcp\Tools\EchoTool;
 use AgentCat\Tests\Support\LaravelMcp\Tools\StructuredTool;
+use AgentCat\Tests\Support\ListingLines;
 use AgentCat\Tests\Support\ToolCalls;
 use AgentCat\ToolCall;
 use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
@@ -44,6 +48,10 @@ use PHPUnit\Framework\Attributes\Group;
 final class CallToolTest extends LaravelTestCase
 {
     private const string SESSION = 'ses_bbbbbbbbbbbbbbbbbbbbbbbbbbb';
+
+    private const string REBUILT = 'Rebuilt injection registries on demand (tools/call before tools/list on this instance)';
+
+    private const string CANNED = 'Unfortunately, we have shown you the full tool list. We have noted your feedback and will work to improve the tool list in the future.';
 
     #[Group('ac-02-16')]
     #[Group('ac-02-47')]
@@ -115,6 +123,121 @@ final class CallToolTest extends LaravelTestCase
         $this->assertSame([['msg' => 'hi']], ToolCalls::of('echo')); // the heuristic strip: no listing names echo
         $this->assertSame([], $fixture->lines(), 'no rebuild without a listing');
         $this->assertCount(1, $fixture->events());
+    }
+
+    /** @return iterable<string, array{\Closure(LaravelHarness): \stdClass}> */
+    public static function eras(): iterable
+    {
+        yield '2026-07-28' => [static fn(LaravelHarness $harness): \stdClass => $harness->callTool('own', ['session_id' => 'theirs', 'context' => 'why'])];
+        yield 'legacy' => [static fn(LaravelHarness $harness): \stdClass => $harness->request('tools/call', ['name' => 'own', 'arguments' => ['session_id' => 'theirs', 'context' => 'why']])];
+    }
+
+    /**
+     * D66 (B10 fixed): a new server per request, as under PHP-FPM, rebuilds from page 1 to the page that names the
+     * tool, so `own`, alone on page 2, is stripped exactly and keeps its own `session_id`.
+     *
+     * @param \Closure(LaravelHarness): \stdClass $call
+     */
+    #[DataProvider('eras')]
+    #[Group('ac-02-19')]
+    #[Group('ac-02-20')]
+    public function testAToolOnTheSecondPageKeepsItsOwnSessionId(\Closure $call): void
+    {
+        $fixture = new LaravelTrackingFixture();
+        $harness = new LaravelHarness(PagedOwnServer::class, $fixture->tracker());
+
+        $answer = $call($harness);
+
+        $this->assertSame([['session_id' => 'theirs']], ToolCalls::of('own'));
+        $this->assertEquals([(object) ['type' => 'text', 'text' => 'ok']], JsonAssert::at($answer, 'result', 'content')); // no "unrecognized" block
+        $event = $fixture->event();
+        $this->assertSame('', $event->sessionId);
+        $this->assertSame('foreign', $event->tags[Constants::TAG_SESSION_SOURCE] ?? null);
+        $this->assertSame('why', $event->userIntent);
+        $this->assertSame([ListingLines::ownSessionId('own'), self::REBUILT], $fixture->lines());
+    }
+
+    /** D66 (B10 fixed): on a long-running server each listed page merges into the registries, so no call rebuilds. */
+    #[Group('ac-02-8')]
+    public function testListedPagesMergeOnALongRunningServer(): void
+    {
+        $fixture = new LaravelTrackingFixture();
+        $stdio = new LaravelStdioHarness(PagedOwnServer::class, $fixture->tracker());
+        $first = JsonAssert::at($stdio->send(['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/list', 'params' => new \stdClass()]), 'result');
+        $cursor = JsonAssert::at($first, 'nextCursor');
+        $this->assertIsString($cursor);
+        $second = JsonAssert::at($stdio->send(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list', 'params' => ['cursor' => $cursor]]), 'result');
+
+        $stdio->send(['jsonrpc' => '2.0', 'id' => 3, 'method' => 'tools/call', 'params' => ['name' => 'echo', 'arguments' => ['msg' => 'hi', 'agent_id' => 'a1', 'session_id' => 'start']]]);
+        $stdio->send(['jsonrpc' => '2.0', 'id' => 4, 'method' => 'tools/call', 'params' => ['name' => 'own', 'arguments' => ['session_id' => 'theirs']]]);
+
+        $this->assertSame(['echo', ...array_map(static fn(int $i): string => sprintf('t%02d', $i), range(1, 14))], $this->names($first));
+        $this->assertSame(['own', GetMoreTools::NAME], $this->names($second));
+        $this->assertSame([['msg' => 'hi', 'agent_id' => 'a1']], ToolCalls::of('echo'), 'agent tracking is off: agent_id is not ours');
+        $this->assertSame([['session_id' => 'theirs']], ToolCalls::of('own'));
+        $this->assertSame([ListingLines::ownSessionId('own')], $fixture->lines(), 'both tools were listed: no rebuild');
+    }
+
+    /**
+     * D66 (B10 fixed): the rebuild stops at the first page that names the tool, or at a page it cannot read. No page
+     * that the rebuild could read names `echo`, and page 2 fails. Page 1 is kept, one line says where the rebuild
+     * stopped, and the call is served with the heuristic strip.
+     */
+    #[Group('ac-02-21')]
+    public function testASecondPageThatFailsLeavesTheCallServed(): void
+    {
+        $list = new RecordingMethod(answer: static fn(JsonRpcRequest $request): JsonRpcResponse => isset($request->params['cursor'])
+            ? throw new \RuntimeException('page down')
+            : JsonRpcResponse::result($request->id, ['tools' => [['name' => 't01', 'inputSchema' => ['type' => 'object', 'properties' => new \stdClass()]]], 'nextCursor' => 'p2']));
+        $this->app?->instance(RecordingMethod::class, $list);
+        $fixture = new LaravelTrackingFixture();
+
+        $answer = (new LaravelHarness(ListingServer::class, $fixture->tracker()))->callTool('echo', ['msg' => 'hi', 'agent_id' => 'a1', 'session_id' => 'start', 'context' => 'why']);
+
+        $this->assertSame('echo: hi', JsonAssert::at($answer, 'result', 'content', 1, 'text'));
+        $this->assertSame([['msg' => 'hi']], ToolCalls::of('echo'));
+        $this->assertSame([null, 'p2'], array_map(static fn(JsonRpcRequest $request): mixed => $request->params['cursor'] ?? null, $list->requests));
+        $this->assertSame('minted', $fixture->event()->tags[Constants::TAG_SESSION_SOURCE] ?? null);
+        $this->assertSame(['Warning: registry rebuild-on-demand stopped after page 1 - RuntimeException: page down'], $fixture->lines());
+    }
+
+    /**
+     * D66: a get_more_tools call rebuilds like any other tool. A new server per request (PHP-FPM), no listing: the
+     * rebuild finds the customer's own get_more_tools on page 2. AgentCat answers the call (report-missing shadows the
+     * customer's tool), and the `session_id` that tool declares stays the customer's: no session is read from it and
+     * no "unrecognized" block is added.
+     */
+    #[Group('ac-02-19')]
+    #[Group('ac-02-14')]
+    public function testAShadowedCustomerGetMoreToolsKeepsItsOwnSessionId(): void
+    {
+        $fixture = new LaravelTrackingFixture();
+        $harness = new LaravelHarness(PagedGetMoreToolsServer::class, $fixture->tracker());
+
+        $answer = $harness->callTool(GetMoreTools::NAME, ['session_id' => 'theirs', 'context' => 'need X']);
+
+        $this->assertEquals([(object) ['type' => 'text', 'text' => self::CANNED]], JsonAssert::at($answer, 'result', 'content'));
+        $this->assertSame([], ToolCalls::of(GetMoreTools::NAME), 'AgentCat answers its calls');
+        $event = $fixture->event();
+        $this->assertSame('', $event->sessionId);
+        $this->assertSame('foreign', $event->tags[Constants::TAG_SESSION_SOURCE] ?? null);
+        $this->assertSame('need X', $event->userIntent);
+        $this->assertSame(ListingLines::shadowedCall(6), $fixture->lines());
+    }
+
+    /** D66: with report-missing off, the customer's own get_more_tools on page 2 is found and gets its `session_id`. */
+    #[Group('ac-02-19')]
+    #[Group('ac-02-41')]
+    public function testWithReportMissingOffACustomerGetMoreToolsOnPageTwoGetsItsOwnSessionId(): void
+    {
+        $fixture = new LaravelTrackingFixture();
+        $harness = new LaravelHarness(PagedGetMoreToolsServer::class, $fixture->tracker(new Options(enableReportMissing: false)));
+
+        $answer = $harness->callTool(GetMoreTools::NAME, ['session_id' => 'theirs']);
+
+        $this->assertSame('mine', JsonAssert::at($answer, 'result', 'content', 0, 'text'));
+        $this->assertSame([['session_id' => 'theirs']], ToolCalls::of(GetMoreTools::NAME));
+        $this->assertSame('foreign', $fixture->event()->tags[Constants::TAG_SESSION_SOURCE] ?? null);
     }
 
     #[Group('ac-02-24')]
@@ -216,7 +339,7 @@ final class CallToolTest extends LaravelTestCase
         $this->assertSame('http://localhost/mcp/conformance', JsonAssert::at($info, 'url'));
     }
 
-    /** Task 5 review minor 2: the client controls the headers; Symfony refuses an invalid method override. */
+    /** The client controls the headers; Symfony refuses an invalid method override. */
     public function testAnInvalidMethodOverrideCostsTheHttpContextOnly(): void
     {
         $fixture = new LaravelTrackingFixture();
@@ -232,7 +355,7 @@ final class CallToolTest extends LaravelTestCase
         $this->assertNotContains(LaravelMcpAdapter::COMPATIBILITY_LINE, $fixture->lines());
     }
 
-    /** The URL is built like the SAPI reading's (Task 6 review): an invalid `Host` header is recorded as it was sent. */
+    /** The URL is built like the SAPI reading's: an invalid `Host` header is recorded as it was sent. */
     #[Group('ac-02-43')]
     public function testAnInvalidHostHeaderIsRecordedAsSent(): void
     {
@@ -256,7 +379,7 @@ final class CallToolTest extends LaravelTestCase
     }
 
     /**
-     * TypeScript and mcp/sdk reject such a call before any handler, so none is recorded (D15, Task 5 review minor 4).
+     * TypeScript and mcp/sdk reject such a call before any handler, so none is recorded (D15).
      *
      * @param array<string, mixed> $params
      */
@@ -331,7 +454,7 @@ final class CallToolTest extends LaravelTestCase
         $this->assertCount(1, $fixture->events());
     }
 
-    /** Task 4 review M2: AgentCat builds the handler after laravel/mcp binds `mcp.request`, and after the strip. */
+    /** AgentCat builds the handler after laravel/mcp binds `mcp.request`, and after the strip. */
     public function testACustomHandlersConstructorRequestSeesTheStrippedArguments(): void
     {
         $fixture = new LaravelTrackingFixture();
@@ -374,7 +497,7 @@ final class CallToolTest extends LaravelTestCase
     }
 
     /**
-     * M4: a customer's decorator of `CallTool` from `extend()`, here an authorization check, runs on a tracked server
+     * A customer's decorator of `CallTool` from `extend()`, here an authorization check, runs on a tracked server
      * as without AgentCat: the container builds the handler at each call, and AgentCat answers with what it built.
      */
     public function testAnExtendDecoratorOfCallToolStillRuns(): void
@@ -410,7 +533,7 @@ final class CallToolTest extends LaravelTestCase
     }
 
     /**
-     * M4: a `resolving()` callback of `CallTool` runs at each call, as without AgentCat; the container still builds
+     * A `resolving()` callback of `CallTool` runs at each call, as without AgentCat; the container still builds
      * laravel/mcp's own `CallTool`, so AgentCat keeps the tool's exception.
      */
     public function testAResolvingCallbackOfCallToolRunsAndTheToolExceptionIsKept(): void
@@ -472,9 +595,8 @@ final class CallToolTest extends LaravelTestCase
     }
 
     /**
-     * Over HTTP laravel/mcp sends a stream from `StreamedResponse::sendContent()`, after `Server::handle()` returned
-     * (Review Focus 5): the SSE bytes are the library's, the event comes from the final result, and the hooks run later
-     * (D04).
+     * Over HTTP laravel/mcp sends a stream from `StreamedResponse::sendContent()`, after `Server::handle()` returned:
+     * the SSE bytes are the library's, the event comes from the final result, and the hooks run later (D04).
      */
     #[Group('ac-02-43')]
     #[Group('ac-05-E5')]
@@ -504,7 +626,7 @@ final class CallToolTest extends LaravelTestCase
         $this->assertSame('DomainException', JsonAssert::at($failing->event()->error, 'type'));
     }
 
-    /** A stream the client abandons publishes nothing (plan E1 header conflict 6). */
+    /** A stream the client abandons publishes nothing. */
     public function testAStreamTheClientAbandonsPublishesNothing(): void
     {
         $fixture = new LaravelTrackingFixture();
@@ -538,7 +660,7 @@ final class CallToolTest extends LaravelTestCase
         $this->assertTrue(JsonAssert::at($stdio->lines()[1] ?? null, 'result', 'isError'));
     }
 
-    /** Controller ruling P9: a handler's own stream that throws midway reaches `later()`'s catch. */
+    /** A handler's own stream that throws midway reaches `later()`'s catch. */
     #[Group('ac-05-E5')]
     public function testARawStreamThatThrowsMidwayIsOneErrorEventAndTheLibrarysError(): void
     {
@@ -659,6 +781,15 @@ final class CallToolTest extends LaravelTestCase
         }
 
         return implode('', $sent->getArrayCopy());
+    }
+
+    /** @return list<mixed> the names of a listing's tools */
+    private function names(mixed $result): array
+    {
+        $tools = JsonAssert::at($result, 'tools');
+        $this->assertIsList($tools);
+
+        return array_map(static fn(mixed $tool): mixed => JsonAssert::at($tool, 'name'), $tools);
     }
 
     private function text(mixed $value): string

@@ -47,26 +47,45 @@ final class McpHttpClient
         return $this->exchange($message, $headers, true);
     }
 
-    /** Sends `initialize` and `notifications/initialized`, and keeps the `Mcp-Session-Id`. */
-    public function initialize(string $name = 'e2e-client', string $version = '1.0.0'): void
+    /**
+     * Sends `initialize` and `notifications/initialized`, both with `$headers`, and keeps the `Mcp-Session-Id`.
+     *
+     * @param array<string, string|list<string>> $headers
+     */
+    public function initialize(string $name = 'e2e-client', string $version = '1.0.0', array $headers = []): void
     {
         $result = HttpHarness::result($this->request('initialize', [
             'protocolVersion' => self::HANDSHAKE_PROTOCOL_VERSION,
             'capabilities' => new \stdClass(),
             'clientInfo' => ['name' => $name, 'version' => $version],
-        ], [], true)['message']);
+        ], $headers, true)['message']);
         $this->protocolVersion = is_string($result->protocolVersion ?? null) ? $result->protocolVersion : self::HANDSHAKE_PROTOCOL_VERSION;
         Assert::assertNotNull($this->sessionId, 'initialize issued no Mcp-Session-Id');
 
-        $response = $this->post(['jsonrpc' => '2.0', 'method' => 'notifications/initialized']);
+        $response = $this->post(['jsonrpc' => '2.0', 'method' => 'notifications/initialized'], $headers);
         Assert::assertSame(202, $response['status'], 'notifications/initialized');
         Assert::assertSame('', $response['body'], 'notifications/initialized');
     }
 
-    /** The `result` of a `tools/list` request. */
-    public function listTools(): \stdClass
+    /**
+     * The `result` of a `tools/list` request.
+     *
+     * @param array<string, string|list<string>> $headers
+     */
+    public function listTools(array $headers = []): \stdClass
     {
-        return HttpHarness::result($this->request('tools/list', [], [], true)['message']);
+        return HttpHarness::result($this->request('tools/list', [], $headers, true)['message']);
+    }
+
+    /**
+     * The `result` of a 2026-07-28 `tools/list` request: no session, the envelope and headers of `HttpHarness::modern()`.
+     *
+     * @param array{name: string, version: string} $clientInfo
+     * @param array<string, string|list<string>> $headers
+     */
+    public function listToolsModern(array $clientInfo, array $headers = []): \stdClass
+    {
+        return HttpHarness::result($this->request('tools/list', HttpHarness::modernParams([], $clientInfo), [...HttpHarness::modernHeaders('tools/list', null), ...$headers], false)['message']);
     }
 
     /**
@@ -74,12 +93,15 @@ final class McpHttpClient
      *
      * @param array<array-key, mixed> $arguments
      * @param array<string, string|list<string>> $headers
+     * @param array<string, mixed> $meta the request's `_meta`, if any
      *
      * @return array{message: \stdClass, receivedAt: float}
      */
-    public function callTool(string $name, array $arguments, array $headers = []): array
+    public function callTool(string $name, array $arguments, array $headers = [], array $meta = []): array
     {
-        return $this->request('tools/call', ['name' => $name, 'arguments' => (object) $arguments], $headers, true);
+        $params = ['name' => $name, 'arguments' => (object) $arguments];
+
+        return $this->request('tools/call', $meta === [] ? $params : [...$params, '_meta' => $meta], $headers, true);
     }
 
     /**

@@ -153,7 +153,7 @@ final class ConfigOptionsTest extends TestCase
         Log::setLogger($logger);
 
         $options = ConfigOptions::options([
-            'enable_tracing' => 'yes', // a D44 word (M3)
+            'enable_tracing' => 'yes', // a D44 word
             'enable_agent_tracking' => 'maybe',
             'identify' => 'App\Missing\Identify',
             'exporters' => ['otlp' => null, 'dd' => ['type' => 'datadog']],
@@ -208,7 +208,7 @@ final class ConfigOptionsTest extends TestCase
     }
 
     /**
-     * M3: what `env()` gives a bool key. Laravel turns `true` and `false` into bools; `0`, `1`, `yes`, `on`, `no`
+     * What `env()` gives a bool key. Laravel turns `true` and `false` into bools; `0`, `1`, `yes`, `on`, `no`
      * and `off` stay strings.
      *
      * @return iterable<string, array{mixed, bool}>
@@ -237,7 +237,7 @@ final class ConfigOptionsTest extends TestCase
         yield 'disable_signal_handlers' => ['disable_signal_handlers', 'disableSignalHandlers'];
     }
 
-    /** M3: every bool key takes the D44 words, as `enabled` and `disable_diagnostics` do. */
+    /** Every bool key takes the D44 words, as `enabled` and `disable_diagnostics` do. */
     #[DataProvider('boolWords')]
     public function testEveryBoolKeyTakesTheD44Words(mixed $value, bool $expected): void
     {
@@ -249,7 +249,7 @@ final class ConfigOptionsTest extends TestCase
         $this->assertSame([], $this->logger->messages());
     }
 
-    /** M3: any other value of a bool key logs one line that names the key as written, and its default is used. */
+    /** Any other value of a bool key logs one line that names the key as written, and its default is used. */
     #[DataProvider('boolKeys')]
     public function testABadBoolValueNamesTheKeyAsWrittenAndTheDefaultIsUsed(string $key, string $option): void
     {
@@ -267,7 +267,7 @@ final class ConfigOptionsTest extends TestCase
         ], $this->logger->messages(), 'blank is unset: no line');
     }
 
-    /** M3: a value of another type of any key is named as written, `agentcat.<key>`, and its default is used. */
+    /** A value of another type of any key is named as written, `agentcat.<key>`, and its default is used. */
     public function testAValueOfAnotherTypeNamesTheKeyAsWritten(): void
     {
         $options = ConfigOptions::options([

@@ -96,7 +96,7 @@ final class McpSdkAdapter
         }
     }
 
-    /** The PSR-3 logger set on the Builder; null when none is set or it cannot be read (C13). Never warns or throws. */
+    /** The PSR-3 logger set on the Builder; null when none is set or it cannot be read. Never warns or throws. */
     public static function logger(Builder $builder): ?LoggerInterface
     {
         try {
@@ -108,7 +108,7 @@ final class McpSdkAdapter
 
     /**
      * Reads the server name and version when an event is published: build() sets them. When they cannot be read
-     * (C6), they are unknown, and the drift is logged once per Builder.
+     * (`Drift`), they are unknown, and the drift is logged once per Builder.
      *
      * @return \Closure(): array{0: ?string, 1: ?string}
      */
@@ -130,10 +130,10 @@ final class McpSdkAdapter
     }
 
     /**
-     * The tracking state of a server built from a tracked Builder (01 AC-69): AgentCat's `tools/call` handler, among
+     * The tracking state of a server built from a tracked Builder (ac-01-69): AgentCat's `tools/call` handler, among
      * the server's request handlers, holds it. A state found is kept for the server. Never throws.
      *
-     * When the request handlers cannot be read (C6), the compatibility line is logged once per server, and
+     * When the request handlers cannot be read (`Drift`), the compatibility line is logged once per server, and
      * `TrackedServers::incomplete()` turns true.
      *
      * @return TrackedServer|null null when the object is not an mcp/sdk server, its Builder was not tracked, or its
@@ -165,8 +165,8 @@ final class McpSdkAdapter
     }
 
     /**
-     * Wraps the reference handler, then registers AgentCat's request handlers, which run before the library's own
-     * (02 §1.4). Every read comes before the first change, so a read that throws leaves the Builder untouched.
+     * Wraps the reference handler, then registers AgentCat's request handlers, which run before the library's own.
+     * Every read comes before the first change, so a read that throws leaves the Builder untouched.
      */
     public static function install(Builder $builder, TrackedServer $server, Publisher $publisher, CallInterceptor $interceptor): void
     {
@@ -188,8 +188,8 @@ final class McpSdkAdapter
     }
 
     /**
-     * The container the Builder holds at the first call, which build() also used. When it cannot be read (C6), the
-     * drift is logged once per Builder and a fresh default container keeps the tools working.
+     * The container the Builder holds at the first call, which build() also used. When it cannot be read (`Drift`),
+     * the drift is logged once per Builder and a fresh default container keeps the tools working.
      */
     private static function container(Builder $builder): ?ContainerInterface
     {

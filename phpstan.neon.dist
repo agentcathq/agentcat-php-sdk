@@ -15,6 +15,13 @@ parameters:
     # analysed), and it has no Eloquent models.
     noEnvCallsOutsideOfConfig: false
     checkModelProperties: false
+    ignoreErrors:
+        -
+            # The probe runs in a fresh project (tests/bin/package-probe.sh) whose vendor/ does not exist in this repository.
+            message: '#^Path in require\(\) .* is not a file or it does not exist\.$#'
+            identifier: require.fileNotFound
+            path: tests/Fixtures/package-probe/probe.php
+            count: 1
     type_coverage:
         return: 100
         param: 100
@@ -33,8 +40,10 @@ parameters:
           message: 'Reflection is for contract tests only'
           allowIn:
             - tests/Contract/*
-            # builds a cyclic `previous` chain and a corrupt trace (05 E10)
+            # builds a cyclic `previous` chain and a corrupt trace (ac-05-E10)
             - tests/Unit/Internal/Errors/ExceptionCaptureTest.php
+            # reads libcurl's queue of finished transfers off the transport's multi handle: no time can show it
+            - tests/Support/UnreadTransfers.php
 services:
     -
         class: AgentCat\Tests\Architecture\LayeringTest

@@ -10,17 +10,18 @@ use AgentCat\Tests\Support\FileTree;
 use AgentCat\Tests\Support\JsonAssert;
 use AgentCat\Tests\Support\McpSdk\HttpHarness;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\ExpectationFailedException;
 use PHPUnit\Framework\TestCase;
 
 /**
- * The base of the Docker runtime tests (header conflict 10): they run only with `AGENTCAT_RUNTIME_TESTS=1`
+ * The base of the Docker runtime tests: they run only with `AGENTCAT_RUNTIME_TESTS=1`
  * (`AGENTCAT_RUNTIME_TESTS=1 vendor/bin/phpunit --testsuite Runtime --group runtime`) and skip otherwise. With the
  * variable, a `docker info` that fails or times out fails every test with its output, so the runtime CI job cannot
  * pass without running them.
  *
  * Each class has one mock collector on 127.0.0.1 (`self::$collector`). After each test and each class, every container
- * of this process is removed, also when the test failed (ruling P14). A test's output directory (`out()`, mounted at
- * `/out`) lives under the test HOME and is removed after the test.
+ * of this process is removed, also when the test failed. A test's output directory (`out()`, mounted at `/out`) lives
+ * under the test HOME and is removed after the test.
  *
  * PHPUnit does not inherit groups: every subclass carries `#[Group('runtime')]` itself, or the class fails in
  * `setUpBeforeClass()`.
@@ -32,7 +33,7 @@ abstract class RuntimeTestCase extends TestCase
 
     private const string GROUP = 'runtime';
 
-    /** The output directories under `out()` that the fixtures write to: mcp/sdk sessions and the Laravel application (ruling P15). */
+    /** The output directories under `out()` that the fixtures write to: mcp/sdk sessions and the Laravel application. */
     private const array OUT_DIRECTORIES = [
         'sessions',
         'app',
@@ -84,6 +85,7 @@ abstract class RuntimeTestCase extends TestCase
     #[\Override]
     protected function setUp(): void
     {
+        DockerRuntime::forgetImages();
         if (!DockerRuntime::requested()) {
             self::markTestSkipped('The runtime tests run with AGENTCAT_RUNTIME_TESTS=1');
         }
@@ -116,6 +118,30 @@ abstract class RuntimeTestCase extends TestCase
                 }
             },
         ]);
+    }
+
+    /**
+     * A failing runtime test names the images of the containers it started (`AGENTCAT_RUNTIME_IMAGES=latest` runs
+     * floating tags, so a nightly failure must say which image broke). The original throwable stays as `previous`.
+     */
+    #[\Override]
+    protected function invokeTestMethod(string $methodName, array $testArguments): mixed
+    {
+        try {
+            return parent::invokeTestMethod($methodName, $testArguments);
+        } catch (\Throwable $t) {
+            $images = DockerRuntime::imagesUsed();
+            $isExpectation = $t instanceof ExpectationFailedException;
+            if ($images === [] || (!$isExpectation && str_starts_with($t::class, 'PHPUnit\\'))) { // a skip, an incomplete test or fail()
+                throw $t;
+            }
+            $message = $t->getMessage() . "\nRuntime images: " . implode(', ', $images);
+            if ($isExpectation) {
+                throw new ExpectationFailedException($message, $t->getComparisonFailure(), $t);
+            }
+
+            throw new \RuntimeException(sprintf('%s: %s', $t::class, $message), 0, $t);
+        }
     }
 
     /** The repository's absolute path, which every container mounts read-only at the same path. */
@@ -165,7 +191,7 @@ abstract class RuntimeTestCase extends TestCase
     }
 
     /**
-     * The environment of every container (ruling P15): AgentCat on, with `HOME=/out`; the API at `$collector`, or at a
+     * The environment of every container: AgentCat on, with `HOME=/out`; the API at `$collector`, or at a
      * closed local port so that a fixture which forgets its collector fails closed; diagnostics off and at a closed
      * port (a fixture turns them on for one request with `X-E2E-Diagnostics`); the fixtures' sessions, markers and
      * Laravel application under `/out`.
@@ -237,7 +263,7 @@ abstract class RuntimeTestCase extends TestCase
 
     /**
      * Sends the untimed warm-up call (`echoCall(1, 'warm')` with `echoHeaders($scenario)` and `$headers`) and waits until
-     * `$scenario` has its delivery, so the timed request meets a warm runtime and no drain of the warm-up (ruling P16).
+     * `$scenario` has its delivery, so the timed request meets a warm runtime and no drain of the warm-up.
      *
      * @param array<string, string> $headers
      */

@@ -51,14 +51,14 @@ final class ServiceProviderTest extends BridgeTestCase
         }
     }
 
-    /** Review Focus 3: config/agentcat.php with missing and mistyped `env()` values, before the providers boot. */
+    /** config/agentcat.php with missing and mistyped `env()` values, before the providers boot. */
     public function defineBadConfiguration(): void
     {
         $this->ownConfiguration = true;
         config([
             'agentcat.enabled' => true,
             'agentcat.project_id' => null,
-            'agentcat.enable_tracing' => 'yes', // a D44 word since M3: tracing stays on, no line
+            'agentcat.enable_tracing' => 'yes', // a D44 word: tracing stays on, no line
             'agentcat.enable_report_missing' => 'maybe',
             'agentcat.identify' => 'App\Missing\Identify',
             'agentcat.exporters' => ['otlp' => null],
@@ -66,7 +66,7 @@ final class ServiceProviderTest extends BridgeTestCase
         ]);
     }
 
-    /** Review Focus 3 for the bridge's own keys: each of a wrong type, before the providers boot. */
+    /** The bridge's own keys, each of a wrong type, before the providers boot. */
     public function defineBadBridgeKeys(): void
     {
         $this->ownConfiguration = true;
@@ -100,7 +100,7 @@ final class ServiceProviderTest extends BridgeTestCase
         config(['agentcat.enabled' => null, 'agentcat.project_id' => LaravelTrackingFixture::PROJECT]);
     }
 
-    /** Review Focus 3: `AGENTCAT_ENABLED=maybe`, which `env()` gives the configuration too, before the providers boot. */
+    /** `AGENTCAT_ENABLED=maybe`, which `env()` gives the configuration too, before the providers boot. */
     public function defineAnUnknownEnabledWord(): void
     {
         $this->ownConfiguration = true;
@@ -127,7 +127,7 @@ final class ServiceProviderTest extends BridgeTestCase
         $this->assertNotSame(GetMoreTools::NAME, JsonAssert::at(end($tools), 'name'));
     }
 
-    /** M2: a string is a list of one class, so the server the customer meant to exclude is not tracked. */
+    /** A string is a list of one class, so the server the customer meant to exclude is not tracked. */
     public function testAStringExcludeIsAListOfOneClass(): void
     {
         config(['agentcat.exclude' => ConformanceServer::class]);
@@ -135,7 +135,7 @@ final class ServiceProviderTest extends BridgeTestCase
         $this->assertUntouched();
     }
 
-    /** M2: an entry that is no class name logs one line; the other entries still exclude, and a null one is unset. */
+    /** An entry that is no class name logs one line; the other entries still exclude, and a null one is unset. */
     public function testAnExcludeEntryOfAnotherTypeIsIgnoredWithOneLine(): void
     {
         $logger = new MemoryLogger();
@@ -152,7 +152,7 @@ final class ServiceProviderTest extends BridgeTestCase
         $this->assertSame(['WARN: AgentCat option "agentcat.exclude.1" must be string, got int; the entry is ignored'], array_values(array_filter($logger->messages(), static fn(string $line): bool => str_starts_with($line, 'WARN:'))));
     }
 
-    /** M2: the bridge's keys of a wrong type log one line each, once, and their defaults are used. */
+    /** The bridge's keys of a wrong type log one line each, once, and their defaults are used. */
     #[DefineEnvironment('defineBadBridgeKeys')]
     public function testBridgeKeysOfAWrongTypeLogOneLineEachAndFallBack(): void
     {
@@ -174,7 +174,7 @@ final class ServiceProviderTest extends BridgeTestCase
         $this->assertSame([LaravelTrackingFixture::PROJECT, LaravelTrackingFixture::PROJECT, self::OTHER_PROJECT], array_map(static fn(mixed $event): mixed => JsonAssert::at($event, 'project_id'), $events));
     }
 
-    /** M2: `projects` that is not a map logs one line, and every server goes to `project_id`. */
+    /** `projects` that is not a map logs one line, and every server goes to `project_id`. */
     public function testProjectsOfAnotherTypeLogOneLineAndTheProjectIdIsUsed(): void
     {
         $logger = new MemoryLogger();
@@ -187,7 +187,7 @@ final class ServiceProviderTest extends BridgeTestCase
         $this->assertContains('WARN: AgentCat option "agentcat.projects" must be array or null, got string; the default is used', $logger->messages());
     }
 
-    /** M2: a `project_id` that is not a string logs one line, and AGENTCAT_PROJECT_ID of the process decides. */
+    /** A `project_id` that is not a string logs one line, and AGENTCAT_PROJECT_ID of the process decides. */
     #[DefineEnvironment('defineANonStringProjectId')]
     public function testAProjectIdOfAnotherTypeLogsOneLineAndTheVariableDecides(): void
     {
@@ -293,7 +293,7 @@ final class ServiceProviderTest extends BridgeTestCase
     }
 
     /**
-     * I3: laravel/mcp builds a server per HTTP request, so the setup lines, and an ERROR line for a tool that declares
+     * laravel/mcp builds a server per HTTP request, so the setup lines, and an ERROR line for a tool that declares
      * its own `session_id`, repeat per request. They stay out of the application's log and its error trackers.
      */
     public function testRequestsWriteNoAgentCatEntryIntoTheApplicationsLog(): void
@@ -396,7 +396,7 @@ final class ServiceProviderTest extends BridgeTestCase
         $this->assertUntouched();
     }
 
-    /** Review Focus 3: boot, resolve, `tools/call` and flush with the bad values. */
+    /** Boot, resolve, `tools/call` and flush with the bad values: nothing throws, and the call answers. */
     #[DefineEnvironment('defineBadConfiguration')]
     public function testBadConfigValuesLogOneLineEachAndNothingThrows(): void
     {
@@ -429,7 +429,7 @@ final class ServiceProviderTest extends BridgeTestCase
         ], array_map(static fn(string $line): string => str_starts_with($line, $own) ? $own : $line, $logger->messages()));
     }
 
-    /** M3: `'enable_tracing' => env('AGENTCAT_ENABLE_TRACING')` with `AGENTCAT_ENABLE_TRACING=0` turns tracing off. */
+    /** `'enable_tracing' => env('AGENTCAT_ENABLE_TRACING')` with `AGENTCAT_ENABLE_TRACING=0` turns tracing off. */
     public function testAZeroFromEnvTurnsTracingOff(): void
     {
         config(['agentcat.enable_tracing' => '0']);
@@ -440,7 +440,7 @@ final class ServiceProviderTest extends BridgeTestCase
         $this->assertSame([], $this->deliveries());
     }
 
-    /** Review Focus 3: boot, resolve, `tools/call` and flush with `AGENTCAT_ENABLED=maybe`. */
+    /** Boot, resolve, `tools/call` and flush with `AGENTCAT_ENABLED=maybe`: nothing throws, and the call answers. */
     #[DefineEnvironment('defineAnUnknownEnabledWord')]
     public function testAnUnknownEnabledWordLogsOneLineAndTracksNothing(): void
     {
@@ -458,7 +458,7 @@ final class ServiceProviderTest extends BridgeTestCase
         $this->assertSame([], $this->transport->deliveries);
     }
 
-    /** Octane runs each request in a sandbox container: a hook comes from the container of its request (Review Focus 4). */
+    /** Octane runs each request in a sandbox container: a hook comes from the container of its request. */
     public function testAHookComesFromTheCurrentContainerWhenItRuns(): void
     {
         config(['agentcat.identify' => InvokableIdentify::class]);

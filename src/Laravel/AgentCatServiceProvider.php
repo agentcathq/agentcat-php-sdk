@@ -38,7 +38,7 @@ final class AgentCatServiceProvider extends ServiceProvider
             $this->commands([InstallCommand::class]);
         }
         // `agentcat.enabled` and every other name AgentCat reads decide for every client, the shared one too, before
-        // the environment, which a cached configuration hides (header conflict 12). A fake still records.
+        // the environment, which a cached configuration hides. A fake still records.
         $config = $this->app->make('config');
         $agentcat = $config->get('agentcat');
         BridgeConfig::fromBridge(is_array($agentcat) ? $agentcat : [], $config->get('app.env'));

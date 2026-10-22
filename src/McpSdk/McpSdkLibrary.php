@@ -8,7 +8,9 @@ use AgentCat\Internal\Engine\CallInterceptor;
 use AgentCat\Internal\Engine\Library;
 use AgentCat\Internal\Engine\Publisher;
 use AgentCat\Internal\Engine\TrackedServer;
+use Mcp\Server;
 use Mcp\Server\Builder;
+use Mcp\Server\Stateless\StatelessProtocol;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -18,6 +20,14 @@ use Psr\Log\LoggerInterface;
  */
 final readonly class McpSdkLibrary implements Library
 {
+    /** What to pass instead, when the object is what `Builder::buildStateless()` returns; null for any other object. */
+    public static function untrackedAdvice(object $server): ?string
+    {
+        return $server instanceof StatelessProtocol
+            ? 'pass the Mcp\Server\Builder (or the Mcp\Server built from it) to AgentCat::publishCustomEvent(); Builder::buildStateless() returns a StatelessProtocol, which AgentCat cannot map to its Builder'
+            : null;
+    }
+
     #[\Override]
     public function supports(object $server): bool
     {
@@ -25,9 +35,9 @@ final readonly class McpSdkLibrary implements Library
     }
 
     #[\Override]
-    public function sdk(): string
+    public function sdk(object $server): string
     {
-        return 'mcp-sdk/builder';
+        return $server instanceof Server ? 'mcp-sdk/server' : 'mcp-sdk/builder';
     }
 
     #[\Override]

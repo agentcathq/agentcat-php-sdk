@@ -26,7 +26,7 @@ final readonly class LaravelMcpLibrary implements Library
     }
 
     #[\Override]
-    public function sdk(): string
+    public function sdk(object $server): string
     {
         return 'laravel-mcp/server';
     }

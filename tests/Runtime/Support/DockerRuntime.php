@@ -8,8 +8,7 @@ use AgentCat\Internal\Constants;
 use Symfony\Component\Process\Process;
 
 /**
- * A container of the runtime tests, and the `docker run` lines that start one (header conflicts 10 and 11, rulings
- * P14 and P15).
+ * A container of the runtime tests, and the `docker run` lines that start one.
  *
  * Every container uses host networking and reaches only 127.0.0.1: its environment must point `AGENTCAT_API_URL` and
  * `AGENTCAT_DIAGNOSTICS_ENDPOINT` there (`RuntimeTestCase::env()`), so a fixture that forgets its collector fails
@@ -43,9 +42,6 @@ final class DockerRuntime
 
     private const string NAME_PREFIX = 'agentcat-rt-';
 
-    /** The images whose main process is PHP CLI: PHP must not be PID 1 there (header conflict 11). */
-    private const array INIT_IMAGES = [Images::CLI, Images::SWOOLE];
-
     /** The test's output directory is `<test HOME>/runtime-<hex>` (`RuntimeTestCase::out()`). */
     public const string OUTPUT_DIRECTORY_PREFIX = 'runtime-';
 
@@ -62,7 +58,26 @@ final class DockerRuntime
 
     private static ?string $problem = null;
 
+    /** @var array<string, true> the images of the containers that this process started since `forgetImages()` */
+    private static array $images = [];
+
     private function __construct(private readonly string $name) {}
+
+    /**
+     * The images that this process started a container from since `forgetImages()`, in start order: a failing test
+     * names them (`RuntimeTestCase::onNotSuccessfulTest()`).
+     *
+     * @return list<string>
+     */
+    public static function imagesUsed(): array
+    {
+        return array_keys(self::$images);
+    }
+
+    public static function forgetImages(): void
+    {
+        self::$images = [];
+    }
 
     /** `AGENTCAT_RUNTIME_TESTS=1`: the runtime tests run, and a Docker that does not answer fails them. */
     public static function requested(): bool
@@ -108,9 +123,9 @@ final class DockerRuntime
      * @param non-empty-list<string> $command  the command, after the image's entrypoint
      * @param array<string, string>  $env      the container's environment: `RuntimeTestCase::env()` plus the test's own
      * @param array<string, string>  $mounts   host path (in the output directory) => container path
-     * @param bool                   $init     `--init`; `Images::CLI` and `Images::SWOOLE` always get it
+     * @param bool                   $init     `--init`; `Images::cli()` and `Images::swoole()` always get it
      * @param float                  $timeout  how long the port may take to accept a connection
-     * @param bool                   $remove   false keeps a stopped container for `logs()` until `stop()` (ruling P16)
+     * @param bool                   $remove   false keeps a stopped container for `logs()` until `stop()`
      * @param float                  $lifetime how long the container may run at most: longer than any runtime test
      */
     public static function start(
@@ -162,7 +177,7 @@ final class DockerRuntime
      * @param list<string>          $command
      * @param array<string, string> $env
      * @param array<string, string> $mounts host path (in the output directory) => container path
-     * @param bool                  $init   `--init`; `Images::CLI` and `Images::SWOOLE` always get it
+     * @param bool                  $init   `--init`; `Images::cli()` and `Images::swoole()` always get it
      *
      * @return list<string>
      */
@@ -201,14 +216,14 @@ final class DockerRuntime
 
     /**
      * Makes everything under `$dir` writable for everyone, so the test can remove what a container wrote there as
-     * root or www-data (ruling P14). The container sees only `$dir`, at `/out`, and no network.
+     * root or www-data. The container sees only `$dir`, at `/out`, and no network.
      */
     public static function makeRemovable(string $dir): void
     {
         $name = self::newName();
-        $run = self::docker(['run', '--rm', '--pull', 'never', '--name', $name, '--network', 'none', '--mount', self::bind(self::inOutputDirectory($dir), '/out'), Images::CLI, 'chmod', '-R', 'a+rwX', '/out']);
+        $run = self::docker(['run', '--rm', '--pull', 'never', '--name', $name, '--network', 'none', '--mount', self::bind(self::inOutputDirectory($dir), '/out'), Images::cli(), 'chmod', '-R', 'a+rwX', '/out']);
         if (!$run->isSuccessful()) {
-            throw new \RuntimeException(sprintf('chmod of %s in %s failed: %s', $dir, Images::CLI, $run->getErrorOutput()));
+            throw new \RuntimeException(sprintf('chmod of %s in %s failed: %s', $dir, Images::cli(), $run->getErrorOutput()));
         }
     }
 
@@ -371,6 +386,7 @@ final class DockerRuntime
                 throw new \InvalidArgumentException(sprintf('A container needs %s on http://127.0.0.1:<port>, the collector of the test or a closed port: pass RuntimeTestCase::env()', $required));
             }
         }
+        self::$images[$image] = true;
         $repo = self::repo();
         $options = ['--pull', 'never', '--name', $name, '--network', 'host', '--mount', self::bind($repo, $repo, readonly: true), '--workdir', $repo];
         foreach ([Constants::DEFAULT_API_BASE_URL, Constants::DEFAULT_DIAGNOSTICS_ENDPOINT] as $default) {
@@ -380,7 +396,7 @@ final class DockerRuntime
         if ($remove) {
             $options[] = '--rm';
         }
-        if ($init || in_array($image, self::INIT_IMAGES, true)) {
+        if ($init || in_array($image, Images::initImages(), true)) {
             $options[] = '--init';
         }
         foreach ($mounts as $host => $container) {

@@ -46,7 +46,8 @@
                 "mcp:tasks/result",
                 "mcp:tasks/list",
                 "mcp:tasks/cancel",
-                "agentcat:identify"
+                "agentcat:identify",
+                "agentcat:custom"
             ]
         },
         "is_error": {

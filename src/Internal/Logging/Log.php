@@ -121,7 +121,7 @@ final class Log
 
     private static function emit(string $level, string $message): void
     {
-        if (self::$sink instanceof \Closure && self::$beforeDiversion === null) { // a fake sends nothing (spec conflict 9)
+        if (self::$sink instanceof \Closure && self::$beforeDiversion === null) { // a fake sends nothing (no diagnostics)
             try {
                 (self::$sink)(LogLine::format($message));
             } catch (\Throwable) {

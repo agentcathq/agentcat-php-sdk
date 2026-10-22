@@ -58,6 +58,12 @@ final class TestKernel extends Kernel
     public const array FULL_PAGE = ['servers' => ['conformance' => ['registry' => [Tools\EchoTool::class, FullPage\FullPageTools::class], 'pagination_limit' => 15] + self::CONFORMANCE]];
 
     /**
+     * Two pages of 15: `FULL_PAGE`'s tools, then `own` (`FullPage\SecondPageOwnTool`) alone on page 2. The kernel needs
+     * both tool classes as services, in this order.
+     */
+    public const array PAGED = ['servers' => ['conformance' => ['registry' => [Tools\EchoTool::class, FullPage\FullPageTools::class, FullPage\SecondPageOwnTool::class], 'pagination_limit' => 15] + self::CONFORMANCE]];
+
+    /**
      * @param string                       $directory the directory of the cache and log directories
      * @param array<string, mixed>         $agentcat  the agentcat configuration
      * @param array<string, string|object> $services  more services: id => class name or instance (synthetic)

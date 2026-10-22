@@ -58,7 +58,7 @@ final class DiagnosticsTest extends TestCase
     protected function setUp(): void
     {
         $this->environment = Environment::clear(...self::VARIABLES);
-        putenv('AGENTCAT_DIAGNOSTICS_ENDPOINT=' . MockCollector::closedPortUrl()); // fail closed (ruling P8)
+        putenv('AGENTCAT_DIAGNOSTICS_ENDPOINT=' . MockCollector::closedPortUrl()); // fail closed: a closed local port
         putenv('DIAGNOSTICS_ENDPOINT=' . MockCollector::closedPortUrl()); // an application's own variable: never read (D50)
         Diagnostics::reset();
         $this->logger = new MemoryLogger();
@@ -79,7 +79,7 @@ final class DiagnosticsTest extends TestCase
     #[Group('ac-06-54')]
     public function testAWarningLineIsPostedToTheDefaultCollector(): void
     {
-        putenv('AGENTCAT_DIAGNOSTICS_ENDPOINT'); // the default URL, with a recording channel (ruling F8)
+        putenv('AGENTCAT_DIAGNOSTICS_ENDPOINT'); // the default URL, with a recording channel: nothing is sent
         $this->init('proj_ABC');
         Log::write('Warning: something');
 
@@ -152,7 +152,7 @@ final class DiagnosticsTest extends TestCase
         $this->assertStringEndsWith('] line 1000', $this->text($records[999] ?? null));
     }
 
-    /** A6: the buffer holds at most 1 MiB of record bodies; the oldest records go first, silently. */
+    /** The buffer holds at most 1 MiB of record bodies; the oldest records go first, silently. */
     #[Group('ac-06-58')]
     public function testTheBufferKeepsItsRecordBodiesWithinOneMebibyte(): void
     {
@@ -173,7 +173,7 @@ final class DiagnosticsTest extends TestCase
         $this->assertCount(12, $this->logger->messages(), 'no line about the dropped records');
     }
 
-    /** A6: records that fill the budget exactly all stay, one byte more drops the oldest; each batch starts a new budget. */
+    /** Records that fill the budget exactly all stay, one byte more drops the oldest; each batch starts a new budget. */
     public function testTheByteBudgetHoldsExactlyOneMebibyte(): void
     {
         $this->init('proj_ABC');
@@ -193,7 +193,7 @@ final class DiagnosticsTest extends TestCase
         $this->assertStringContainsString('] dd', $this->text($second[0]));
     }
 
-    /** A6: a line larger than the whole budget is kept alone, until the next line drops it; each batch starts a new budget. */
+    /** A line larger than the whole budget is kept alone, until the next line drops it; each batch starts a new budget. */
     public function testALineOverTheBudgetIsKeptAlone(): void
     {
         $this->init('proj_ABC');
@@ -216,7 +216,7 @@ final class DiagnosticsTest extends TestCase
         $this->assertStringEndsWith('] last', $this->text($second[0]));
     }
 
-    /** Q3: no timer — a queue pass after the 2 s window posts; a pass before it does not. */
+    /** No timer — a queue pass after the 2 s window posts; a pass before it does not. */
     public function testTheTwoSecondWindowIsCheckedOnQueuePasses(): void
     {
         $this->init('proj_ABC');
@@ -303,7 +303,7 @@ final class DiagnosticsTest extends TestCase
     }
 
     /**
-     * I1: a collector that never answers (black-holed otel.agentcat.com). The flush pass posts the batch, as its window
+     * A collector that never answers (black-holed otel.agentcat.com). The flush pass posts the batch, as its window
      * is over, and returns true at once: AgentCat's own request is neither counted nor waited for.
      */
     public function testFlushNeitherCountsNorWaitsForTheBatchItPosts(): void
@@ -390,7 +390,7 @@ final class DiagnosticsTest extends TestCase
         $this->assertSame(['one'], $this->logger->messages());
     }
 
-    /** Review Focus 5 (ruling P6): a real file at the `/v1/logs` path, so a fetched file would come back as the body. */
+    /** A file endpoint is never read, though a real file waits at its `/v1/logs` path. */
     public function testAFileEndpointIsNeverRead(): void
     {
         $dir = getenv('HOME') . '/diagnostics-' . bin2hex(random_bytes(6));
@@ -492,7 +492,7 @@ final class DiagnosticsTest extends TestCase
         $this->assertFalse($this->queue->hasWork());
     }
 
-    /** A10 (D50): the unprefixed `DISABLE_DIAGNOSTICS` can only turn diagnostics off, and its off wins. */
+    /** D50: the unprefixed `DISABLE_DIAGNOSTICS` can only turn diagnostics off, and its off wins. */
     #[Group('ac-06-49')]
     public function testTheUnprefixedVariableCanOnlyTurnDiagnosticsOff(): void
     {
@@ -524,11 +524,11 @@ final class DiagnosticsTest extends TestCase
         $this->assertSame([], $this->logger->messages());
     }
 
-    /** A10 (D50): an application's own `DIAGNOSTICS_ENDPOINT` and `DIAGNOSTICS_TOKEN` never reach AgentCat. */
+    /** D50: an application's own `DIAGNOSTICS_ENDPOINT` and `DIAGNOSTICS_TOKEN` never reach AgentCat. */
     #[Group('ac-06-55')]
     public function testTheApplicationsOwnCollectorVariablesAreIgnored(): void
     {
-        putenv('AGENTCAT_DIAGNOSTICS_ENDPOINT'); // the default URL, with a recording channel (ruling F8)
+        putenv('AGENTCAT_DIAGNOSTICS_ENDPOINT'); // the default URL, with a recording channel: nothing is sent
         putenv('DIAGNOSTICS_ENDPOINT=https://diagnostics.app.example');
         putenv('DIAGNOSTICS_TOKEN=the-applications-own-secret');
         $this->init('proj_ABC');
@@ -540,7 +540,7 @@ final class DiagnosticsTest extends TestCase
         $this->assertSame('Bearer ' . Constants::DEFAULT_DIAGNOSTICS_TOKEN, $this->http->requests[0]->headers['Authorization'] ?? null);
     }
 
-    /** A9 (D49): a blocked collector holds the shutdown 0.25 s (connect) or 1 s (answer) at most; exports keep 2 s and 10 s. */
+    /** D49: a blocked collector holds the shutdown 0.25 s (connect) or 1 s (answer) at most; exports keep 2 s and 10 s. */
     public function testTheBatchCarriesTheShortDiagnosticsTimeouts(): void
     {
         $this->init('proj_ABC');
@@ -672,7 +672,7 @@ final class DiagnosticsTest extends TestCase
         $this->assertSame($first, $this->installIdOfANewProcess());
     }
 
-    /** Spec conflict 9: while `AgentCat::fake()` diverts the log, the diagnostics buffer gets nothing. */
+    /** While `AgentCat::fake()` diverts the log, the diagnostics buffer gets nothing: a fake sends nothing. */
     public function testADivertedLineIsNotBuffered(): void
     {
         $this->init('proj_ABC');

@@ -15,7 +15,7 @@ use Mcp\Server\Builder;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
-/** How mcp/sdk's error answers become error events (plan header conflict 3, D16). */
+/** How mcp/sdk's error answers become error events (D16); a JSON-RPC error is never decorated. */
 final class CallErrorsTest extends TestCase
 {
     private TrackingFixture $fixture;
@@ -52,6 +52,7 @@ final class CallErrorsTest extends TestCase
         $this->assertNotSame([], JsonAssert::at($event->error, 'frames'), 'the stashed exception wins over the result text');
     }
 
+    #[Group('ac-01-80')]
     public function testAnErrorResultWithoutAnExceptionIsAnErrorEvent(): void
     {
         $twin = HttpHarness::result($this->fixture->harness($this->builder())->callTool('refuses', []));
@@ -70,6 +71,8 @@ final class CallErrorsTest extends TestCase
     #[Group('ac-02-24')]
     #[Group('ac-02-25')]
     #[Group('ac-05-E5')]
+    #[Group('ac-01-80')]
+    #[Group('ac-04-44')]
     public function testAnUncaughtToolExceptionGivesTheLibrarysErrorAndAnEventWithTheException(): void
     {
         $twin = $this->fixture->harness($this->builder())->callTool('boom', []);
@@ -79,7 +82,7 @@ final class CallErrorsTest extends TestCase
 
         $this->assertEquals((object) ['code' => Error::INTERNAL_ERROR, 'message' => 'Error while executing tool'], $answer->error);
         $this->assertEquals($twin->error, $answer->error);
-        $this->assertObjectNotHasProperty('result', $answer, 'no mint-back on a JSON-RPC error (header conflict 3)');
+        $this->assertObjectNotHasProperty('result', $answer, 'no mint-back on a JSON-RPC error');
         $event = $this->fixture->event();
         $this->assertTrue($event->isError);
         $this->assertSame('RuntimeException', JsonAssert::at($event->error, 'type'));
@@ -120,6 +123,7 @@ final class CallErrorsTest extends TestCase
     }
 
     #[Group('ac-05-E7')]
+    #[Group('ac-01-80')]
     public function testASuccessfulCallHasNoError(): void
     {
         $harness = $this->tracked();

@@ -10,6 +10,7 @@ use AgentCat\Internal\Delivery\QueueCompanion;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\SdkVersion;
 use AgentCat\Internal\Support\BridgeConfig;
+use AgentCat\Internal\Support\Clock;
 use AgentCat\Internal\Support\Env;
 use AgentCat\Internal\Support\TestMode;
 use AgentCat\Internal\Transport\HttpRequest;
@@ -106,8 +107,9 @@ final class Diagnostics implements QueueCompanion
                 $queue,
                 DiagnosticsAttributes::resource($projectId),
                 DiagnosticsAttributes::record(),
-                $clock ?? static fn(): float => hrtime(true) / 1e9,
-                $wallMillis ?? static fn(): int => (int) (microtime(true) * 1000), // whole milliseconds, like Date.now()
+                $clock ?? Clock::monotonic(),
+                // Whole milliseconds, like Date.now(), from DateTimeImmutable: a host can disable microtime().
+                $wallMillis ?? static fn(): int => (int) (new \DateTimeImmutable())->format('Uv'),
                 FinishRequest::outlivesRequest($sapi ?? PHP_SAPI, $_SERVER),
             );
             self::$active = $diagnostics;

@@ -17,9 +17,9 @@ use PHPUnit\Framework\Attributes\Group;
 
 /**
  * PHP-FPM, talked to over FastCGI the way nginx does: the client has its answer when FPM ends the request
- * (`FCGI_END_REQUEST`), and only then does AgentCat's shutdown function run the hooks and deliver (D47, plan E1 header
- * conflicts 13 and 14). Each upper bound sits about 1 s above the measured time and about 1 s below the time the step it
- * guards would add (a 3 s hook or a 3 s collector), ruling P16.
+ * (`FCGI_END_REQUEST`), and only then does AgentCat's shutdown function run the hooks and deliver (D47). Each upper
+ * bound sits about 1 s above the measured time and about 1 s below the time the step it guards would add (a 3 s hook
+ * or a 3 s collector).
  */
 #[Group('runtime')]
 final class FpmTest extends RuntimeTestCase
@@ -34,6 +34,14 @@ final class FpmTest extends RuntimeTestCase
     private const float COLLECTOR_DEADLINE_SECONDS = 10.0;
 
     private const string HTTP_SERVER = '/tests/E2E/Fixtures/http-server.php';
+
+    /** A shared host's `disable_functions`: delivery (curl multi), the signal drain, time limits, the environment, the pid. */
+    private const string HARDENED = 'curl_multi_exec,pcntl_signal,set_time_limit,ignore_user_abort,putenv,getmypid';
+
+    private const string HANDSHAKE_PROTOCOL_VERSION = '2025-06-18';
+
+    /** The container of the last `fpm()`. */
+    private ?DockerRuntime $runtime = null;
 
     #[Group('ac-03-1')]
     #[Group('ac-02-48')]
@@ -62,9 +70,9 @@ final class FpmTest extends RuntimeTestCase
     }
 
     /**
-     * Review Focus 5: AgentCat writes and closes the native session before its drain, so a second request of the same
-     * session gets the lock while the first one still waits 3 s for the AgentCat API. Without that, PHP would write the
-     * session after the shutdown functions, after the drain.
+     * AgentCat writes and closes the native session before its drain, so a second request of the same session gets the
+     * lock while the first one still waits 3 s for the AgentCat API. Without that, PHP would write the session after
+     * the shutdown functions, after the drain.
      */
     #[MaximumDuration(30000)]
     public function testTheSessionLockIsReleasedBeforeTheDrain(): void
@@ -131,9 +139,8 @@ final class FpmTest extends RuntimeTestCase
     }
 
     /**
-     * Plan E1 header conflict 6: a streamed laravel/mcp answer (two progress notifications 50 ms apart, then the result)
-     * reaches the client as server-sent events, and its event comes when the stream ends, with a `duration` that covers
-     * the stream.
+     * A streamed laravel/mcp answer (two progress notifications 50 ms apart, then the result) reaches the client as
+     * server-sent events, and its event comes when the stream ends, with a `duration` that covers the stream.
      */
     #[Group('ac-02-54')]
     #[MaximumDuration(40000)]
@@ -154,9 +161,9 @@ final class FpmTest extends RuntimeTestCase
     }
 
     /**
-     * Header conflict 7 (D58): under PHP-FPM `Response::send()` finishes the request, `kernel.terminate` makes one
-     * non-blocking pass, and AgentCat's shutdown function delivers, so the client has its answer before the collector
-     * answers 3 s later. An untimed first request compiles the container.
+     * D58: under PHP-FPM `Response::send()` finishes the request, `kernel.terminate` makes one non-blocking pass, and
+     * AgentCat's shutdown function delivers, so the client has its answer before the collector answers 3 s later. An
+     * untimed first request compiles the container.
      */
     #[MaximumDuration(40000)]
     public function testSymfonyAnswersBeforeTheShutdownDelivery(): void
@@ -181,11 +188,64 @@ final class FpmTest extends RuntimeTestCase
     }
 
     /**
+     * A pool whose `disable_functions` is a shared host's: one MCP session (`initialize`, `notifications/initialized`,
+     * `tools/call`) answers as without AgentCat, no PHP error text reaches an answer or the workers' output, and AgentCat
+     * calls no disabled function. Each request of the pool's one worker logs each disabled function in one line at most
+     * (PHP-FPM keeps no state between requests): the curl line, once per request that queued an event, and nothing else.
+     */
+    #[Group('hardened-host')]
+    #[MaximumDuration(30000)]
+    public function testAHardenedPoolAnswersAndLogsEachMissingFunctionOncePerRequest(): void
+    {
+        $scenario = self::$collector->scenario();
+        $fpm = $this->fpm($scenario, workers: 1, disableFunctions: self::HARDENED);
+        $script = self::repo() . self::HTTP_SERVER;
+        $headers = ['Accept' => 'application/json, text/event-stream', 'X-E2E-Collector' => $scenario];
+
+        $initialize = $fpm->request($script, 'POST', '/mcp', $headers, json_encode(['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => HttpHarness::initializeParams('fpm-client', '1.0.0', self::HANDSHAKE_PROTOCOL_VERSION)], JSON_THROW_ON_ERROR));
+        $this->assertSame(200, $initialize['status'], $initialize['body']);
+        $this->assertSame(self::HANDSHAKE_PROTOCOL_VERSION, JsonAssert::at($this->answerResult($initialize), 'protocolVersion'));
+        $session = $initialize['headers']['mcp-session-id'] ?? '';
+        $this->assertNotSame('', $session, 'initialize issued an Mcp-Session-Id');
+        $headers = [...$headers, 'Mcp-Session-Id' => $session, 'MCP-Protocol-Version' => self::HANDSHAKE_PROTOCOL_VERSION];
+        $initialized = $fpm->request($script, 'POST', '/mcp', $headers, json_encode(HttpHarness::INITIALIZED, JSON_THROW_ON_ERROR));
+        HttpHarness::assertInitialized($initialized['status'], $initialized['body']);
+        $call = $fpm->request($script, 'POST', '/mcp', $headers, json_encode(['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/call', 'params' => ['name' => 'echo', 'arguments' => ['msg' => 'hardened']]], JSON_THROW_ON_ERROR));
+        $this->assertSame(200, $call['status'], $call['body']);
+        $result = $this->answerResult($call);
+        $this->assertFalse(JsonAssert::at($result, 'isError'));
+        $content = JsonAssert::at($result, 'content');
+        $this->assertIsArray($content);
+        $this->assertContains('echo: hardened', array_map(static fn(mixed $block): mixed => JsonAssert::at($block, 'text'), $content));
+        $last = $fpm->request($script, 'POST', '/mcp', $headers, json_encode(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'ping'], JSON_THROW_ON_ERROR));
+        $this->assertSame(200, $last['status'], 'the one worker serves the ping only after the call\'s script, its shutdown included, ended: ' . $last['body']);
+
+        foreach ([$initialize, $initialized, $call, $last] as $answer) {
+            $this->assertDoesNotMatchRegularExpression('/Warning|Notice|Deprecated|Fatal error/', $answer['body']);
+        }
+        $this->assertInstanceOf(DockerRuntime::class, $this->runtime);
+        $this->assertNoPhpErrors($this->runtime);
+        $log = $this->outFile('agentcat.log');
+        $this->assertStringNotContainsString('Call to undefined function', $log);
+        $parts = preg_split('/^(?=\[[^\]]+\] \[[^\]]+\] AgentCat setup started)/m', $log);
+        $this->assertIsArray($parts);
+        $requests = array_values(array_filter($parts, static fn(string $part): bool => trim($part) !== ''));
+        $this->assertCount(4, $requests, 'each request tracks the server once: ' . $log);
+        foreach ($requests as $request) {
+            foreach (explode(',', self::HARDENED) as $function) {
+                $this->assertLessThanOrEqual(1, preg_match_all('/\b' . preg_quote($function, '/') . '\b/', $request), $function . ' in one line at most per request: ' . $request);
+            }
+        }
+        $this->assertSame(1, preg_match_all('/WARN: AgentCat cannot send events, telemetry exports or diagnostics: ext-curl functions are missing or disabled \(curl_multi_exec\)/', $requests[2]), 'the call\'s request logs that its event cannot be sent: ' . $requests[2]);
+        $this->assertSame([], self::$collector->requests($scenario), 'without curl_multi_exec nothing is sent');
+    }
+
+    /**
      * PHP-FPM on 127.0.0.1 with `$workers` workers (two by default: one can drain while the other answers), which keep
      * the container's environment (`RuntimeTestCase::env()` with `$collector` as the AgentCat API) and get `HOME=/out`,
-     * as FPM gives its workers `/var/www` otherwise.
+     * as FPM gives its workers `/var/www` otherwise. `$disableFunctions` becomes the pool's `disable_functions`.
      */
-    private function fpm(?string $collector = null, int $workers = 2): FastCgiClient
+    private function fpm(?string $collector = null, int $workers = 2, ?string $disableFunctions = null): FastCgiClient
     {
         $out = $this->out();
         $port = $this->freePort();
@@ -199,9 +259,10 @@ final class FpmTest extends RuntimeTestCase
             'pm.max_children = ' . $workers,
             'catch_workers_output = yes',
             'decorate_workers_output = no',
+            ...($disableFunctions === null ? [] : ['php_admin_value[disable_functions] = ' . $disableFunctions]),
             '',
         ]));
-        DockerRuntime::start(Images::FPM, ['php-fpm', '-F'], $this->env($collector), [$pool => '/usr/local/etc/php-fpm.d/zzz-agentcat.conf', $out => '/out'], port: $port);
+        $this->runtime = DockerRuntime::start(Images::fpm(), ['php-fpm', '-F'], $this->env($collector), [$pool => '/usr/local/etc/php-fpm.d/zzz-agentcat.conf', $out => '/out'], port: $port);
 
         return new FastCgiClient('127.0.0.1', $port);
     }

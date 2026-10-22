@@ -55,7 +55,7 @@ final class AgentCatTest extends TestCase
         TrackedServers::resetIncomplete(); // a failed track() marks the process
         TrackedServers::resetSkipped(); // so does a track() while AgentCat is off
         AgentCat::setClient(null);
-        EventQueue::setGlobal(null); // N9: the default client of setClient(null) builds the global queue
+        EventQueue::setGlobal(null); // the default client of setClient(null) builds the global queue
         Log::reset();
         $this->environment->restore();
     }

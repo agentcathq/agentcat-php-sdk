@@ -21,7 +21,7 @@ final class DiagnosticsEndpointTest extends TestCase
     protected function setUp(): void
     {
         $this->environment = Environment::clear('AGENTCAT_DIAGNOSTICS_ENDPOINT', 'AGENTCAT_DIAGNOSTICS_TOKEN', 'DIAGNOSTICS_ENDPOINT', 'DIAGNOSTICS_TOKEN');
-        putenv('AGENTCAT_DIAGNOSTICS_ENDPOINT=' . MockCollector::closedPortUrl()); // fail closed (ruling P8)
+        putenv('AGENTCAT_DIAGNOSTICS_ENDPOINT=' . MockCollector::closedPortUrl()); // fail closed: a closed local port
     }
 
     #[\Override]
@@ -80,7 +80,7 @@ final class DiagnosticsEndpointTest extends TestCase
         $this->assertSame('fpm', DiagnosticsEndpoint::token());
     }
 
-    /** A10 (D50): the unprefixed names belong to the application; AgentCat never reads them. */
+    /** D50: the unprefixed names belong to the application; AgentCat never reads them. */
     #[Group('ac-06-55')]
     public function testTheUnprefixedVariablesOfTheApplicationAreIgnored(): void
     {

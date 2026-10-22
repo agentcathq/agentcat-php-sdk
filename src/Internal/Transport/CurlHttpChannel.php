@@ -35,8 +35,6 @@ final class CurlHttpChannel implements HttpChannel
     /** Upper bound of one wait, so a waiting caller re-checks its state at least once a second. */
     private const float MAX_WAIT_SECONDS = 1.0;
 
-    private const string NO_CURL = 'WARN: AgentCat cannot send telemetry exports or diagnostics: ext-curl functions are missing or disabled (%s)';
-
     private const string FULL = 'WARN: AgentCat telemetry export queue full, dropped the oldest %d request(s)';
 
     /** The reason phrase of a status line; the last status line of a response wins. */
@@ -86,7 +84,7 @@ final class CurlHttpChannel implements HttpChannel
     ) {
         $this->connectTimeoutMs = CurlSupport::timeoutMilliseconds($connectTimeoutSeconds);
         $this->totalTimeoutMs = CurlSupport::timeoutMilliseconds($totalTimeoutSeconds);
-        $this->curl = new CurlSupport(self::NO_CURL, $functionExists);
+        $this->curl = new CurlSupport($functionExists);
         $this->multi = new CurlMulti($multiStatus);
         $this->inCallback = new CallbackFlag();
     }

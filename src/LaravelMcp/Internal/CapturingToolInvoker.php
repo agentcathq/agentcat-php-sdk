@@ -10,9 +10,9 @@ use Laravel\Mcp\Server\ToolInvoker;
 use Laravel\Mcp\Transport\JsonRpcRequest;
 
 /**
- * laravel/mcp's tool invoker, which also keeps the tool's own exception for the request it ran for (plan E1 header
- * conflict 5). laravel/mcp turns every tool exception into an error result in `toErrorResponse()`, in the plain and
- * the streamed path alike. No constructor: laravel/mcp 1.0.0 has none and 1.0.2 has one with a default.
+ * laravel/mcp's tool invoker, which also keeps the tool's own exception for the request it ran for. laravel/mcp turns
+ * every tool exception into an error result in `toErrorResponse()`, in the plain and the streamed path alike. No
+ * constructor: laravel/mcp 1.0.0 has none and 1.1.0 has one with a default.
  *
  * @internal
  */

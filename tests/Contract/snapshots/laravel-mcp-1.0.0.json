@@ -1,0 +1,912 @@
+{
+    "classes": {
+        "Laravel\\Mcp\\Server": {
+            "abstract": true,
+            "abstractMethods": [],
+            "constants": {
+                "CACHEABLE_METHODS": {
+                    "visibility": "public"
+                },
+                "CAPABILITY_COMPLETIONS": {
+                    "visibility": "public"
+                },
+                "CAPABILITY_PROMPTS": {
+                    "visibility": "public"
+                },
+                "CAPABILITY_RESOURCES": {
+                    "visibility": "public"
+                },
+                "CAPABILITY_TOOLS": {
+                    "visibility": "public"
+                }
+            },
+            "final": false,
+            "methods": {
+                "__callStatic": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "name",
+                            "type": "string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "arguments",
+                            "type": "array",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Laravel\\Mcp\\Server\\Testing\\PendingTestResponse|Laravel\\Mcp\\Server\\Testing\\TestResponse|Laravel\\Mcp\\Server\\Testing\\TestListResponse",
+                    "static": true,
+                    "visibility": "public"
+                },
+                "__construct": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "transport",
+                            "type": "Laravel\\Mcp\\Server\\Contracts\\Transport",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "addCapability": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "key",
+                            "type": "string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "value",
+                            "type": "bool",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "void",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "addMethod": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "method",
+                            "type": "string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "handler",
+                            "type": "string",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "void",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "boot": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [],
+                    "return": "void",
+                    "static": false,
+                    "visibility": "protected"
+                },
+                "cacheHints": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [],
+                    "return": "array",
+                    "static": false,
+                    "visibility": "protected"
+                },
+                "createContext": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [],
+                    "return": "Laravel\\Mcp\\Server\\ServerContext",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "detectUiCapability": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [],
+                    "return": "void",
+                    "static": false,
+                    "visibility": "protected"
+                },
+                "handle": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "rawMessage",
+                            "type": "string",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "void",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "handleMessage": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "request",
+                            "type": "Laravel\\Mcp\\Transport\\JsonRpcRequest",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "context",
+                            "type": "Laravel\\Mcp\\Server\\ServerContext",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "void",
+                    "static": false,
+                    "visibility": "protected"
+                },
+                "icons": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [],
+                    "return": "array",
+                    "static": false,
+                    "visibility": "protected"
+                },
+                "resolveAttribute": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "attributeClass",
+                            "type": "string",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "mixed",
+                    "static": false,
+                    "visibility": "protected"
+                },
+                "resolveAttributes": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "attributeClass",
+                            "type": "string",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "array",
+                    "static": false,
+                    "visibility": "protected"
+                },
+                "resolveCacheHints": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "request",
+                            "type": "Laravel\\Mcp\\Transport\\JsonRpcRequest",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "context",
+                            "type": "Laravel\\Mcp\\Server\\ServerContext",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "array",
+                    "static": false,
+                    "visibility": "protected"
+                },
+                "resolveResource": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "uri",
+                            "type": "?string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "context",
+                            "type": "Laravel\\Mcp\\Server\\ServerContext",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Laravel\\Mcp\\Server\\Resource",
+                    "static": false,
+                    "visibility": "protected"
+                },
+                "resolvedCapabilities": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [],
+                    "return": "array",
+                    "static": false,
+                    "visibility": "protected"
+                },
+                "resolvedIcons": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [],
+                    "return": "array",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "resourceCacheable": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "request",
+                            "type": "Laravel\\Mcp\\Transport\\JsonRpcRequest",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "context",
+                            "type": "Laravel\\Mcp\\Server\\ServerContext",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "?Laravel\\Mcp\\Server\\Attributes\\Cacheable",
+                    "static": false,
+                    "visibility": "protected"
+                },
+                "runMethodHandle": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "request",
+                            "type": "Laravel\\Mcp\\Transport\\JsonRpcRequest",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "context",
+                            "type": "Laravel\\Mcp\\Server\\ServerContext",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Traversable|Laravel\\Mcp\\Transport\\JsonRpcResponse|array",
+                    "static": false,
+                    "visibility": "protected"
+                },
+                "send": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "response",
+                            "type": "Laravel\\Mcp\\Transport\\JsonRpcResponse",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "context",
+                            "type": "Laravel\\Mcp\\Server\\ServerContext",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "request",
+                            "type": "?Laravel\\Mcp\\Transport\\JsonRpcRequest",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "void",
+                    "static": false,
+                    "visibility": "protected"
+                },
+                "start": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [],
+                    "return": "void",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "validateProtocolMeta": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "request",
+                            "type": "Laravel\\Mcp\\Transport\\JsonRpcRequest",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "context",
+                            "type": "Laravel\\Mcp\\Server\\ServerContext",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "void",
+                    "static": false,
+                    "visibility": "protected"
+                }
+            },
+            "properties": {
+                "attributeCache": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": true,
+                    "type": "array",
+                    "visibility": "protected"
+                },
+                "capabilities": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "array",
+                    "visibility": "protected"
+                },
+                "defaultPaginationLength": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "int",
+                    "visibility": "public"
+                },
+                "extensions": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "array",
+                    "visibility": "protected"
+                },
+                "instructions": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "string",
+                    "visibility": "protected"
+                },
+                "maxPaginationLength": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "int",
+                    "visibility": "public"
+                },
+                "methods": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "array",
+                    "visibility": "protected"
+                },
+                "name": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "string",
+                    "visibility": "protected"
+                },
+                "prompts": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "array",
+                    "visibility": "protected"
+                },
+                "resources": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "array",
+                    "visibility": "protected"
+                },
+                "supportedProtocolVersion": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "array",
+                    "visibility": "protected"
+                },
+                "tools": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "array",
+                    "visibility": "protected"
+                },
+                "transport": {
+                    "hasDefault": false,
+                    "readonly": false,
+                    "static": false,
+                    "type": "Laravel\\Mcp\\Server\\Contracts\\Transport",
+                    "visibility": "protected"
+                },
+                "version": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "string",
+                    "visibility": "protected"
+                }
+            },
+            "readonly": false
+        },
+        "Laravel\\Mcp\\Server\\Methods\\CallTool": {
+            "abstract": false,
+            "abstractMethods": [],
+            "constants": [],
+            "final": false,
+            "methods": {
+                "handle": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "request",
+                            "type": "Laravel\\Mcp\\Transport\\JsonRpcRequest",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "context",
+                            "type": "Laravel\\Mcp\\Server\\ServerContext",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Generator|Laravel\\Mcp\\Transport\\JsonRpcResponse",
+                    "static": false,
+                    "visibility": "public"
+                }
+            },
+            "properties": [],
+            "readonly": false
+        },
+        "Laravel\\Mcp\\Server\\ToolInvoker": {
+            "abstract": false,
+            "abstractMethods": [],
+            "constants": [],
+            "final": false,
+            "methods": {
+                "callHandler": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "handler",
+                            "type": "callable",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "request",
+                            "type": "Laravel\\Mcp\\Transport\\JsonRpcRequest",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "mixed",
+                    "static": false,
+                    "visibility": "protected"
+                },
+                "invoke": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "tool",
+                            "type": "Laravel\\Mcp\\Server\\Tool",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "request",
+                            "type": "Laravel\\Mcp\\Transport\\JsonRpcRequest",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Generator|Laravel\\Mcp\\Transport\\JsonRpcResponse",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "isBinary": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "content",
+                            "type": "string",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "bool",
+                    "static": false,
+                    "visibility": "protected"
+                },
+                "serializable": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "tool",
+                            "type": "Laravel\\Mcp\\Server\\Tool",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "callable",
+                    "static": false,
+                    "visibility": "protected"
+                },
+                "toErrorMessage": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "e",
+                            "type": "Throwable",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "string",
+                    "static": false,
+                    "visibility": "protected"
+                },
+                "toErrorResponse": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "e",
+                            "type": "Throwable",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Laravel\\Mcp\\Response",
+                    "static": false,
+                    "visibility": "protected"
+                },
+                "toJsonRpcException": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "e",
+                            "type": "Throwable",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "requestId",
+                            "type": "mixed",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Laravel\\Mcp\\Exceptions\\JsonRpcException",
+                    "static": false,
+                    "visibility": "protected"
+                },
+                "toJsonRpcResponse": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "request",
+                            "type": "Laravel\\Mcp\\Transport\\JsonRpcRequest",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "response",
+                            "type": "Laravel\\Mcp\\Response|Laravel\\Mcp\\ResponseFactory|array|string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "serializable",
+                            "type": "callable",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Laravel\\Mcp\\Transport\\JsonRpcResponse",
+                    "static": false,
+                    "visibility": "protected"
+                },
+                "toJsonRpcStreamedResponse": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "request",
+                            "type": "Laravel\\Mcp\\Transport\\JsonRpcRequest",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "responses",
+                            "type": "iterable",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "serializable",
+                            "type": "callable",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Generator",
+                    "static": false,
+                    "visibility": "protected"
+                },
+                "toResponseFactory": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "response",
+                            "type": "Laravel\\Mcp\\Response|Laravel\\Mcp\\ResponseFactory|array|string",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Laravel\\Mcp\\ResponseFactory",
+                    "static": false,
+                    "visibility": "private"
+                }
+            },
+            "properties": [],
+            "readonly": false
+        },
+        "Laravel\\Mcp\\Server\\Transport\\HttpTransport": {
+            "abstract": false,
+            "abstractMethods": [],
+            "constants": [],
+            "final": false,
+            "methods": {
+                "__construct": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "request",
+                            "type": "Illuminate\\Http\\Request",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "handler",
+                            "type": "?Closure",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "reply",
+                            "type": "?string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "stream",
+                            "type": "?Closure",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "getHeaders": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [],
+                    "return": "array",
+                    "static": false,
+                    "visibility": "protected"
+                },
+                "onReceive": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "handler",
+                            "type": "Closure",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "void",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "run": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [],
+                    "return": "Illuminate\\Http\\Response|Symfony\\Component\\HttpFoundation\\StreamedResponse",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "send": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "message",
+                            "type": "string",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "void",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "sendStreamMessage": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "message",
+                            "type": "string",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "void",
+                    "static": false,
+                    "visibility": "protected"
+                },
+                "statusCode": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [],
+                    "return": "int",
+                    "static": false,
+                    "visibility": "protected"
+                },
+                "stream": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "stream",
+                            "type": "Closure",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "void",
+                    "static": false,
+                    "visibility": "public"
+                }
+            },
+            "properties": {
+                "handler": {
+                    "hasDefault": false,
+                    "readonly": false,
+                    "static": false,
+                    "type": "?Closure",
+                    "visibility": "protected"
+                },
+                "reply": {
+                    "hasDefault": false,
+                    "readonly": false,
+                    "static": false,
+                    "type": "?string",
+                    "visibility": "protected"
+                },
+                "request": {
+                    "hasDefault": false,
+                    "readonly": false,
+                    "static": false,
+                    "type": "Illuminate\\Http\\Request",
+                    "visibility": "protected"
+                },
+                "stream": {
+                    "hasDefault": false,
+                    "readonly": false,
+                    "static": false,
+                    "type": "?Closure",
+                    "visibility": "protected"
+                }
+            },
+            "readonly": false
+        }
+    },
+    "library": "laravel/mcp",
+    "version": "1.0.0"
+}

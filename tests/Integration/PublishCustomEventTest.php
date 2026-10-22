@@ -41,6 +41,8 @@ final class PublishCustomEventTest extends TestCase
 
     private const string NOT_TRACKED = 'Server is not tracked. Please call agentcat.track() first or provide a session ID string.';
 
+    private const string STATELESS = 'Server is not tracked: pass the Mcp\Server\Builder (or the Mcp\Server built from it) to AgentCat::publishCustomEvent(); Builder::buildStateless() returns a StatelessProtocol, which AgentCat cannot map to its Builder';
+
     private const string NO_SESSION = 'publishCustomEvent: no sessionId provided; event will be published without a session. Pass eventData.sessionId to attribute it to a task.';
 
     private const string PUBLISHED_WITHOUT_SESSION = "Published custom event without a session with type 'agentcat:custom'";
@@ -114,6 +116,18 @@ final class PublishCustomEventTest extends TestCase
         $this->expectException(\TypeError::class);
 
         $this->client->publishCustomEvent($bad, 'p'); // @phpstan-ignore argument.type (proves PHP's own type check)
+    }
+
+    /** What `Builder::buildStateless()` returns cannot be mapped to its Builder, so the message says what to pass. */
+    public function testAStatelessProtocolIsRejectedWithTheObjectToPass(): void
+    {
+        $protocol = TrackingFixture::builder()->buildStateless();
+
+        $error = Thrown::by(\InvalidArgumentException::class, fn() => $this->client->publishCustomEvent($protocol, self::PROJECT, new CustomEvent(sessionId: 'ses_1')));
+
+        $this->assertSame(self::STATELESS, $error->getMessage());
+        $this->assertNothingQueued();
+        $this->assertSame([], $this->logger->messages());
     }
 
     /** @return iterable<string, array{\Closure(): object}> */
@@ -386,7 +400,7 @@ final class PublishCustomEventTest extends TestCase
         $this->assertSame(self::NO_PROJECT, $error->getMessage());
     }
 
-    /** Review Focus 4: payloads that PHP cannot encode as they are. */
+    /** Payloads that PHP cannot encode as they are never throw. */
     public function testAPayloadPhpCannotEncodeNeverThrows(): void
     {
         $self = ['name' => 'loop'];
@@ -401,7 +415,7 @@ final class PublishCustomEventTest extends TestCase
         $this->assertSame(['Failed to sanitize event: RangeException: Maximum call stack size exceeded'], $failures);
     }
 
-    /** Review Focus 4: what remains encodable is delivered with the pipeline's markers and substitutions. */
+    /** What remains encodable is delivered with the pipeline's markers and substitutions. */
     public function testAPayloadWithoutACycleIsDeliveredWithMarkers(): void
     {
         $data = new CustomEvent(parameters: ['f' => static fn(): int => 1, 'r' => STDIN], response: NAN, message: "caf\xE9");
@@ -432,7 +446,7 @@ final class PublishCustomEventTest extends TestCase
         $this->assertSame(['Warning: Failed to publish custom event - RuntimeException: boom'], $this->logger->messages());
     }
 
-    /** Ruling R1: the event of a server goes out through the client that tracked it. */
+    /** The event of a server goes out through the client that tracked it. */
     public function testATrackedServerPublishesThroughTheClientThatTrackedIt(): void
     {
         $builder = $this->tracked();
@@ -446,7 +460,7 @@ final class PublishCustomEventTest extends TestCase
         $this->assertSame('ses_1', JsonAssert::at($this->body(), 'session_id'));
     }
 
-    /** Ruling R3, `01` AC-69: the server built from a tracked Builder is accepted too. */
+    /** ac-01-69: the server built from a tracked Builder is accepted too. */
     #[Group('ac-01-69')]
     public function testTheServerBuiltFromATrackedBuilderIsAccepted(): void
     {
@@ -481,8 +495,8 @@ final class PublishCustomEventTest extends TestCase
     }
 
     /**
-     * Finding F1: after a track() that AgentCat could not complete (it logged why), a server it cannot find logs a
-     * warning instead of throwing into the customer's code, for example after an mcp/sdk upgrade.
+     * After a track() that AgentCat could not complete (it logged why), a server it cannot find logs a warning instead
+     * of throwing into the customer's code, for example after an mcp/sdk upgrade.
      *
      * @param \Closure(Client, Builder): void $fail
      */

@@ -18,11 +18,10 @@ use Laravel\Mcp\Transport\JsonRpcResponse;
 /**
  * Answers `tools/call` (TS callWrap): `CallInterceptor` resolves the handles, strips them, lets the handler the
  * server's entry named before AgentCat's run the tool, decorates the answer and queues one event. A customer's handler
- * answers itself (header conflict 4). laravel/mcp's own `CallTool` is built by the container at each call, as
- * laravel/mcp does, so a binding, an `extend()` decorator (an authorization check, say) and the `resolving()`
- * callbacks of `CallTool` run: when the container builds exactly `CallTool`, AgentCat answers with
- * `CapturingCallTool`, which keeps the tool's exception (plan E1 header conflict 5); anything else answers itself. A
- * call without a string tool name goes to the handler untraced.
+ * answers itself. laravel/mcp's own `CallTool` is built by the container at each call, as laravel/mcp does, so a
+ * binding, an `extend()` decorator (an authorization check, say) and the `resolving()` callbacks of `CallTool` run:
+ * when the container builds exactly `CallTool`, AgentCat answers with `CapturingCallTool`, which keeps the tool's
+ * exception; anything else answers itself. A call without a string tool name goes to the handler untraced.
  *
  * @internal
  */

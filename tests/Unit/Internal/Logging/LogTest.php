@@ -368,7 +368,7 @@ final class LogTest extends TestCase
         $this->assertSame([LogLine::prefix() . ' one', LogLine::prefix() . ' two'], $this->withoutTime($lines));
     }
 
-    /** Spec conflict 9: while `AgentCat::fake()` diverts the log, diagnostics get nothing. */
+    /** While `AgentCat::fake()` diverts the log, diagnostics get nothing: a fake sends nothing. */
     public function testADivertedLineNeverReachesTheSink(): void
     {
         Log::setLogger(new MemoryLogger());

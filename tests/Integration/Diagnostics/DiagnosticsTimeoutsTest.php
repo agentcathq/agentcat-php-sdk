@@ -13,7 +13,7 @@ use AgentCat\Tests\Support\MemoryLogger;
 use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
 use PHPUnit\Framework\TestCase;
 
-/** A9 (D49): a blocked collector holds the shutdown only for the short diagnostics timeouts. */
+/** D49: a blocked collector holds the shutdown only for the short diagnostics timeouts. */
 final class DiagnosticsTimeoutsTest extends TestCase
 {
     private Environment $environment;

@@ -5,11 +5,10 @@ declare(strict_types=1);
 namespace AgentCat\Internal\Support;
 
 /**
- * The values of a framework bridge's configuration that every client of the process reads before the environment
- * (plan E1 header conflict 12): with a cached configuration (`php artisan config:cache`), Laravel does not load the
- * `.env` file, so `Env::get()` cannot see what the configuration got from it. The bridge sets them when it boots
- * (`fromBridge()`). The last call wins; they are process-wide, like the environment. `TestMode::configure()` does the
- * same for the switch.
+ * The values of a framework bridge's configuration that every client of the process reads before the environment: with
+ * a cached configuration (`php artisan config:cache`), Laravel does not load the `.env` file, so `Env::get()` cannot
+ * see what the configuration got from it. The bridge sets them when it boots (`fromBridge()`). The last call wins; they
+ * are process-wide, like the environment. `TestMode::configure()` does the same for the switch.
  *
  * @internal
  */
@@ -38,11 +37,10 @@ final class BridgeConfig
     }
 
     /**
-     * Hands a framework bridge's `agentcat` configuration to every client of the process when the bridge boots (plan E1
-     * header conflict 12, final ruling I2): the switch, from the D44 words of `enabled` (unset or unknown: no switch,
-     * `AGENTCAT_ENABLED` decides), every name AgentCat reads before the environment, and the application's environment
-     * for diagnostics. A value that is no string is unset here. Nothing is logged: the bridge's tracker logs the bad
-     * values when it tracks a server.
+     * Hands a framework bridge's `agentcat` configuration to every client of the process when the bridge boots: the
+     * switch, from the D44 words of `enabled` (unset or unknown: no switch, `AGENTCAT_ENABLED` decides), every name
+     * AgentCat reads before the environment, and the application's environment for diagnostics. A value that is no
+     * string is unset here. Nothing is logged: the bridge's tracker logs the bad values when it tracks a server.
      *
      * @param array<array-key, mixed> $agentcat       the bridge's `agentcat` configuration
      * @param mixed                   $appEnvironment the application's environment: Laravel's `app.env`, Symfony's

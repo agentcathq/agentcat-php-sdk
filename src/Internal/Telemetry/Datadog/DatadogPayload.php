@@ -67,7 +67,7 @@ final readonly class DatadogPayload
             'is_error' => $event->isError, 'error' => $event->error, 'tags' => ExportJson::map($event->tags), 'properties' => ExportJson::map($event->properties),
         ];
         foreach ($optional as $key => $value) {
-            if ($value !== null) { // JSON.stringify leaves undefined out (spec conflict 4)
+            if ($value !== null) { // JSON.stringify leaves undefined out
                 $mcp->{$key} = $value;
             }
         }

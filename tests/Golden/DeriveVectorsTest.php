@@ -11,6 +11,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 #[Group('ac-04-6')]
+#[Group('ac-03-22')]
 final class DeriveVectorsTest extends TestCase
 {
     /**
@@ -28,8 +29,8 @@ final class DeriveVectorsTest extends TestCase
             yield 'json #' . $index => [$row->id, $row->projectId, $row->sessionId];
         }
 
-        yield 'audit 3.3 customer-correlation-7' => ['customer-correlation-7', 'proj_test', 'ses_2cVoolHakk4pa3LZQSgvJRkTwcK'];
-        yield 'audit 3.3 cafe' => ['café ☕', 'proj_x', 'ses_2bVQK3nSTtccWONoNR4Z7z2HC1v'];
+        yield 'customer-correlation-7' => ['customer-correlation-7', 'proj_test', 'ses_2cVoolHakk4pa3LZQSgvJRkTwcK'];
+        yield 'cafe with an emoji' => ['café ☕', 'proj_x', 'ses_2bVQK3nSTtccWONoNR4Z7z2HC1v'];
     }
 
     #[DataProvider('vectors')]

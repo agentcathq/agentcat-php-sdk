@@ -326,7 +326,6 @@ final class NormalizerTest extends TestCase
         $this->assertSame('{"a":1,"b":4}', json_encode($r));
     }
 
-    #[Group('review-focus-3')]
     public function testEndlessJsonSerializableHitsTheNestingCap(): void
     {
         $e = Thrown::by(\RangeException::class, fn(): mixed => Normalizer::normalize(new EndlessSerializable()));
@@ -370,7 +369,6 @@ final class NormalizerTest extends TestCase
      *
      * @param \Closure(int): mixed $build
      */
-    #[Group('review-focus-3')]
     #[DataProvider('nestingProvider')]
     public function testNestingCapIsExactlyFiveHundredTwelve(\Closure $build): void
     {

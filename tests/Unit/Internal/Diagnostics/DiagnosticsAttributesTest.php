@@ -155,7 +155,7 @@ final class DiagnosticsAttributesTest extends TestCase
         yield 'Unknown' => ['Unknown', 'unknown'];
     }
 
-    /** Ruling P12: only linux, darwin and win32 are mapped. */
+    /** Only linux, darwin and win32 are mapped. */
     #[DataProvider('families')]
     public function testTheOsTypeUsesTheNodeNamesForTheThreeMainSystems(string $family, string $expected): void
     {
@@ -176,7 +176,7 @@ final class DiagnosticsAttributesTest extends TestCase
         yield 'mixed case kept' => ['Power Macintosh', 'Power Macintosh'];
     }
 
-    /** Ruling P12: only x64 and arm64 are mapped; any other machine name is sent as is. */
+    /** Only x64 and arm64 are mapped; any other machine name is sent as is. */
     #[DataProvider('machines')]
     public function testTheArchitectureUsesTheNodeNamesForX64AndArm64(string $machine, string $expected): void
     {

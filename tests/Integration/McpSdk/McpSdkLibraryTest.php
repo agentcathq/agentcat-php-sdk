@@ -26,7 +26,8 @@ final class McpSdkLibraryTest extends TestCase
 
         $this->assertTrue($library->supports($builder));
         $this->assertFalse($library->supports(Server::builder()->build()));
-        $this->assertSame('mcp-sdk/builder', $library->sdk());
+        $this->assertSame('mcp-sdk/builder', $library->sdk($builder));
+        $this->assertSame('mcp-sdk/server', $library->sdk(Server::builder()->build()));
         $this->assertSame(McpSdkAdapter::SUPPORT_MATRIX, $library->supportMatrix());
         $this->assertSame(['mcpSdkBuilder'], $library->signals($builder));
         $this->assertSame([], $library->signals(new \stdClass()));

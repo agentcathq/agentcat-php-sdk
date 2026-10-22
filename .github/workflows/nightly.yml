@@ -1,0 +1,408 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      force_failure:
+        description: 'A job name to fail on purpose, to prove the issue step (for example audit)'
+        required: false
+        default: ''
+        type: string
+  pull_request:
+    paths:
+      - '.github/workflows/nightly.yml'
+      - '.github/nightly-issue.sh'
+
+permissions:
+  contents: read
+  issues: write
+
+# A new push cancels an older run of the same pull request; scheduled and dispatched runs are never cancelled.
+concurrency:
+  group: nightly-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  mcp-sdk-dev-main:
+    name: mcp/sdk dev-main (PHP 8.5)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.5'
+          coverage: none
+      - uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
+        with:
+          dependency-versions: highest
+      - name: Remove symfony/mcp-bundle, which requires mcp/sdk ^0.8.1
+        run: composer remove --dev --no-update symfony/mcp-bundle
+      - name: Install mcp/sdk dev-main
+        timeout-minutes: 8
+        run: composer require --dev --no-interaction -W "mcp/sdk:dev-main as 0.9.99"
+      - run: vendor/bin/phpstan analyse --no-progress --error-format=github --memory-limit=1G --configuration=phpstan.no-bundle.neon
+        timeout-minutes: 6
+      - name: Run the tests
+        timeout-minutes: 12
+        env:
+          OUTPUT: ${{ runner.temp }}/phpunit.txt
+        run: |
+          set -o pipefail
+          vendor/bin/phpunit --testsuite Contract,Integration,E2E --no-progress --colors=never 2>&1 | tee "$OUTPUT"
+      - name: Fail on purpose (workflow_dispatch force_failure)
+        if: github.event_name == 'workflow_dispatch' && inputs.force_failure == github.job
+        run: exit 1
+      - name: Open or update the nightly issue
+        if: failure() && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTPUT: ${{ runner.temp }}/phpunit.txt
+          REPORT: ${{ runner.temp }}/phpunit.md
+        run: |
+          # The failing tests and their messages, STDERR included, when PHPUnit ran: the issue names the failing test.
+          if [ -s "$OUTPUT" ]; then { printf '~~~text\n'; cat "$OUTPUT"; printf '~~~\n'; } >"$REPORT"; fi
+          .github/nightly-issue.sh "${{ github.job }}" "$REPORT"
+
+  laravel-mcp-dev-main:
+    name: laravel/mcp dev-main (PHP 8.5)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.5'
+          coverage: none
+      - uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
+        with:
+          dependency-versions: highest
+      - name: Install laravel/mcp dev-main
+        timeout-minutes: 8
+        run: composer require --dev --no-interaction -W "laravel/mcp:dev-main as 1.0.99"
+      - run: vendor/bin/phpstan analyse --no-progress --error-format=github --memory-limit=1G
+        timeout-minutes: 6
+      - name: Run the tests
+        timeout-minutes: 12
+        env:
+          OUTPUT: ${{ runner.temp }}/phpunit.txt
+        run: |
+          set -o pipefail
+          vendor/bin/phpunit --testsuite Contract,Integration,E2E --no-progress --colors=never 2>&1 | tee "$OUTPUT"
+      - name: Fail on purpose (workflow_dispatch force_failure)
+        if: github.event_name == 'workflow_dispatch' && inputs.force_failure == github.job
+        run: exit 1
+      - name: Open or update the nightly issue
+        if: failure() && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTPUT: ${{ runner.temp }}/phpunit.txt
+          REPORT: ${{ runner.temp }}/phpunit.md
+        run: |
+          # The failing tests and their messages, STDERR included, when PHPUnit ran: the issue names the failing test.
+          if [ -s "$OUTPUT" ]; then { printf '~~~text\n'; cat "$OUTPUT"; printf '~~~\n'; } >"$REPORT"; fi
+          .github/nightly-issue.sh "${{ github.job }}" "$REPORT"
+
+  mcp-bundle-dev-main:
+    name: symfony/mcp-bundle dev-main (PHP 8.5)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.5'
+          coverage: none
+      - uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
+        with:
+          dependency-versions: highest
+      - name: Install symfony/mcp-bundle dev-main with mcp/sdk 0.9
+        timeout-minutes: 8
+        run: composer require --dev --no-interaction -W "symfony/mcp-bundle:dev-main as 0.14.99" "mcp/sdk:^0.9"
+      - run: vendor/bin/phpstan analyse --no-progress --error-format=github --memory-limit=1G
+        timeout-minutes: 6
+      - name: Run the tests
+        timeout-minutes: 12
+        env:
+          OUTPUT: ${{ runner.temp }}/phpunit.txt
+        run: |
+          set -o pipefail
+          vendor/bin/phpunit --testsuite Contract,Integration,E2E --no-progress --colors=never 2>&1 | tee "$OUTPUT"
+      - name: Fail on purpose (workflow_dispatch force_failure)
+        if: github.event_name == 'workflow_dispatch' && inputs.force_failure == github.job
+        run: exit 1
+      - name: Open or update the nightly issue
+        if: failure() && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTPUT: ${{ runner.temp }}/phpunit.txt
+          REPORT: ${{ runner.temp }}/phpunit.md
+        run: |
+          # The failing tests and their messages, STDERR included, when PHPUnit ran: the issue names the failing test.
+          if [ -s "$OUTPUT" ]; then { printf '~~~text\n'; cat "$OUTPUT"; printf '~~~\n'; } >"$REPORT"; fi
+          .github/nightly-issue.sh "${{ github.job }}" "$REPORT"
+
+  php-nightly:
+    name: Tests (PHP nightly)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: 'nightly'
+          coverage: none
+      - uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
+        with:
+          dependency-versions: highest
+          # ergebnis/composer-normalize caps PHP below the nightly.
+          composer-options: --ignore-platform-req=php+
+      # display_errors=stderr: a dependency's deprecation (opis/json-schema) prints to STDERR, never before a test's headers; the log keeps it.
+      # The baseline holds the deprecations that PHP raises inside a dependency.
+      - run: vendor/bin/phpunit -d display_errors=stderr --use-baseline phpunit-baseline.xml
+        timeout-minutes: 20
+      - name: Fail on purpose (workflow_dispatch force_failure)
+        if: github.event_name == 'workflow_dispatch' && inputs.force_failure == github.job
+        run: exit 1
+      - name: Open or update the nightly issue
+        if: failure() && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/nightly-issue.sh "${{ github.job }}"
+
+  mutation-full:
+    name: Mutation testing (full run)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.5'
+          coverage: pcov
+      - uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
+        with:
+          dependency-versions: highest
+      - run: vendor/bin/infection --threads=max --logger-github
+        timeout-minutes: 50
+      - name: Fail on purpose (workflow_dispatch force_failure)
+        if: github.event_name == 'workflow_dispatch' && inputs.force_failure == github.job
+        run: exit 1
+      - name: Open or update the nightly issue
+        if: failure() && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/nightly-issue.sh "${{ github.job }}"
+
+  audit:
+    name: Composer audit (highest dependencies)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.5'
+          coverage: none
+      - uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
+        with:
+          dependency-versions: highest
+      - run: composer audit
+        timeout-minutes: 5
+      - name: Fail on purpose (workflow_dispatch force_failure)
+        if: github.event_name == 'workflow_dispatch' && inputs.force_failure == github.job
+        run: exit 1
+      - name: Open or update the nightly issue
+        if: failure() && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/nightly-issue.sh "${{ github.job }}"
+
+  network:
+    name: Network tests (live OpenAPI schema)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.5'
+          coverage: none
+      - uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
+        with:
+          dependency-versions: highest
+      - run: vendor/bin/phpunit --group network
+        timeout-minutes: 5
+      - name: Fail on purpose (workflow_dispatch force_failure)
+        if: github.event_name == 'workflow_dispatch' && inputs.force_failure == github.job
+        run: exit 1
+      - name: Open or update the nightly issue
+        if: failure() && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/nightly-issue.sh "${{ github.job }}"
+
+  runtime-latest:
+    name: Runtime delivery (Docker, latest image patches)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.3'
+          coverage: none
+      - uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
+        with:
+          dependency-versions: highest
+      - name: Build the CLI and Swoole images on the latest bases and pull the others
+        timeout-minutes: 8
+        run: |
+          docker build --pull --build-arg BASE=php:8.3-cli-bookworm --tag agentcat-runtime-cli:latest tests/Runtime/docker
+          docker build --pull --build-arg BASE=phpswoole/swoole:6.2-php8.3 --tag agentcat-runtime-swoole:latest tests/Runtime/docker/swoole
+          for image in php:8.3-fpm-bookworm php:8.3-apache-bookworm dunglas/frankenphp:1-php8.3-bookworm unit:php8.3; do docker pull "$image"; done
+      - name: Record the resolved PHP version of each image
+        timeout-minutes: 2
+        run: |
+          for image in php:8.3-fpm-bookworm php:8.3-apache-bookworm agentcat-runtime-cli:latest dunglas/frankenphp:1-php8.3-bookworm agentcat-runtime-swoole:latest unit:php8.3; do
+            printf '%s: ' "$image"
+            docker run --rm --pull never --network none --entrypoint php "$image" -r 'echo PHP_VERSION, "\n";'
+          done
+      - run: vendor/bin/phpunit --testsuite Runtime --group runtime
+        timeout-minutes: 15
+        env:
+          AGENTCAT_RUNTIME_TESTS: '1'
+          AGENTCAT_RUNTIME_IMAGES: latest
+      - name: Fail on purpose (workflow_dispatch force_failure)
+        if: github.event_name == 'workflow_dispatch' && inputs.force_failure == github.job
+        run: exit 1
+      - name: Open or update the nightly issue
+        if: failure() && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/nightly-issue.sh "${{ github.job }}"
+
+  package-dev-main:
+    name: Package probe (PHP 8.3, mcp/sdk dev-main)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.3'
+          coverage: none
+      - name: Install the dist in a fresh project and track an mcp/sdk server
+        timeout-minutes: 8
+        run: tests/bin/package-probe.sh "dev-main as 0.9.99"
+      - name: Fail on purpose (workflow_dispatch force_failure)
+        if: github.event_name == 'workflow_dispatch' && inputs.force_failure == github.job
+        run: exit 1
+      - name: Open or update the nightly issue
+        if: failure() && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/nightly-issue.sh "${{ github.job }}"
+
+  member-snapshot:
+    name: Member snapshot (${{ matrix.library }} dev-main)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - library: mcp/sdk
+            constraint: 'mcp/sdk:dev-main as 0.9.99'
+          - library: laravel/mcp
+            constraint: 'laravel/mcp:dev-main as 1.0.99'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.5'
+          coverage: none
+      - uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
+        with:
+          dependency-versions: highest
+      - name: Remove symfony/mcp-bundle, which requires mcp/sdk ^0.8.1
+        if: matrix.library == 'mcp/sdk'
+        run: composer remove --dev --no-update symfony/mcp-bundle
+      - name: Install ${{ matrix.library }} dev-main
+        timeout-minutes: 8
+        run: composer require --dev --no-interaction -W "${{ matrix.constraint }}"
+      - name: Diff the members against the newest committed snapshot
+        timeout-minutes: 5
+        env:
+          LIBRARY: ${{ matrix.library }}
+          REPORT: ${{ runner.temp }}/member-snapshot.md
+        run: |
+          set -o pipefail
+          prefix="tests/Contract/snapshots/${LIBRARY//\//-}-"
+          newest="$(printf '%s\n' "$prefix"*.json | sort -V | tail -n 1)"
+          php tests/bin/member-snapshot.php "$LIBRARY" --diff "$newest" 2>&1 | tee "$REPORT"
+      - name: Fail on purpose (workflow_dispatch force_failure)
+        if: github.event_name == 'workflow_dispatch' && inputs.force_failure == github.job
+        run: exit 1
+      - name: Open or update the nightly issue
+        if: failure() && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LIBRARY: ${{ matrix.library }}
+          REPORT: ${{ runner.temp }}/member-snapshot.md
+        run: .github/nightly-issue.sh "member-snapshot (${LIBRARY})" "$REPORT"
+
+  branding-drift:
+    name: README branding drift (TypeScript SDK main)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.5'
+          coverage: none
+      - uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
+        with:
+          dependency-versions: highest
+      - name: Compare the shared README sections and images with the TypeScript SDK's main branch
+        timeout-minutes: 3
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPORT: ${{ runner.temp }}/branding-drift.md
+        run: |
+          set -o pipefail
+          php tests/bin/branding-drift.php 2>&1 | tee "$REPORT"
+      - name: Fail on purpose (workflow_dispatch force_failure)
+        if: github.event_name == 'workflow_dispatch' && inputs.force_failure == github.job
+        run: exit 1
+      - name: Open or update the nightly issue
+        if: failure() && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPORT: ${{ runner.temp }}/branding-drift.md
+        run: .github/nightly-issue.sh "${{ github.job }}" "$REPORT"

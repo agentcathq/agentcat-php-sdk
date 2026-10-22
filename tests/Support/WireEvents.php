@@ -8,7 +8,7 @@ use AgentCat\Event;
 use AgentCat\Internal\Constants;
 use AgentCat\Internal\Json\Json;
 
-/** The four golden events of `07` §6.7 as `Event` objects. */
+/** The four golden wire events of `tests/Fixtures/golden/wire` as `Event` objects. */
 final class WireEvents
 {
     private const string PROJECT = 'proj_2mZ9yX8wV7uT6sR5qP4oN3mL2kJ';

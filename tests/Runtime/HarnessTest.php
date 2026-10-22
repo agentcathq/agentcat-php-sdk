@@ -95,7 +95,7 @@ final class HarnessTest extends RuntimeTestCase
         $prefix = 'agentcat-rt-' . getmypid() . '-';
         $started = microtime(true);
 
-        DockerRuntime::start(Images::CLI, ['php', '-r', 'sleep(120);'], $this->env(), [], lifetime: 2.0);
+        DockerRuntime::start(Images::cli(), ['php', '-r', 'sleep(120);'], $this->env(), [], lifetime: 2.0);
 
         $this->assertNotSame('', $this->containerIds($prefix));
         $deadline = $started + 20.0;
@@ -119,28 +119,28 @@ final class HarnessTest extends RuntimeTestCase
         $this->assertTrue(mkdir($elsewhere));
 
         try {
-            $refused = Thrown::by(\InvalidArgumentException::class, fn(): array => DockerRuntime::command(Images::CLI, ['true'], $this->env(), [$elsewhere => '/kernel']));
+            $refused = Thrown::by(\InvalidArgumentException::class, fn(): array => DockerRuntime::command(Images::cli(), ['true'], $this->env(), [$elsewhere => '/kernel']));
         } finally {
             rmdir($elsewhere);
         }
-        $command = DockerRuntime::command(Images::CLI, ['true'], $this->env(), [$out => '/out', $out . '/pool.conf' => '/etc/pool.conf']);
+        $command = DockerRuntime::command(Images::cli(), ['true'], $this->env(), [$out => '/out', $out . '/pool.conf' => '/etc/pool.conf']);
 
         $this->assertStringContainsString('output directory', $refused->getMessage());
         $this->assertContains('type=bind,source=' . realpath($out) . ',target=/out', $command);
         $this->assertContains('type=bind,source=' . realpath($out) . '/pool.conf,target=/etc/pool.conf', $command);
     }
 
-    /** PHP must not be PID 1 in a PHP CLI image (header conflict 11): its signal drain's re-raise would not end it. */
+    /** PHP must not be PID 1 in a PHP CLI image: its signal drain's re-raise would not end it. */
     #[MaximumDuration(60000)]
     public function testPhpCliImagesGetAnInitWhateverTheCallerSays(): void
     {
         $out = $this->out();
 
-        DockerRuntime::start(Images::CLI, ['php', '-r', 'file_put_contents("/out/pid", (string) getmypid()); sleep(30);'], $this->env(), [$out => '/out'], init: false);
+        DockerRuntime::start(Images::cli(), ['php', '-r', 'file_put_contents("/out/pid", (string) getmypid()); sleep(30);'], $this->env(), [$out => '/out'], init: false);
 
-        $this->assertContains('--init', DockerRuntime::command(Images::CLI, ['true'], $this->env(), [], init: false));
-        $this->assertContains('--init', DockerRuntime::command(Images::SWOOLE, ['true'], $this->env(), [], init: false));
-        $this->assertNotContains('--init', DockerRuntime::command(Images::FPM, ['true'], $this->env(), [], init: false));
+        $this->assertContains('--init', DockerRuntime::command(Images::cli(), ['true'], $this->env(), [], init: false));
+        $this->assertContains('--init', DockerRuntime::command(Images::swoole(), ['true'], $this->env(), [], init: false));
+        $this->assertNotContains('--init', DockerRuntime::command(Images::fpm(), ['true'], $this->env(), [], init: false));
         $deadline = microtime(true) + 20.0;
         while (!is_file($out . '/pid') && microtime(true) < $deadline) {
             usleep(50_000);
@@ -159,12 +159,12 @@ final class HarnessTest extends RuntimeTestCase
         $hosts = [parse_url(Constants::DEFAULT_API_BASE_URL, PHP_URL_HOST), parse_url(Constants::DEFAULT_DIAGNOSTICS_ENDPOINT, PHP_URL_HOST)];
         $code = sprintf('echo gethostbyname(%s), " ", gethostbyname(%s);', var_export($hosts[0], true), var_export($hosts[1], true));
 
-        $run = DockerRuntime::run(Images::CLI, ['env', '-i', '/usr/local/bin/php', '-r', $code], $this->env(), []); // an empty environment
+        $run = DockerRuntime::run(Images::cli(), ['env', '-i', '/usr/local/bin/php', '-r', $code], $this->env(), []); // an empty environment
 
         $this->assertSame(0, $run['exitCode'], $run['stderr']);
         $this->assertSame('127.0.0.1 127.0.0.1', $run['stdout']);
         $env = ['AGENTCAT_API_URL' => 'http://127.0.0.1:@example.com/'] + $this->env(); // user information, host example.com
-        $this->assertStringContainsString('AGENTCAT_API_URL', Thrown::by(\InvalidArgumentException::class, static fn(): array => DockerRuntime::command(Images::CLI, ['true'], $env, []))->getMessage());
+        $this->assertStringContainsString('AGENTCAT_API_URL', Thrown::by(\InvalidArgumentException::class, static fn(): array => DockerRuntime::command(Images::cli(), ['true'], $env, []))->getMessage());
     }
 
     /**
@@ -183,7 +183,7 @@ final class HarnessTest extends RuntimeTestCase
     /** Starts a container under `$name` that sleeps 60 s and is removed when it ends. */
     private function detachedSleep(string $name): string
     {
-        $run = new Process(['docker', 'run', '--detach', '--rm', '--pull', 'never', '--name', $name, '--network', 'none', Images::CLI, 'sleep', '60'], null, null, null, 30.0);
+        $run = new Process(['docker', 'run', '--detach', '--rm', '--pull', 'never', '--name', $name, '--network', 'none', Images::cli(), 'sleep', '60'], null, null, null, 30.0);
         $run->run();
         $this->assertTrue($run->isSuccessful(), $run->getErrorOutput());
 

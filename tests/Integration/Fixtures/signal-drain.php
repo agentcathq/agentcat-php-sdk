@@ -23,6 +23,8 @@ require dirname(__DIR__, 3) . '/vendor/autoload.php';
 //               sends itself SIGTERM. Nothing delivers; SIGTERM ends the process at once.
 //   disabled-shutdown: like disabled, but it prints "ending" and ends normally: the shutdown function delivers the event.
 //   shutdown:   no signal of its own: it prints "ending" and ends, so that the shutdown function delivers the event.
+//   outside:    it prints "ready" and waits for the SIGTERM of the test, so that it also runs where a host disabled
+//               posix_getpid() or posix_kill().
 $baseUrl = $argv[1] ?? '';
 $mode = $argv[2] ?? '';
 $markerFile = $argv[3] ?? '';
@@ -50,7 +52,11 @@ if ($mode === 'shutdown' || $mode === 'disabled-shutdown') {
 if ($mode === 'chain-exit' || $mode === 'twice') {
     echo "signaled\n";
 }
-posix_kill(posix_getpid(), SIGTERM);
+if ($mode === 'outside') {
+    echo "ready\n";
+} else {
+    posix_kill(posix_getpid(), SIGTERM);
+}
 if ($mode === 'chain') {
     usleep(200_000);
     echo "done\n";

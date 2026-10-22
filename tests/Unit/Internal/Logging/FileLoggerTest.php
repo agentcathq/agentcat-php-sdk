@@ -39,7 +39,7 @@ final class FileLoggerTest extends TestCase
         $lines = file($this->path, FILE_IGNORE_NEW_LINES);
         $this->assertIsArray($lines);
         $this->assertCount(2, $lines);
-        $prefix = '/^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\] \[sdk=[^ ]+ php=[^ ]+ mcp=(v?\d[^\] ]*|dev-[^\] ]+|unknown)(?: laravel-mcp=(v?\d[^\] ]*|dev-[^\] ]+))?\] /';
+        $prefix = '/^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\] \[sdk=[^ ]+ php=[^ ]+ mcp=(\d[^\] ]*|dev-[^\] ]+|unknown)(?: laravel-mcp=(\d[^\] ]*|dev-[^\] ]+))?\] /';
         $mcp = SdkVersion::installed('mcp/sdk');
         $this->assertNotNull($mcp, 'mcp/sdk is a dev dependency');
         $versions = sprintf('[%s]', LogLine::versions(SdkVersion::get(), PHP_VERSION, $mcp, SdkVersion::installed('laravel/mcp')));

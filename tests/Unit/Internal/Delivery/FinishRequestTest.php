@@ -187,6 +187,32 @@ final class FinishRequestTest extends TestCase
         }
     }
 
+    /** A host can disable ignore_user_abort(): the finish call then runs alone, and the setting stays as it was. */
+    public function testWithoutIgnoreUserAbortTheClosureOnlyCallsTheFunction(): void
+    {
+        $previous = ignore_user_abort();
+        $asked = new \ArrayObject();
+        $exists = static function (string $function) use ($asked): bool {
+            $asked[] = $function;
+
+            return $function !== 'ignore_user_abort';
+        };
+
+        try {
+            ignore_user_abort(false);
+            $finish = FinishRequest::closureFor(self::class . '::probe', $exists);
+            $this->assertInstanceOf(\Closure::class, $finish);
+
+            $finish();
+            $finish();
+
+            $this->assertSame([0, 0], self::$probeCalls);
+            $this->assertSame(['ignore_user_abort'], $asked->getArrayCopy(), 'checked once, when the closure is made');
+        } finally {
+            ignore_user_abort((bool) $previous);
+        }
+    }
+
     public function testClosureForNeedsACallableFunction(): void
     {
         $this->assertNull(FinishRequest::closureFor(null));

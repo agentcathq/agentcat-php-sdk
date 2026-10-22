@@ -6,6 +6,7 @@ namespace AgentCat\Tests\Unit\Internal\Telemetry;
 
 use AgentCat\Internal\Telemetry\ExportJson;
 use AgentCat\Tests\Support\Thrown;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
@@ -23,6 +24,41 @@ final class ExportJsonTest extends TestCase
         } finally {
             ini_set('serialize_precision', (string) $before);
         }
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function iniFunctions(): iterable
+    {
+        yield 'ini_set' => ['ini_set'];
+        yield 'ini_get' => ['ini_get'];
+    }
+
+    /** A host can disable ini_set() or ini_get(): floats then follow php.ini's serialize_precision, and nothing fails. */
+    #[DataProvider('iniFunctions')]
+    public function testWithoutAnIniFunctionFloatsFollowSerializePrecision(string $missing): void
+    {
+        $before = ini_get('serialize_precision');
+        ini_set('serialize_precision', '17');
+
+        try {
+            $this->assertSame('{"l":0.14999999999999999}', ExportJson::encode(['l' => 150 / 1000], static fn(string $function): bool => $function !== $missing));
+            $this->assertSame('17', ini_get('serialize_precision'));
+        } finally {
+            ini_set('serialize_precision', (string) $before);
+        }
+    }
+
+    public function testBothIniFunctionsAreChecked(): void
+    {
+        $asked = new \ArrayObject();
+
+        ExportJson::encode(1.5, static function (string $function) use ($asked): bool {
+            $asked[] = $function;
+
+            return true;
+        });
+
+        $this->assertSame(['ini_set', 'ini_get'], $asked->getArrayCopy());
     }
 
     public function testSerializePrecisionIsRestoredAfterAFailure(): void

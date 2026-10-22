@@ -6,9 +6,9 @@ namespace AgentCat\Internal\Support;
 
 /**
  * The keys of a framework bridge's `agentcat` configuration that the bridge reads itself (not options), read with their
- * types (plan E1 Review Focus 3): a value of a wrong type logs one line through `$warn`, and the default is used, so a
- * typo never goes unseen. Null is an unset value (`env()` of an unset variable, `%env(default::…)%` in Symfony): the
- * default, no line. The lines name the key as the customer wrote it, `agentcat.<key>`.
+ * types: a value of a wrong type logs one line through `$warn`, and the default is used, so a typo never goes unseen.
+ * Null is an unset value (`env()` of an unset variable, `%env(default::…)%` in Symfony): the default, no line. The
+ * lines name the key as the customer wrote it, `agentcat.<key>`.
  *
  * @internal
  */
@@ -40,8 +40,8 @@ final readonly class BridgeKeys
     }
 
     /**
-     * A list of strings, such as the server classes AgentCat never tracks. A string is a list of one; a null entry is
-     * unset.
+     * A list of strings, such as the server classes AgentCat never tracks. A string is a list of one, but a blank string
+     * names nothing: the default, with one line. A null entry is unset.
      *
      * @param list<string> $default the value when the key is unset, and when it is of a wrong type
      *
@@ -50,6 +50,11 @@ final readonly class BridgeKeys
     public function strings(string $key, array $default): array
     {
         $value = $this->config[$key] ?? $default;
+        if (is_string($value) && trim($value) === '') {
+            ($this->warn)(sprintf(self::WRONG_TYPE, $key, 'array or non-empty string', $value === '' ? 'empty string' : 'a blank string')); // names no server
+
+            return $default;
+        }
         if (is_string($value)) {
             return [$value];
         }

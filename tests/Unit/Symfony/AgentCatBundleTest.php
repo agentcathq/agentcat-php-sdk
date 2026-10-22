@@ -21,7 +21,7 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Extension\ConfigurationExtensionInterface;
 
 /**
- * The `agentcat` configuration tree (D55, ruling P7): the keys of config/agentcat.php in Symfony's words, with
+ * The `agentcat` configuration tree (D55): the keys of config/agentcat.php in Symfony's words, with
  * `%env(default::AGENTCAT_*)%` defaults that resolve to null when a variable is unset.
  */
 final class AgentCatBundleTest extends TestCase

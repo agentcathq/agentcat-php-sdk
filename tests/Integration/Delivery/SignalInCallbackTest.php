@@ -11,7 +11,7 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Process\Exception\ProcessSignaledException;
 use Symfony\Component\Process\Process;
 
-/** I2: signal handlers inside the side channel's curl callbacks (`signal-in-callback.php`, `exit-in-callback.php`). */
+/** Signal handlers inside the side channel's curl callbacks (`signal-in-callback.php`, `exit-in-callback.php`). */
 final class SignalInCallbackTest extends TestCase
 {
     private const int ROUNDS = 20;

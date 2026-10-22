@@ -12,12 +12,17 @@ use AgentCat\Internal\Transport\Transport;
  *
  * `start()` records and holds a delivery; `pump()` completes everything held and runs each `beforeAttempt` once.
  * With `$complete = false` deliveries stay held. Time is simulated: `waitForActivity()` jumps to its deadline,
- * so no test ever sleeps. With `$failure` set, every method throws it.
+ * so no test ever sleeps. With `$canWait = false` it cannot block, as on a host without a sleep function: it returns
+ * false, and the clock moves on by `SPIN_SECONDS`, the time of a pass of a loop that spins. With `$failure` set, every
+ * method throws it.
  */
 final class RecordingTransport implements Transport
 {
     /** @var list<Delivery> every delivery passed to start(), in order */
     public array $deliveries = [];
+
+    /** What one waitForActivity() costs on the simulated clock when it cannot block. */
+    public const float SPIN_SECONDS = 0.001;
 
     /** Number of waitForActivity() calls. */
     public int $waits = 0;
@@ -30,6 +35,7 @@ final class RecordingTransport implements Transport
     public function __construct(
         public bool $complete = true,
         public ?\Throwable $failure = null,
+        public bool $canWait = true,
     ) {}
 
     #[\Override]
@@ -56,14 +62,21 @@ final class RecordingTransport implements Transport
     }
 
     #[\Override]
-    public function waitForActivity(float $deadline): void
+    public function waitForActivity(float $deadline): bool
     {
         $this->fail();
         if (is_nan($deadline)) {
             throw new \LogicException('waitForActivity() got a NaN deadline'); // a deadline that never passes
         }
         ++$this->waits;
+        if (!$this->canWait) {
+            $this->clock += self::SPIN_SECONDS;
+
+            return false;
+        }
         $this->clock = max($this->clock, $deadline);
+
+        return true;
     }
 
     #[\Override]

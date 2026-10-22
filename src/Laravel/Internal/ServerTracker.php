@@ -22,8 +22,8 @@ use Illuminate\Contracts\Container\Container;
 use Laravel\Mcp\Server;
 
 /**
- * Tracks each laravel/mcp server the container resolves (plan E1 header conflicts 10-12). Never throws: the
- * customer's server must come out of the container whatever AgentCat does.
+ * Tracks each laravel/mcp server the container resolves. Never throws: the customer's server must come out of the
+ * container whatever AgentCat does.
  *
  * One tracker serves the application (an Octane worker too): it builds its client and the options from
  * config/agentcat.php at the first server it tracks, so each bad value logs once, and it reads `exclude` and
@@ -64,7 +64,7 @@ final class ServerTracker
             $keys->string('diagnostics_token');
             $this->warnOnce($bad->getArrayCopy());
             $client = AgentCat::client();
-            // A fake records every server (header conflict 18); the shared client is never replaced (header conflict 11).
+            // A fake records every server whatever `agentcat.enabled` says; the shared client is never replaced.
             $client = FakeLog::of($client) instanceof FakeLog ? $client : ($this->client ??= new Client(ClientSeams::of(EventQueue::global(), EnabledGate::of($config['enabled'] ?? null))));
             $this->options ??= ConfigOptions::options($config, self::BRIDGE_KEYS, $this->resolve(...));
             $client->track($server, $project, $this->options);
@@ -79,7 +79,7 @@ final class ServerTracker
 
     /**
      * A hook's class, resolved when the hook runs from the current container: under Octane, the sandbox of the
-     * request, never a container of an earlier request (Review Focus 4).
+     * request, never a container of an earlier request.
      */
     private function resolve(string $class): mixed
     {

@@ -18,7 +18,7 @@ use PHPUnit\Framework\Attributes\Group;
  * pass sends PHP's output buffers before the hooks and the delivery (D57). The answer of an mcp/sdk server that sets
  * its own Content-Length, of a symfony/mcp-bundle server (D62: `AgentCatBundle::boot()` registers the listener that
  * sets it) and of a laravel/mcp server (D59) then reaches the client before the delivery. Each upper bound sits about
- * 1 s above the measured time and about 1 s below the time a held answer takes, the collector's 2 s (ruling P16).
+ * 1 s above the measured time and about 1 s below the time a held answer takes, the collector's 2 s.
  */
 #[Group('runtime')]
 final class ApacheTest extends RuntimeTestCase
@@ -105,7 +105,7 @@ final class ApacheTest extends RuntimeTestCase
         foreach ($files as $name => $contents) {
             $this->assertNotFalse(file_put_contents($out . '/' . $name, $contents . "\n"));
         }
-        $runtime = DockerRuntime::start(Images::APACHE, ['apache2-foreground'], $env, [
+        $runtime = DockerRuntime::start(Images::apache(), ['apache2-foreground'], $env, [
             $out . '/ports.conf' => '/etc/apache2/ports.conf',
             $out . '/site.conf' => '/etc/apache2/sites-enabled/000-default.conf',
             $out . '/php.ini' => '/usr/local/etc/php/conf.d/zz-agentcat.ini',

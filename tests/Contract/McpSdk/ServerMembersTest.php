@@ -27,7 +27,7 @@ use Psr\Log\LogLevel;
 
 /**
  * The members of a built `Mcp\Server` that AgentCat reads to find the tracking state of a server built from a tracked
- * Builder (Ruling R3). The shape of each member is checked with the others in `BuilderMembersTest`.
+ * Builder. The shape of each member is checked with the others in `BuilderMembersTest`.
  */
 #[Group('contract')]
 final class ServerMembersTest extends TestCase
@@ -131,7 +131,7 @@ final class ServerMembersTest extends TestCase
         $this->assertTrue(TrackedServers::incomplete(), 'publishCustomEvent() then logs instead of throwing');
     }
 
-    /** Ruling R3 and finding F1: `publishCustomEvent()` on such a server logs and queues nothing, and never throws. */
+    /** `publishCustomEvent()` on such a server logs and queues nothing, and never throws. */
     public function testPublishingForAServerWhoseInternalsChangedLogsAndReturns(): void
     {
         $server = new Server((new \ReflectionClass(Protocol::class))->newInstanceWithoutConstructor());
@@ -144,7 +144,7 @@ final class ServerMembersTest extends TestCase
         $this->assertSame([['level' => LogLevel::WARNING, 'message' => McpSdkAdapter::COMPATIBILITY_LINE], $warning, $warning], $this->fixture->logger->records);
     }
 
-    /** Ruling R3: the state kept for a server is used without reading the server again. */
+    /** The state kept for a server is used without reading the server again. */
     public function testTheStateKeptForAServerIsUsedFirst(): void
     {
         $server = new Server((new \ReflectionClass(Protocol::class))->newInstanceWithoutConstructor()); // unreadable

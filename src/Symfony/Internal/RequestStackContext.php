@@ -11,7 +11,7 @@ use Symfony\Component\HttpFoundation\RequestStack;
 /**
  * The HTTP context of an mcp/sdk call in a Symfony application: the main request of the `RequestStack`, read when the
  * call is recorded, not `$_SERVER`, so a Symfony Runtime worker (RoadRunner, Swoole, FrankenPHP worker mode) records
- * the request it serves (plan E2 header conflict 5).
+ * the request it serves.
  *
  * @internal
  */

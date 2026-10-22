@@ -47,8 +47,7 @@ final class LaravelMcpConformanceTest extends LaravelTestCase
 
     /**
      * Library difference: a laravel/mcp tool validates its own arguments (`$request->validate()`), and the library
-     * answers the `ValidationException` with an error result; the event keeps that exception (plan E1 header
-     * conflict 5).
+     * answers the `ValidationException` with an error result; the event keeps that exception.
      */
     #[Group('ac-05-E6')]
     public function testAValidationErrorIsTheToolsExceptionAndAnErrorResult(): void
@@ -68,7 +67,6 @@ final class LaravelMcpConformanceTest extends LaravelTestCase
     }
 
     /** laravel/mcp binds each call's `mcp.request` in the container: no call sees the arguments of the one before. */
-    #[Group('ac-02-51')]
     #[Group('ac-05-E5')]
     public function testConsecutiveCallsSeeOnlyTheirOwnArgumentsThroughMcpRequest(): void
     {
@@ -88,7 +86,7 @@ final class LaravelMcpConformanceTest extends LaravelTestCase
 
     /**
      * Library difference: laravel/mcp answers an uncaught tool exception with an error result, which the event keeps as
-     * its response next to the exception (plan E1 header conflict 5); mcp/sdk answers with a JSON-RPC error.
+     * its response next to the exception; mcp/sdk answers with a JSON-RPC error.
      */
     #[Group('ac-02-24')]
     public function testAnUncaughtToolExceptionIsAnErrorResultThatTheEventKeeps(): void
@@ -125,8 +123,8 @@ final class LaravelMcpConformanceTest extends LaravelTestCase
     }
 
     /**
-     * Library difference: laravel/mcp 1.x has no sessions, so `extra` has no transport session (plan E1 header conflict
-     * 8); over HTTP the event has the server's own request (header conflict 9), whatever the SAPI.
+     * Library difference: laravel/mcp 1.x has no sessions, so `extra` has no transport session; over HTTP the event
+     * has the server's own request, whatever the SAPI.
      */
     #[Group('ac-02-43')]
     #[Group('ac-02-46')]
@@ -163,6 +161,12 @@ final class LaravelMcpConformanceTest extends LaravelTestCase
     protected function fullPage(): ConformanceHarness
     {
         return LaravelConformanceHarness::fullPage();
+    }
+
+    #[\Override]
+    protected function paged(): ConformanceHarness
+    {
+        return LaravelConformanceHarness::paged();
     }
 
     /** One HTTP request to a tracked server, built from the server variables like `Request::capture()` does. */

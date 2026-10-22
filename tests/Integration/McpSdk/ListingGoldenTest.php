@@ -71,6 +71,7 @@ final class ListingGoldenTest extends TestCase
     }
 
     #[DataProvider('configs')]
+    #[Group('ac-01-21')]
     public function testTheInjectedListingMatchesTypeScriptInBothEras(string $key, Options $options): void
     {
         $fixture = Golden::json('handles/listing-fixtures.json');

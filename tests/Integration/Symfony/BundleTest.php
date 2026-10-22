@@ -86,8 +86,8 @@ final class BundleTest extends SymfonyTestCase
     }
 
     /**
-     * Header conflict 2 (Plan D carry): booting, and a console command that builds no MCP server, track nothing, so
-     * they get no diagnostics and no signal handlers, as Laravel's `artisan list`.
+     * Booting, and a console command that builds no MCP server, track nothing, so they get no diagnostics and no signal
+     * handlers, as Laravel's `artisan list`.
      */
     #[MaximumDuration(1000)]
     public function testBootingAndACommandTrackNothing(): void
@@ -110,6 +110,31 @@ final class BundleTest extends SymfonyTestCase
         $this->assertSame($handlers, $this->signalHandlers());
     }
 
+    /** Every key of the `agentcat` configuration explains itself in `config:dump-reference`. */
+    #[MaximumDuration(1000)]
+    public function testEveryKeyOfTheReferenceHasAnInfoText(): void
+    {
+        $console = new Application($this->kernel(agentcat: self::ON));
+        $console->setAutoExit(false);
+        $output = new BufferedOutput();
+
+        $exit = $console->run(new ArrayInput(['command' => 'config:dump-reference', 'name' => 'agentcat']), $output);
+        $lines = explode("\n", $output->fetch());
+
+        $this->assertSame(0, $exit);
+        $bare = [];
+        foreach ($lines as $index => $line) {
+            if (1 === preg_match('/^    ([a-z_]+):/', $line, $key) && !str_starts_with($lines[$index - 1] ?? '', '    #')) {
+                $bare[] = $key[1];
+            }
+        }
+        $this->assertSame([], $bare);
+        $dump = implode("\n", $lines);
+        $this->assertSame(5, substr_count($dump, 'Takes true, false, 1, 0, yes, no, on, off or an %env()% value.'), 'every bool key states the accepted words');
+        $this->assertStringContainsString('Adds an agent_id parameter to your tools, to tell agents apart. Default: false. Takes true, false', $dump);
+        $this->assertStringContainsString('Keeps AgentCat from installing its SIGTERM and SIGINT handlers in CLI servers. Default: false. Takes true, false', $dump);
+    }
+
     /** The container builds the server once, so its Builder is tracked once, for every request of the container. */
     #[MaximumDuration(1000)]
     public function testTheServerIsTrackedOncePerContainer(): void
@@ -126,7 +151,7 @@ final class BundleTest extends SymfonyTestCase
         $this->assertSame(['AgentCat setup started | project ' . self::PROJECT . ' | sdk mcp-sdk/builder | signals mcpSdkBuilder'], array_values($started));
     }
 
-    /** Review Focus 1, header conflict 1. */
+    /** AgentCat's handler goes first and delegates to the customer's `tools/call` handler, which answers; one event. */
     #[MaximumDuration(1000)]
     public function testACustomerToolsCallHandlerRunsAfterAgentCats(): void
     {
@@ -155,9 +180,9 @@ final class BundleTest extends SymfonyTestCase
     }
 
     /**
-     * Header conflict 3, with a compiled container: an `addRequestHandlers` call of another shape stays where it is. The
-     * customer's handler still answers; it comes before AgentCat's, which still tracks the server (its listing), but
-     * no longer sees the calls that the customer's handler answers.
+     * With a compiled container, an `addRequestHandlers` call of another shape stays where it is. The customer's
+     * handler still answers; it comes before AgentCat's, which still tracks the server (its listing), but no longer
+     * sees the calls that the customer's handler answers.
      *
      * @param (\Closure(TaggedIteratorArgument): array<array-key, mixed>)|null $shape
      */
@@ -232,9 +257,9 @@ final class BundleTest extends SymfonyTestCase
     }
 
     /**
-     * The ruling of fix round 1: a name written in the configuration leaves the builder's definition as it is (no
-     * configurator), one from an environment variable reaches the configurator, which leaves the server untracked. An
-     * entry that is no name never fails the compile.
+     * A name written in the configuration leaves the builder's definition as it is (no configurator), one from an
+     * environment variable reaches the configurator, which leaves the server untracked. An entry that is no name never
+     * fails the compile.
      *
      * @param array<string, mixed> $configurators
      */
@@ -325,7 +350,7 @@ final class BundleTest extends SymfonyTestCase
         $this->assertDirectoryDoesNotExist($kernel->getLogDir());
     }
 
-    /** Review Focus 3, ruling P9: `AGENTCAT_ENABLED=maybe` gives one line, and the D31 default (off under PHPUnit). */
+    /** `AGENTCAT_ENABLED=maybe` gives one line, and the D31 default (off under PHPUnit). */
     #[MaximumDuration(2000)]
     public function testAnUnknownEnabledWordLogsOneLineAndLeavesTheServerAlone(): void
     {
@@ -382,7 +407,7 @@ final class BundleTest extends SymfonyTestCase
         $this->assertSame([self::OTHER_PROJECT], $this->projects());
     }
 
-    /** Review Focus 3 for the bundle's own keys: each of a wrong type logs one line, once, and its default is used. */
+    /** The bundle's own keys: each of a wrong type logs one line, once, and its default is used. */
     #[MaximumDuration(1000)]
     public function testBundleKeysOfAWrongTypeLogOneLineEachAndFallBack(): void
     {
@@ -404,7 +429,7 @@ final class BundleTest extends SymfonyTestCase
         $this->assertSame([self::PROJECT, self::OTHER_PROJECT], $this->projects());
     }
 
-    /** M3 of Plan E1: `enable_tracing: '%env(AGENTCAT_ENABLE_TRACING)%'` with `AGENTCAT_ENABLE_TRACING=0` turns tracing off. */
+    /** `enable_tracing: '%env(AGENTCAT_ENABLE_TRACING)%'` with `AGENTCAT_ENABLE_TRACING=0` turns tracing off. */
     #[MaximumDuration(1000)]
     public function testAZeroFromTheEnvironmentTurnsTracingOff(): void
     {
@@ -504,8 +529,8 @@ final class BundleTest extends SymfonyTestCase
     }
 
     /**
-     * Header conflict 5: the HTTP context of a call is the RequestStack's main request, not the SAPI globals, with the
-     * headers the client sent: not the `X-Php-Ob-Level` that Symfony's HttpKernel adds (Plan E1 Task 6 parity).
+     * The HTTP context of a call is the RequestStack's main request, not the SAPI globals, with the headers the client
+     * sent: not the `X-Php-Ob-Level` that Symfony's HttpKernel adds.
      */
     #[MaximumDuration(1000)]
     public function testTheEventCarriesTheRequestOfTheKernel(): void
@@ -552,7 +577,7 @@ final class BundleTest extends SymfonyTestCase
         $this->assertSame(['RuntimeException'], $this->fields('error', 'type'));
     }
 
-    /** Header conflict 6: a fake records the calls of every server, whatever the configuration says. */
+    /** A fake records the calls of every server, whatever the configuration says. */
     #[MaximumDuration(1000)]
     public function testAFakeRecordsTheCallsWhateverTheConfigurationSays(): void
     {
@@ -618,7 +643,7 @@ final class BundleTest extends SymfonyTestCase
         yield 'a service that is no logger' => ['request_stack'];
     }
 
-    /** D61, ruling P8: a `logger` that names no logger logs one line to the file and never breaks a request. */
+    /** D61: a `logger` that names no logger logs one line to the file and never breaks a request. */
     #[DataProvider('badLoggers')]
     #[MaximumDuration(1000)]
     public function testALoggerThatIsNoLoggerLogsOneLineToTheFile(string $id): void
@@ -689,7 +714,7 @@ final class BundleTest extends SymfonyTestCase
         $this->assertStringStartsWith('http://127.0.0.1:', $urls[0]);
     }
 
-    /** Review Focus 3, ruling P9: mistyped and unset values; the container compiles and the request answers. */
+    /** Mistyped and unset values; the container compiles and the request answers. */
     #[MaximumDuration(1000)]
     public function testBadRuntimeValuesNeverBreakARequest(): void
     {

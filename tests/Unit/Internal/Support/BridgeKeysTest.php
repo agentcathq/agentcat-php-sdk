@@ -7,7 +7,7 @@ namespace AgentCat\Tests\Unit\Internal\Support;
 use AgentCat\Internal\Support\BridgeKeys;
 use PHPUnit\Framework\TestCase;
 
-/** M2: a framework bridge's own keys of its `agentcat` configuration, with their types. */
+/** A framework bridge's own keys of its `agentcat` configuration, with their types. */
 final class BridgeKeysTest extends TestCase
 {
     /** Laravel's `exclude` default. */
@@ -45,6 +45,18 @@ final class BridgeKeysTest extends TestCase
     {
         $this->assertSame(['App\Mcp\Internal'], $this->keys(['exclude' => 'App\Mcp\Internal'])->strings('exclude', self::DEFAULT));
         $this->assertSame([], $this->lines->getArrayCopy());
+    }
+
+    public function testAnEmptyStringNamesNoServerSoItIsTheDefaultWithOneLine(): void
+    {
+        $this->assertSame(self::DEFAULT, $this->keys(['exclude' => ''])->strings('exclude', self::DEFAULT));
+        $this->assertSame(['WARN: AgentCat option "agentcat.exclude" must be array or non-empty string, got empty string; the default is used'], $this->lines->getArrayCopy());
+    }
+
+    public function testABlankStringIsTreatedLikeTheEmptyOneAndNamedAsBlank(): void
+    {
+        $this->assertSame(self::DEFAULT, $this->keys(['exclude' => " \t\n"])->strings('exclude', self::DEFAULT));
+        $this->assertSame(['WARN: AgentCat option "agentcat.exclude" must be array or non-empty string, got a blank string; the default is used'], $this->lines->getArrayCopy());
     }
 
     public function testAListOfAnotherTypeIsTheDefaultWithOneLine(): void

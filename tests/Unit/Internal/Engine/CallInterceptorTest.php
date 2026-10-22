@@ -13,6 +13,7 @@ use AgentCat\Internal\Engine\CallInterceptor;
 use AgentCat\Internal\Engine\Observed;
 use AgentCat\Internal\Engine\Publisher;
 use AgentCat\Internal\Engine\TrackedServer;
+use AgentCat\Internal\Handles\ArgumentStripper;
 use AgentCat\Internal\Id\SessionId;
 use AgentCat\Internal\Json\Json;
 use AgentCat\Internal\Logging\Log;
@@ -33,6 +34,8 @@ use PHPUnit\Framework\TestCase;
 final class CallInterceptorTest extends TestCase
 {
     private const string ECHO_TOOL = '{"name":"echo","inputSchema":{"type":"object","properties":{"msg":{"type":"string"}},"required":["msg"]}}';
+
+    private const string OWN_TOOL = '{"name":"own","inputSchema":{"type":"object","properties":{"session_id":{"type":"string"}},"required":["session_id"]}}';
 
     private const string STRUCTURED_TOOL = '{"name":"structured","inputSchema":{"type":"object","properties":{}},"outputSchema":{"type":"object","properties":{"echoed":{"type":"string"}}}}';
 
@@ -79,6 +82,7 @@ final class CallInterceptorTest extends TestCase
     }
 
     #[Group('ac-02-16')]
+    #[Group('ac-01-79')]
     public function testASuppliedSessionStripsTheRegistryNamesAndRecordsTheCall(): void
     {
         $arguments = ['msg' => 'hi', 'context' => 'why', 'session_id' => $this->supplied()];
@@ -334,6 +338,7 @@ final class CallInterceptorTest extends TestCase
 
     #[Group('ac-02-36')]
     #[Group('ac-04-39')]
+    #[Group('ac-04-43')]
     public function testADeclaredOutputSchemaGetsTheStructuredMirror(): void
     {
         $seam = $this->seam('structured');
@@ -343,7 +348,12 @@ final class CallInterceptorTest extends TestCase
         $returned = $this->interceptor->intercept($this->server(), $seam);
 
         $this->assertSame(['mcp_session', 'echoed'], $this->keys(JsonAssert::at($returned, 'structuredContent')));
-        $this->assertEquals((object) ['echoed' => 'x'], JsonAssert::at($this->onlyEvent()->response, 'structuredContent'));
+        $block = JsonAssert::at($returned, 'content', 0, 'text');
+        $this->assertIsString($block);
+        $this->assertStringStartsWith(Constants::MINT_BACK_HEADER_ISSUED, $block);
+        $event = $this->onlyEvent();
+        $this->assertEquals((object) ['echoed' => 'x'], JsonAssert::at($event->response, 'structuredContent'));
+        $this->assertEquals($this->tree(self::STRUCTURED_RESULT), $event->response, 'the original result: no block, no mcp_session');
     }
 
     #[Group('ac-04-41')]
@@ -385,6 +395,24 @@ final class CallInterceptorTest extends TestCase
         $this->assertSame(1, $seam->listCalls);
         $this->assertSame([self::REBUILT], $this->logger->messages());
         $this->assertSame([['stripped', ['session_id', 'context']], ['replace'], ['stripped', ['session_id', 'context']], ['replace']], $seam->calls);
+    }
+
+    /** D66 (B10 fixed): the rebuild reads page 2 for a tool that page 1 does not name; before, it read page 1 only. */
+    #[Group('ac-02-19')]
+    public function testAToolOnALaterPageIsStrippedExactly(): void
+    {
+        $seam = $this->seam('own', ['session_id' => 'theirs', 'agent_id' => 'a1']);
+        $seam->listing = [$this->tree(self::ECHO_TOOL)];
+        $seam->nextCursor = 'p2';
+        $seam->pages = ['p2' => [[$this->tree(self::OWN_TOOL)], null]];
+
+        $this->interceptor->intercept($this->server(), $seam);
+
+        $this->assertSame([null, 'p2'], $seam->cursors);
+        $this->assertSame(['stripped', ['context']], $seam->calls[0] ?? null); // before D66: the heuristic session_id, agent_id, context
+        $event = $this->onlyEvent();
+        $this->assertSame('foreign', $event->tags[Constants::TAG_SESSION_SOURCE] ?? null);
+        $this->assertSame('', $event->sessionId);
     }
 
     #[Group('ac-02-21')]
@@ -581,6 +609,30 @@ final class CallInterceptorTest extends TestCase
         $this->assertContains('Missing tool reported (context length: 6)', $this->logger->messages());
     }
 
+    /**
+     * D66: a get_more_tools call rebuilds like any other tool. AgentCat's own is on no page, so the read goes to the
+     * last page. Its entry then names the handles AgentCat injected, and they are AgentCat's.
+     */
+    #[Group('ac-02-40')]
+    public function testAGetMoreToolsCallRebuildsAndItsHandlesAreAgentCats(): void
+    {
+        $server = $this->server(new Options(enableAgentTracking: true));
+        $seam = $this->seam('get_more_tools', ['context' => 'need X', 'session_id' => $this->supplied(), 'agent_id' => 'a1']);
+        $seam->listing = [$this->tree(self::ECHO_TOOL)];
+        $seam->nextCursor = 'p2';
+        $seam->pages = ['p2' => [[$this->tree(self::STRUCTURED_TOOL)], null]];
+
+        $this->interceptor->intercept($server, $seam);
+
+        $this->assertSame([null, 'p2'], $seam->cursors);
+        $this->assertSame(['session_id', 'agent_id'], ArgumentStripper::names('get_more_tools', $server->registry));
+        $this->assertSame([['answer']], $seam->calls); // AgentCat answers; a supplied session gets no block
+        $event = $this->onlyEvent();
+        $this->assertSame($this->supplied(), $event->sessionId);
+        $this->assertSame('supplied', $event->tags[Constants::TAG_SESSION_SOURCE] ?? null);
+        $this->assertSame('a1', $event->tags[Constants::TAG_AGENT_ID] ?? null);
+    }
+
     #[Group('ac-02-41')]
     public function testWithReportMissingOffGetMoreToolsReachesTheLibrary(): void
     {
@@ -640,7 +692,7 @@ final class CallInterceptorTest extends TestCase
         yield 'object with a length' => [['length' => 3], 'stdClass'];
     }
 
-    /** Header conflict 2 (B16, N10): no event, one line, and the hooks of that call never run. */
+    /** B16: no event, one line, and the hooks of that call never run. */
     #[DataProvider('droppedIntents')]
     public function testANumberBooleanOrObjectIntentDropsTheEventBeforeAnyHookRuns(mixed $context, string $type): void
     {
@@ -754,7 +806,7 @@ final class CallInterceptorTest extends TestCase
         $this->assertSame([$context->toolCall], $seen->getArrayCopy());
     }
 
-    /** Header conflict 4: empty arguments count as absent for the token estimate. */
+    /** mcp/sdk cannot tell empty arguments from absent ones: empty arguments count as absent for the token estimate. */
     public function testEmptyArgumentsHaveNoInputTokens(): void
     {
         $this->interceptor->intercept($this->server(), $this->seam('echo'));

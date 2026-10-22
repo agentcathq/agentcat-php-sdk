@@ -17,6 +17,7 @@ use AgentCat\Internal\Tools\GetMoreTools;
 use AgentCat\McpSdk\McpSdkAdapter;
 use AgentCat\Options;
 use AgentCat\Tests\Support\JsonAssert;
+use AgentCat\Tests\Support\ListingLines;
 use AgentCat\Tests\Support\McpSdk\CustomerHandler;
 use AgentCat\Tests\Support\McpSdk\HttpHarness;
 use AgentCat\Tests\Support\McpSdk\RecordingTool;
@@ -114,8 +115,9 @@ final class ListToolsTest extends TestCase
         $this->assertSame('complete', $modern->resultType);
     }
 
+    /** D66 (B10 fixed): every page is injected, and only the last one, without a next cursor, gets get_more_tools. */
     #[Group('ac-02-8')]
-    public function testEveryPageGetsGetMoreToolsAndKeepsTheLibrarysCursor(): void
+    public function testOnlyTheLastPageGetsGetMoreToolsAndEachKeepsTheLibrarysCursor(): void
     {
         $build = function (bool $tracked): HttpHarness {
             $builder = $this->builder()->setPaginationLimit(1)
@@ -134,10 +136,39 @@ final class ListToolsTest extends TestCase
         $this->assertIsString($first->nextCursor);
         $second = $harness->listTools($first->nextCursor);
 
-        $this->assertSame(['a', GetMoreTools::NAME], $this->names($first));
+        $this->assertSame(['a'], $this->names($first));
         $this->assertSame($twin->nextCursor, $first->nextCursor);
         $this->assertSame(['b', GetMoreTools::NAME], $this->names($second));
         $this->assertObjectNotHasProperty('nextCursor', $second);
+    }
+
+    /**
+     * A customer's own get_more_tools on page 1: the process that served page 1 lists no second get_more_tools on the
+     * last page. A process that did not serve it (every request under PHP-FPM) lists AgentCat's there too.
+     */
+    #[Group('ac-02-8')]
+    #[Group('ac-02-14')]
+    public function testACustomerGetMoreToolsOnAnEarlierPageIsTheOnlyOneTheProcessThatServedItLists(): void
+    {
+        $build = function (): HttpHarness {
+            $builder = $this->builder()->setPaginationLimit(1)
+                ->add(self::tool(GetMoreTools::NAME, 'Mine'), new RecordingTool())
+                ->add(self::tool('b'), new RecordingTool());
+            $this->track($builder);
+
+            return $this->harness($builder);
+        };
+        $harness = $build();
+
+        $first = $harness->listTools();
+        $this->assertIsString($first->nextCursor);
+        $second = $harness->listTools($first->nextCursor);
+        $elsewhere = $build()->listTools($first->nextCursor);
+
+        $this->assertSame([GetMoreTools::NAME], $this->names($first));
+        $this->assertSame(['b'], $this->names($second));
+        $this->assertSame(['b', GetMoreTools::NAME], $this->names($elsewhere));
+        $this->assertSame([ListingLines::SHADOWED], array_values(array_filter($this->logger->messages(), static fn(string $line): bool => str_contains($line, 'shadowed'))));
     }
 
     #[Group('ac-02-9')]
@@ -373,17 +404,23 @@ final class ListToolsTest extends TestCase
         $this->assertSame(['session_id', 'context'], $this->keys(JsonAssert::at($result, 'tools', 0, 'inputSchema', 'properties')));
     }
 
-    /** @return iterable<string, array{?string}> */
+    /**
+     * The cursor a customer handler answers, and the names AgentCat lists. D66: a page with a next cursor on the wire
+     * has no get_more_tools. mcp/sdk sends no `nextCursor` for a falsy one (`''`, `'0'`), so such a page is the last.
+     *
+     * @return iterable<string, array{?string, list<string>}>
+     */
     public static function cursors(): iterable
     {
-        yield 'none' => [null];
-        yield 'empty' => [''];
-        yield 'zero' => ['0'];
-        yield 'opaque' => ['c'];
+        yield 'none' => [null, ['x', GetMoreTools::NAME]];
+        yield 'empty' => ['', ['x', GetMoreTools::NAME]];
+        yield 'zero' => ['0', ['x', GetMoreTools::NAME]];
+        yield 'opaque' => ['c', ['x']];
     }
 
+    /** @param list<string> $names */
     #[DataProvider('cursors')]
-    public function testTheCursorIsSentWhenTheLibraryWouldSendIt(?string $cursor): void
+    public function testTheCursorIsSentWhenTheLibraryWouldSendIt(?string $cursor, array $names): void
     {
         $build = function (bool $tracked) use ($cursor): HttpHarness {
             $builder = $this->builder();
@@ -398,7 +435,7 @@ final class ListToolsTest extends TestCase
 
         $result = $build(true)->listTools();
 
-        $this->assertSame(['x', GetMoreTools::NAME], $this->names($result));
+        $this->assertSame($names, $this->names($result));
         $this->assertSame($this->keys($twin), $this->keys($result));
         $this->assertSame($twin->nextCursor ?? null, $result->nextCursor ?? null);
     }
@@ -410,7 +447,7 @@ final class ListToolsTest extends TestCase
 
         $result = $this->customerListing(true, $listing);
 
-        $this->assertSame(['x', GetMoreTools::NAME], $this->names($result));
+        $this->assertSame(['x'], $this->names($result)); // D66: a page with a next cursor has no get_more_tools
         $this->assertSame(['tools', 'nextCursor', '_meta'], $this->keys($result));
         $this->assertSame($twin->nextCursor, $result->nextCursor);
         $this->assertEquals($twin->_meta, $result->_meta);

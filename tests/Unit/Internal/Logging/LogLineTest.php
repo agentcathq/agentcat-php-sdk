@@ -43,7 +43,7 @@ final class LogLineTest extends TestCase
     {
         $prefix = LogLine::prefix();
 
-        $this->assertMatchesRegularExpression('/\A\[sdk=\S+ php=\d+\.\d+\.\d+\S* mcp=(v?\d\S*|dev-\S+|unknown)(?: laravel-mcp=(v?\d\S*|dev-\S+))?\]\z/', $prefix);
+        $this->assertMatchesRegularExpression('/\A\[sdk=\S+ php=\d+\.\d+\.\d+\S* mcp=(\d\S*|dev-\S+|unknown)(?: laravel-mcp=(\d\S*|dev-\S+))?\]\z/', $prefix);
         $this->assertSame(sprintf('[%s]', LogLine::versions(SdkVersion::get(), PHP_VERSION, SdkVersion::installed('mcp/sdk'), SdkVersion::installed('laravel/mcp'))), $prefix);
         $this->assertSame($prefix, LogLine::prefix());
     }
@@ -51,9 +51,9 @@ final class LogLineTest extends TestCase
     /** @return iterable<string, array{?string, ?string, string}> */
     public static function libraryVersions(): iterable
     {
-        yield 'mcp/sdk only' => ['v0.8.1', null, 'sdk=1.0.0 php=8.3.6 mcp=v0.8.1'];
-        yield 'laravel/mcp only' => [null, 'v1.0.2', 'sdk=1.0.0 php=8.3.6 laravel-mcp=v1.0.2'];
-        yield 'both' => ['v0.8.1', 'v1.0.2', 'sdk=1.0.0 php=8.3.6 mcp=v0.8.1 laravel-mcp=v1.0.2'];
+        yield 'mcp/sdk only' => ['0.8.1', null, 'sdk=1.0.0 php=8.3.6 mcp=0.8.1'];
+        yield 'laravel/mcp only' => [null, '1.0.2', 'sdk=1.0.0 php=8.3.6 laravel-mcp=1.0.2'];
+        yield 'both' => ['0.8.1', '1.0.2', 'sdk=1.0.0 php=8.3.6 mcp=0.8.1 laravel-mcp=1.0.2'];
         yield 'neither' => [null, null, 'sdk=1.0.0 php=8.3.6 mcp=unknown'];
     }
 

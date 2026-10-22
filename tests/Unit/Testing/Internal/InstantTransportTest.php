@@ -19,7 +19,7 @@ final class InstantTransportTest extends TestCase
             ++$count;
         }));
         $transport->pump();
-        $transport->waitForActivity(INF);
+        $this->assertTrue($transport->waitForActivity(INF));
 
         $this->assertSame(1, $count);
         $this->assertSame(0, $transport->inFlight());

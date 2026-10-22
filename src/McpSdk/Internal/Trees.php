@@ -28,7 +28,7 @@ final class Trees
 
     /**
      * The tree of a tool result (`JsonTree::result()`): mcp/sdk cannot tell `{}` from `[]`, so an empty-list
-     * `structuredContent` is `{}` (header conflict 4).
+     * `structuredContent` is `{}`.
      *
      * @throws \JsonException for a value JSON cannot carry
      */

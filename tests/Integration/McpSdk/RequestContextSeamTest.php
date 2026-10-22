@@ -23,8 +23,8 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
- * The HTTP request of an mcp/sdk call from a framework bridge instead of `$_SERVER` (plan E2 header conflict 5): a
- * worker that serves many requests in one process, where `$_SERVER` is stale, records each request's own.
+ * The HTTP request of an mcp/sdk call from a framework bridge instead of `$_SERVER`: a worker that serves many requests
+ * in one process, where `$_SERVER` is stale, records each request's own.
  */
 final class RequestContextSeamTest extends TestCase
 {
@@ -54,7 +54,7 @@ final class RequestContextSeamTest extends TestCase
         $this->assertSame('https://worker.test/mcp', JsonAssert::at($info, 'url'));
     }
 
-    /** Review Focus 4: one container, many requests, as in a Symfony Runtime worker under the CLI SAPI. */
+    /** One container, many requests, as in a Symfony Runtime worker under the CLI SAPI. */
     #[Group('ac-02-43')]
     public function testEachRequestOfAWorkerCarriesItsOwnHeaders(): void
     {

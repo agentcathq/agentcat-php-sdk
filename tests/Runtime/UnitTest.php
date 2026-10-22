@@ -13,10 +13,10 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
- * NGINX Unit 1.34.2 with PHP 8.3.26 (ruling P19). Unit's PHP module reports the SAPI of `php -S` (`cli-server`), runs
+ * NGINX Unit 1.34.2 with PHP 8.3.26. Unit's PHP module reports the SAPI of `php -S` (`cli-server`), runs
  * each request as a PHP request of its own, and has `fastcgi_finish_request()`, which ends the answer also when it
  * carries no Content-Length. Each upper bound sits about 1 s above the measured time and about 1 s below the time a
- * held answer takes, the collector's 2 s (ruling P16).
+ * held answer takes, the collector's 2 s.
  */
 #[Group('runtime')]
 final class UnitTest extends RuntimeTestCase
@@ -51,7 +51,7 @@ final class UnitTest extends RuntimeTestCase
     {
         $events = self::$collector->scenario([['status' => 202, 'delayMs' => 2000]]);
         $diagnostics = self::$collector->scenario();
-        [$runtime, $base] = $this->unit($diagnostics);
+        [$runtime, $base] = $this->unit($diagnostics, null, 1);
         $client = new McpHttpClient($base . '/mcp');
         $this->warmUp($client, self::$collector->scenario(), self::COLLECTOR_DEADLINE_SECONDS, $headers);
         $started = microtime(true);
@@ -69,35 +69,75 @@ final class UnitTest extends RuntimeTestCase
         $this->assertNoPhpErrors($runtime);
     }
 
+    /** @return iterable<string, array{string}> the MCP endpoint that `Fixtures/unit.php` hands to a bridge's front controller */
+    public static function bridges(): iterable
+    {
+        yield 'symfony/mcp-bundle' => ['/mcp/conformance'];
+        yield 'laravel/mcp' => ['/mcp/e2e'];
+    }
+
+    /**
+     * The bridges under Unit: the answer carries no Content-Length (`fastcgi_finish_request()` ends it, so neither
+     * bridge adds one) and still reaches the client before the delayed delivery. An untimed first request compiles
+     * the Symfony container and fills Laravel's caches, and its delivery takes the collector's undelayed step; the
+     * timed request's delivery waits 2 s.
+     */
+    #[DataProvider('bridges')]
+    #[Group('ac-03-1')]
+    #[MaximumDuration(60000)]
+    public function testTheBridgesAnswerBeforeTheDelivery(string $path): void
+    {
+        $events = self::$collector->scenario([['status' => 202], ['status' => 202, 'delayMs' => 2000]]);
+        $diagnostics = self::$collector->scenario();
+        [$runtime, $base] = $this->unit($diagnostics, $events, 1);
+        $client = new McpHttpClient($base . $path);
+        $this->warmUp($client, $events, self::COLLECTOR_DEADLINE_SECONDS);
+        $started = microtime(true);
+
+        $answer = $client->post(self::echoCall(2, 'hi'), self::echoHeaders($events));
+
+        $this->assertLessThan(self::ANSWER_SECONDS, $answer['receivedAt'] - $started, 'Unit held the answer for the delivery');
+        $this->assertEchoed('hi', $answer, 2);
+        $this->assertArrayNotHasKey('content-length', $answer['headers'], 'the bridge added a length that Unit does not need');
+        $this->assertSame('cli-server', $answer['headers']['x-e2e-sapi'] ?? null, 'Unit reports the SAPI of php -S');
+        $this->assertDeliveredAfter($answer, $events, self::COLLECTOR_DEADLINE_SECONDS, 2);
+        $this->waitForSentEventPosts($diagnostics, 2, self::COLLECTOR_DEADLINE_SECONDS);
+        $this->assertNoPhpErrors($runtime);
+    }
+
     /**
      * NGINX Unit on 127.0.0.1 only (checked: 127.0.0.2 is refused), running `Fixtures/unit.php` for every request in
-     * two application processes. The configuration is `conf.json` in a state directory in `out()`, so Unit starts
-     * with it once: the image's entrypoint configures an empty state directory with a Unit that it stops again, and
-     * the port would accept connections before that restart. The application gets `RuntimeTestCase::env()` with
-     * diagnostics on and sent to `$diagnostics`, and logs PHP's errors to Unit's log, the container's output. `HOME` is
+     * `$processes` application processes. Unit cannot route a request to a chosen process, so a case with one warm-up
+     * request uses one process: the timed request never meets a cold one. The configuration is `conf.json` in a state
+     * directory in `out()`, so Unit starts with it once: the image's entrypoint configures an empty state directory
+     * with a Unit that it stops again, and the port would accept connections before that restart.
+     *
+     * The application gets `RuntimeTestCase::env()` with diagnostics on and sent to `$diagnostics`. Its AgentCat API is
+     * `$events` for a bridge's fixture, which reads it from the environment, and a closed port otherwise (the echo
+     * fixtures read the request's `X-E2E-Collector`). PHP's errors go to Unit's log, the container's output. `HOME` is
      * `/out`, where AgentCat writes its log.
      *
      * @return array{DockerRuntime, string} the container, and its base URL
      */
-    private function unit(string $diagnostics): array
+    private function unit(string $diagnostics, ?string $events, int $processes): array
     {
         $out = $this->out();
         $port = $this->freePort();
-        $env = [...$this->env(), ...$this->diagnosticsTo($diagnostics)];
+        $env = [...$this->env($events), ...$this->diagnosticsTo($diagnostics)];
         $state = $out . '/unit';
         $this->assertTrue(mkdir($state, 0o777) && chmod($state, 0o777), 'Cannot create ' . $state);
         $this->assertNotFalse(file_put_contents($state . '/conf.json', json_encode([
             'listeners' => ['127.0.0.1:' . $port => ['pass' => 'applications/agentcat']],
             'applications' => ['agentcat' => [
                 'type' => 'php',
-                'processes' => 2,
+                'processes' => $processes,
                 'root' => self::repo() . '/tests/Runtime/Fixtures',
                 'script' => 'unit.php',
                 'environment' => $env,
                 'options' => ['admin' => ['log_errors' => '1']],
             ]],
         ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)));
-        $runtime = DockerRuntime::start(Images::UNIT, ['unitd', '--no-daemon', '--control', 'unix:/var/run/control.unit.sock'], $env, [$state => self::STATE_DIRECTORY, $out => '/out'], port: $port);
+        $runtime = DockerRuntime::start(Images::unit(), ['unitd', '--no-daemon', '--control', 'unix:/var/run/control.unit.sock'], $env, [$state => self::STATE_DIRECTORY, $out => '/out'], port: $port);
         $this->assertFalse(DockerRuntime::accepts($port, '127.0.0.2'), 'Unit listens beyond 127.0.0.1');
 
         return [$runtime, 'http://127.0.0.1:' . $port];

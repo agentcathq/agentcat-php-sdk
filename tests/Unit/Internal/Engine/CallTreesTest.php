@@ -24,7 +24,7 @@ final class CallTreesTest extends TestCase
     }
 
     /**
-     * 02 §3.3: only what the call itself claims, as a non-empty string.
+     * Only what the call itself claims, as a non-empty string: never the version the session negotiated.
      *
      * @param array<array-key, mixed>|null $meta
      */

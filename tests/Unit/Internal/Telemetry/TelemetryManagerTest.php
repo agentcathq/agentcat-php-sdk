@@ -90,7 +90,7 @@ final class TelemetryManagerTest extends TestCase
         $this->assertSame(['Initialized telemetry exporter: a', 'Unknown exporter type: stdClass'], $this->logger->messages());
     }
 
-    /** Task 4: `new Options(exporters: […])` does not validate its entries; anything else is skipped with its type. */
+    /** `new Options(exporters: […])` does not validate its entries; anything else is skipped with its type. */
     #[DataProvider('unknownConfigs')]
     #[Group('ac-06-10')]
     public function testAnyEntryThatIsNotAnExporterConfigIsSkippedWithItsType(mixed $config, string $type): void
@@ -215,7 +215,7 @@ final class TelemetryManagerTest extends TestCase
         $this->assertSame([], $this->logger->messages());
     }
 
-    /** Review Focus 4: values JSON cannot carry as they are. */
+    /** Values that JSON cannot carry as they are never stop the other exporters. */
     public function testValuesThatJsonCannotCarryNeverStopTheOtherExporters(): void
     {
         $http = new RecordingHttpChannel();
@@ -293,7 +293,7 @@ final class TelemetryManagerTest extends TestCase
         $this->assertSame(['http://a/v1/traces'], $http->urls());
     }
 
-    /** Spec conflict 5: `exporters: []` is TypeScript `{}`, which is truthy: an empty manager. */
+    /** `exporters: []` is TypeScript `{}`, which is truthy: an empty manager. */
     public function testAnEmptySetInstallsAnEmptyManager(): void
     {
         $queue = $this->queue();
@@ -307,7 +307,7 @@ final class TelemetryManagerTest extends TestCase
         $this->assertSame(['Initialized telemetry with 0 exporters'], $this->logger->messages());
     }
 
-    /** Spec conflict 5: the count is of the entries that reached `Options::$exporters`, built or not. */
+    /** The count is of the entries that reached `Options::$exporters`, built or not. */
     public function testTheInstallCountIsOfTheEntriesGiven(): void
     {
         TelemetryManager::install($this->queue(), ['otlp' => new OtlpExporter('http://a'), 'bad' => 'otlp']);
@@ -330,7 +330,7 @@ final class TelemetryManagerTest extends TestCase
         $this->assertSame([], $this->logger->messages());
     }
 
-    /** Ruling P3: a set that cannot be serialized counts as different; install() never throws (D32). */
+    /** A set that cannot be serialized counts as different; install() never throws (D32). */
     public function testASetThatCannotBeSerializedCountsAsDifferentAndNeverThrows(): void
     {
         $queue = $this->queue();
@@ -348,7 +348,7 @@ final class TelemetryManagerTest extends TestCase
         ], $this->logger->messages());
     }
 
-    /** Ruling P3: a set whose serialization warns counts as different, and the warning reaches no output. */
+    /** A set whose serialization warns counts as different, and the warning reaches no output. */
     public function testASetWhoseSerializationWarnsCountsAsDifferent(): void
     {
         $queue = $this->queue();

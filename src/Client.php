@@ -117,6 +117,12 @@ final readonly class Client
                 Log::write('WARN: AgentCat signal handlers are already installed; disableSignalHandlers is ignored');
             }
             $library = Libraries::for($server);
+            $tracked = TrackedServers::get($server) instanceof TrackedServer;
+            if (!$library instanceof Library) {
+                // The Server that a tracked Builder built: it is tracked through its Builder, which holds the handlers.
+                $library = Libraries::trackerOf($server);
+                $tracked = true;
+            }
             if (!$library instanceof Library) {
                 $signals = Libraries::fingerprint($server);
                 Log::warning(sprintf('AgentCat SDK Compatibility: unrecognized server shape | signals %s. %s', $signals === '' ? '(none)' : $signals, Libraries::supportMatrix()));
@@ -127,7 +133,6 @@ final readonly class Client
             if ($logger instanceof LoggerInterface) {
                 Log::adopt($logger); // D30, D38
             }
-            $tracked = TrackedServers::get($server) instanceof TrackedServer;
             if (!$tracked) {
                 $library->inspect($server); // a tracked Builder can be built by now: tracking it again changes nothing
             }
@@ -135,7 +140,7 @@ final readonly class Client
                 $this->publisher->queue()->configure($options->apiBaseUrl); // before the already-tracked check; the last call wins
             }
             $project = $projectId !== '' ? $projectId : '(telemetry-only)';
-            Log::write(sprintf('AgentCat setup started | project %s | sdk %s | signals %s', $project, $library->sdk(), implode(',', $library->signals($server))));
+            Log::write(sprintf('AgentCat setup started | project %s | sdk %s | signals %s', $project, $library->sdk($server), implode(',', $library->signals($server))));
             if ($tracked) {
                 Log::write('[SESSION DEBUG] track() - Server already being tracked, skipping initialization');
 
@@ -224,6 +229,11 @@ final readonly class Client
                     Log::write('Warning: Failed to publish custom event - the server is not tracked (track() ran while AgentCat was off; call AgentCat::fake() before track())');
 
                     return;
+                }
+
+                $advice = Libraries::untrackedAdvice($serverOrSessionId);
+                if ($advice !== null) {
+                    throw new \InvalidArgumentException('Server is not tracked: ' . $advice);
                 }
 
                 throw new \InvalidArgumentException('Server is not tracked. Please call agentcat.track() first or provide a session ID string.');

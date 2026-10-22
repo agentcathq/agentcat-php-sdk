@@ -79,7 +79,7 @@ final class AgentCatFakeTest extends TestCase
         }
     }
 
-    /** D31, Review Focus 1: PHPUnit is loaded and `AGENTCAT_ENABLED` is unset. */
+    /** D31: PHPUnit is loaded and `AGENTCAT_ENABLED` is unset. */
     public function testWithoutFakeTheSdkStaysOffInATestSuite(): void
     {
         $builder = TrackingFixture::builder();
@@ -350,7 +350,7 @@ final class AgentCatFakeTest extends TestCase
         $fake->assertTrackedCount(1);
     }
 
-    /** Ruling R4: `AGENTCAT_ENABLED=false` (D44) does not turn the fake off. */
+    /** `AGENTCAT_ENABLED=false` (D44) does not turn the fake off, so a CI that sets it still records. */
     public function testTheFakeRecordsWhateverAgentcatEnabledSays(): void
     {
         putenv('AGENTCAT_ENABLED=false');

@@ -7,7 +7,7 @@ namespace AgentCat\Tests\Support;
 use AgentCat\Event;
 use AgentCat\Internal\Json\Json;
 
-/** The shared golden events of 06 §9.0 (golden.ts) and golden2.ts. */
+/** The shared golden events of the TypeScript SDK's golden.ts and golden2.ts. */
 final class ExporterFixtures
 {
     public const string SESSION = 'ses_2yXlShd4ODDcHLYliGW9VgH3m1R';

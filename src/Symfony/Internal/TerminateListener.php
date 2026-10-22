@@ -8,9 +8,9 @@ use AgentCat\AgentCat;
 use AgentCat\Internal\Delivery\RequestEndWait;
 
 /**
- * Delivers the request's events on kernel.terminate (plan E2 header conflict 7, D58), after the response, and last:
- * for at most `RequestEndWait::WORKER_SECONDS` in a Symfony Runtime worker, and in one non-blocking pass under a
- * per-request SAPI, where AgentCat's shutdown function delivers within the 5 s budget after it (D47).
+ * Delivers the request's events on kernel.terminate (D58), after the response, and last: for at most
+ * `RequestEndWait::WORKER_SECONDS` in a Symfony Runtime worker, and in one non-blocking pass under a per-request SAPI,
+ * where AgentCat's shutdown function delivers within the 5 s budget after it (D47).
  *
  * @internal
  */

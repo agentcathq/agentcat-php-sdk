@@ -9,6 +9,7 @@ use AgentCat\Internal\Constants;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\SdkVersion;
 use AgentCat\Internal\Transport\ApiBaseUrl;
+use AgentCat\Internal\Transport\CurlSupport;
 use AgentCat\Internal\Transport\CurlTransport;
 use AgentCat\Internal\Transport\Delivery;
 use AgentCat\Internal\Transport\RetryPolicy;
@@ -17,6 +18,7 @@ use AgentCat\Internal\Wire\WireEncoder;
 use AgentCat\Tests\Integration\Support\MockCollector;
 use AgentCat\Tests\Support\MemoryLogger;
 use AgentCat\Tests\Support\Thrown;
+use AgentCat\Tests\Support\UnreadTransfers;
 use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
@@ -31,10 +33,16 @@ final class CurlTransportTest extends TestCase
 
     private const string GAVE_UP = 'Failed to deliver AgentCat event after retries: ';
 
-    private const string NO_CURL = 'WARN: AgentCat cannot send events: ext-curl functions are missing or disabled (';
+    private const string NO_CURL = 'WARN: AgentCat cannot send events, telemetry exports or diagnostics: ext-curl functions are missing or disabled (';
 
     /** Seconds; every blocking call in these tests has a deadline. */
     private const float DEADLINE = 5.0;
+
+    /** The line of a host without `usleep()` and `time_nanosleep()`. */
+    private const string NO_SLEEP = 'WARN: AgentCat cannot wait for the retry of a failed event: usleep and time_nanosleep are disabled; a delivery ends at the first retry that is not due yet; remove one of them from disable_functions';
+
+    /** The sleep functions of a waiting transport. */
+    private const array SLEEP_FUNCTIONS = ['usleep', 'time_nanosleep'];
 
     private static ?MockCollector $collector = null;
 
@@ -58,12 +66,14 @@ final class CurlTransportTest extends TestCase
     {
         $this->logger = new MemoryLogger();
         Log::setLogger($this->logger);
+        CurlSupport::reset();
     }
 
     #[\Override]
     protected function tearDown(): void
     {
         Log::reset();
+        CurlSupport::reset();
     }
 
     #[Group('ac-03-1')]
@@ -410,9 +420,12 @@ final class CurlTransportTest extends TestCase
         $transport->start(new Delivery("http://127.0.0.1/\0", '{}', 'evt_x', 'summary'));
 
         $this->assertSame(0, $transport->inFlight());
-        $this->assertSame(
-            [self::GAVE_UP . 'ValueError: curl_setopt_array(): cURL option must not contain any null bytes'],
-            $this->logger->messages(),
+        $messages = $this->logger->messages();
+        $this->assertCount(1, $messages);
+        // PHP 8.6 names the option ("cURL option CURLOPT_URL must not …"); 8.3 to 8.5 do not.
+        $this->assertMatchesRegularExpression(
+            '~^' . preg_quote(self::GAVE_UP . 'ValueError: curl_setopt_array(): cURL option ', '~') . '.*must not contain any null bytes$~',
+            $messages[0],
         );
     }
 
@@ -538,57 +551,62 @@ final class CurlTransportTest extends TestCase
     }
 
     /**
-     * Fix round 1: a transfer that finished while a slow logger held the loop is collected at once, not after a wait
-     * of up to 1 s on the socket of a slower transfer. evt_b fails at once (connection refused) and its line blocks the
-     * loop while evt_a's answer arrives. The time counts from the later of two moments, the slow logger letting go and
-     * the collector answering evt_a, so a loaded machine that delays either one does not count against the transport:
-     * with the fix it collects evt_a within milliseconds, without it about 1 s later.
+     * Fix round 1: every curl_multi_exec() is followed by a read of the transfers it finished, so a finished transfer is
+     * collected by the call that finished it, not after a wait of up to 1 s on the socket of a slower transfer. evt_b
+     * fails at once (connection refused) and its line blocks the loop (a slow customer PSR logger) while evt_a's answer
+     * arrives; evt_c goes to a local server that never answers, so its socket is the one a wait blocks on. The test
+     * asserts an order, not a time: after every start() and pump(), libcurl holds no finished transfer that the transport
+     * has not read, and evt_a is collected while evt_c is still in transfer. A time cannot tell the two apart with 1 s of
+     * slack: without the fix, evt_a waits one wait at most (`MAX_WAIT_SECONDS`, 1 s).
      */
     #[MaximumDuration(2000)]
     public function testAFinishedTransferIsCollectedWithoutWaitingForOthers(): void
     {
-        $collector = self::collector();
-        $slow = $collector->scenario([], ['status' => 202, 'delayMs' => 2000, 'body' => '']);
-        $fast = $collector->scenario([], ['status' => 202, 'delayMs' => 300, 'body' => '']);
+        $silent = stream_socket_server('tcp://127.0.0.1:0', $errorCode, $errorMessage); // the kernel accepts; nothing reads
+        $this->assertNotFalse($silent, 'no local server: ' . $errorMessage);
+        $address = stream_socket_get_name($silent, false);
+        $this->assertIsString($address);
+        $unanswered = 'http://' . $address;
+        $fast = self::collector()->scenario([], ['status' => 202, 'delayMs' => 300, 'body' => '']);
         $logger = new class extends AbstractLogger {
-            /** @var array<string, float> when each line was logged (wall clock) */
-            public array $at = [];
-
-            /** When the slow line was done (wall clock). */
-            public float $released = 0.0;
+            /** @var list<string> */
+            public array $lines = [];
 
             /** @param mixed[] $context */
             #[\Override]
             public function log($level, string|\Stringable $message, array $context = []): void
             {
-                $this->at[(string) $message] = microtime(true);
+                $this->lines[] = (string) $message;
                 if (str_starts_with((string) $message, 'Failed to send event evt_b')) {
                     usleep(700_000); // a slow customer PSR logger; evt_a's response arrives meanwhile
-                    $this->released = microtime(true);
                 }
             }
         };
         Log::setLogger($logger);
         $transport = new CurlTransport(new RetryPolicy([10.0]));
-        $transport->start(new Delivery(ApiBaseUrl::endpoint($slow), '{}', 'evt_c', 'slow'));
-        $transport->start(new Delivery(ApiBaseUrl::endpoint($fast), '{}', 'evt_a', 'fast'));
-        $transport->start(new Delivery(ApiBaseUrl::endpoint(MockCollector::closedPortUrl()), '{}', 'evt_b', 'refused'));
+        foreach ([[$unanswered, 'evt_c', 'slow'], [$fast, 'evt_a', 'fast'], [MockCollector::closedPortUrl(), 'evt_b', 'refused']] as [$url, $id, $summary]) {
+            $transport->start(new Delivery(ApiBaseUrl::endpoint($url), '{}', $id, $summary));
+            $this->assertSame(0, UnreadTransfers::of($transport), 'start() left a finished transfer unread: ' . implode(' / ', $logger->lines));
+        }
         $sent = 'Successfully sent event evt_a | fast';
 
-        // drain() without its deadline: evt_c runs 2 s and evt_b retries in 10 s, so stop once evt_a is collected.
+        // drain() without its deadline: evt_c never ends and evt_b retries in 10 s, so stop once evt_a is collected (no
+        // wait after it: a wait would block on evt_c's socket for 1 s).
         $deadline = $transport->now() + self::DEADLINE;
-        while (!isset($logger->at[$sent]) && $transport->now() < $deadline) {
+        while (true) {
             $transport->pump();
+            $this->assertSame(0, UnreadTransfers::of($transport), 'pump() left a finished transfer unread: ' . implode(' / ', $logger->lines));
+            if (in_array($sent, $logger->lines, true) || $transport->now() >= $deadline) {
+                break;
+            }
             $transport->waitForActivity($deadline);
         }
 
-        $lines = implode(' / ', array_keys($logger->at));
-        $this->assertArrayHasKey($sent, $logger->at, $lines);
+        $lines = implode(' / ', $logger->lines);
         $this->assertStringStartsWith('Failed to send event evt_b, retrying... [Error: cURL error 7: ', $lines);
-        $this->assertGreaterThan(0.0, $logger->released);
-        $answered = $collector->requests($fast)[0]->end ?? null; // the collector logs just before it answers
-        $this->assertIsNumeric($answered);
-        $this->assertLessThan(0.5, $logger->at[$sent] - max($logger->released, (float) $answered), $lines);
+        $this->assertContains($sent, $logger->lines, $lines);
+        $this->assertSame(2, $transport->inFlight(), 'evt_a is collected while evt_c is in transfer and evt_b waits for its retry');
+        fclose($silent);
     }
 
     #[MaximumDuration(2000)]
@@ -819,7 +837,6 @@ final class CurlTransportTest extends TestCase
         $this->assertSame(['a', 'b', 'a', 'a', 'b'], $order->getArrayCopy());
     }
 
-    #[Group('review-focus-2')]
     #[MaximumDuration(1000)]
     public function testWarningsDuringAnAttemptDoNotReachTheHostHandler(): void
     {
@@ -847,12 +864,78 @@ final class CurlTransportTest extends TestCase
         $this->pumpUntil($transport, fn(): bool => $this->failures() === 1);
         $started = hrtime(true);
 
-        $transport->waitForActivity(INF); // the clock is frozen: the retry is due in 0.05 s of real sleep
+        $waited = $transport->waitForActivity(INF); // the clock is frozen: the retry is due in 0.05 s of real sleep
 
         $elapsed = (hrtime(true) - $started) / 1e9;
+        $this->assertTrue($waited);
         $this->assertGreaterThanOrEqual(0.045, $elapsed);
         $this->assertLessThan(0.5, $elapsed);
         $this->assertSame(1, $this->failures(), 'waitForActivity() does no work');
+    }
+
+    /**
+     * A host that disables `usleep()` and `time_nanosleep()`: a drain cannot wait for a retry, so it ends at once (one
+     * line per transport) instead of spinning until its deadline. The retry stays scheduled for a later pump.
+     */
+    #[Group('hardened-host')]
+    #[MaximumDuration(2000)]
+    public function testWithoutASleepFunctionADrainEndsAtTheFirstRetryThatIsNotDue(): void
+    {
+        $transport = new CurlTransport(new RetryPolicy([5.0]), functionExists: static fn(string $function): bool => !in_array($function, self::SLEEP_FUNCTIONS, true));
+        $started = hrtime(true);
+
+        $settled = $transport->send($this->delivery(MockCollector::closedPortUrl()), $transport->now() + 1.0);
+        $again = $transport->drain($transport->now() + 1.0);
+
+        $this->assertLessThan(0.5, (hrtime(true) - $started) / 1e9, 'no spin until the deadline');
+        $this->assertFalse($settled);
+        $this->assertFalse($again);
+        $this->assertSame(1, $transport->inFlight(), 'the retry waits for a later pump');
+        $this->assertSame(1, $this->failures());
+        $this->assertSame([self::NO_SLEEP], array_values(array_filter($this->logger->messages(), static fn(string $line): bool => str_contains($line, 'sleep'))));
+    }
+
+    /** Without a sleep function, a retry that is due already needs no wait: the drain goes on and starts it. */
+    #[Group('hardened-host')]
+    #[MaximumDuration(2000)]
+    public function testWithoutASleepFunctionAnOverdueRetryNeedsNoWait(): void
+    {
+        $now = 100.0;
+        $clock = static function () use (&$now): float {
+            return $now;
+        };
+        $transport = new CurlTransport(new RetryPolicy([0.05]), clock: $clock, functionExists: static fn(string $function): bool => !in_array($function, self::SLEEP_FUNCTIONS, true));
+        $transport->start($this->delivery(MockCollector::closedPortUrl()));
+        $this->pumpUntil($transport, fn(): bool => $this->failures() === 1);
+        $now = 101.0; // the retry was due at 100.05
+
+        $this->assertTrue($transport->waitForActivity(INF));
+        $this->assertTrue($transport->waitForActivity($now - 1.0), 'a passed deadline needs no wait either');
+        $this->assertSame(1, $this->failures(), 'waitForActivity() does no work');
+        $this->assertCount(1, $this->logger->messages());
+    }
+
+    /** Without `usleep()`, a wait for a retry sleeps with `time_nanosleep()`. */
+    #[Group('hardened-host')]
+    #[MaximumDuration(1000)]
+    public function testWithoutUsleepAWaitSleepsWithTimeNanosleep(): void
+    {
+        $now = 100.0;
+        $clock = static function () use (&$now): float {
+            return $now;
+        };
+        $transport = new CurlTransport(new RetryPolicy([0.05]), clock: $clock, functionExists: static fn(string $function): bool => $function !== 'usleep');
+        $transport->start($this->delivery(MockCollector::closedPortUrl()));
+        $this->pumpUntil($transport, fn(): bool => $this->failures() === 1);
+        $started = hrtime(true);
+
+        $waited = $transport->waitForActivity(INF);
+
+        $elapsed = (hrtime(true) - $started) / 1e9;
+        $this->assertTrue($waited);
+        $this->assertGreaterThanOrEqual(0.045, $elapsed);
+        $this->assertLessThan(0.5, $elapsed);
+        $this->assertCount(1, $this->logger->messages(), 'no line: the wait works');
     }
 
     #[MaximumDuration(1000)]
@@ -901,7 +984,6 @@ final class CurlTransportTest extends TestCase
         $this->assertEqualsWithDelta(hrtime(true) / 1e9, $second, 1.0);
     }
 
-    #[Group('review-focus-2')]
     #[MaximumDuration(2000)]
     public function testThrowingErrorHandlerSeesNoWarningAndIsRestored(): void
     {
