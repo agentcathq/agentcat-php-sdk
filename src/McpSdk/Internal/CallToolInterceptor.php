@@ -54,7 +54,7 @@ final readonly class CallToolInterceptor implements RequestHandlerInterface
     public function handle(Request $request, SessionInterface $session): Response|Error
     {
         $this->publisher->pump(); // stdio servers deliver between requests
-        $delegate = $this->delegates->after($this, $request);
+        $delegate = $this->delegates->runner($this, $request, $this->stash);
         if (!$request instanceof CallToolRequest || !$delegate instanceof RequestHandlerInterface) {
             return Delegates::notFound($request);
         }

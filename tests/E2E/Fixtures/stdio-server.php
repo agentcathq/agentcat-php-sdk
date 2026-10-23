@@ -22,6 +22,8 @@ $builder = Server::builder()
     }, 'progress', description: 'Reports progress', inputSchema: $schema);
 
 $collector = getenv('AGENTCAT_E2E_COLLECTOR');
-AgentCat::track($builder, 'proj_' . str_repeat('s', 27), new Options(apiBaseUrl: is_string($collector) && $collector !== '' ? $collector : null));
+// AGENTCAT_E2E_TRACK=server tracks the built server instead of the Builder (D76): the same tests run on both.
+$server = getenv('AGENTCAT_E2E_TRACK') === 'server' ? $builder->build() : $builder;
+AgentCat::track($server, 'proj_' . str_repeat('s', 27), new Options(apiBaseUrl: is_string($collector) && $collector !== '' ? $collector : null));
 
-exit($builder->build()->run(new StdioTransport()));
+exit(($server instanceof Server ? $server : $builder->build())->run(new StdioTransport()));

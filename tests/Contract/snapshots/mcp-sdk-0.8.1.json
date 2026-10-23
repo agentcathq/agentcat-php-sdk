@@ -1,5 +1,795 @@
 {
     "classes": {
+        "Mcp\\Capability\\Discovery\\SchemaValidator": {
+            "abstract": false,
+            "abstractMethods": [],
+            "constants": [],
+            "final": false,
+            "methods": {
+                "__construct": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "logger",
+                            "type": "Psr\\Log\\LoggerInterface",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "collectSubErrors": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "error",
+                            "type": "Opis\\JsonSchema\\Errors\\ValidationError",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": true,
+                            "hasDefault": false,
+                            "name": "collectedErrors",
+                            "type": "array",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "void",
+                    "static": false,
+                    "visibility": "private"
+                },
+                "convertDataForValidator": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "data",
+                            "type": "mixed",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "mixed",
+                    "static": false,
+                    "visibility": "private"
+                },
+                "formatJsonPointerPath": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "pathComponents",
+                            "type": "?array",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "string",
+                    "static": false,
+                    "visibility": "private"
+                },
+                "formatValidationError": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "error",
+                            "type": "Opis\\JsonSchema\\Errors\\ValidationError",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "string",
+                    "static": false,
+                    "visibility": "private"
+                },
+                "getJsonSchemaValidator": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [],
+                    "return": "Opis\\JsonSchema\\Validator",
+                    "static": false,
+                    "visibility": "private"
+                },
+                "validateAgainstJsonSchema": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "data",
+                            "type": "mixed",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "schema",
+                            "type": "object|array",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "array",
+                    "static": false,
+                    "visibility": "public"
+                }
+            },
+            "properties": {
+                "jsonSchemaValidator": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "?Opis\\JsonSchema\\Validator",
+                    "visibility": "private"
+                },
+                "logger": {
+                    "hasDefault": false,
+                    "readonly": false,
+                    "static": false,
+                    "type": "Psr\\Log\\LoggerInterface",
+                    "visibility": "private"
+                }
+            },
+            "readonly": false
+        },
+        "Mcp\\Capability\\Registry": {
+            "abstract": false,
+            "abstractMethods": [],
+            "constants": [],
+            "final": true,
+            "methods": {
+                "__construct": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "eventDispatcher",
+                            "type": "?Psr\\EventDispatcher\\EventDispatcherInterface",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "logger",
+                            "type": "Psr\\Log\\LoggerInterface",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "nameValidator",
+                            "type": "Mcp\\Capability\\Tool\\NameValidator",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "loader",
+                            "type": "?Mcp\\Capability\\Registry\\Loader\\LoaderInterface",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "calculateNextCursor": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "totalItems",
+                            "type": "int",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "currentCursor",
+                            "type": "?string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "limit",
+                            "type": "int",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "?string",
+                    "static": false,
+                    "visibility": "private"
+                },
+                "dispatch": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "event",
+                            "type": "object",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "void",
+                    "static": false,
+                    "visibility": "private"
+                },
+                "getPrompt": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "name",
+                            "type": "string",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Capability\\Registry\\PromptReference",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "getPrompts": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "limit",
+                            "type": "?int",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "cursor",
+                            "type": "?string",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Schema\\Page",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "getResource": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "uri",
+                            "type": "string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "includeTemplates",
+                            "type": "bool",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Capability\\Registry\\ResourceReference|Mcp\\Capability\\Registry\\ResourceTemplateReference",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "getResourceTemplate": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "uriTemplate",
+                            "type": "string",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Capability\\Registry\\ResourceTemplateReference",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "getResourceTemplates": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "limit",
+                            "type": "?int",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "cursor",
+                            "type": "?string",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Schema\\Page",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "getResources": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "limit",
+                            "type": "?int",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "cursor",
+                            "type": "?string",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Schema\\Page",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "getTool": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "name",
+                            "type": "string",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Capability\\Registry\\ToolReference",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "getTools": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "limit",
+                            "type": "?int",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "cursor",
+                            "type": "?string",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Schema\\Page",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "hasPrompt": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "name",
+                            "type": "string",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "bool",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "hasPrompts": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [],
+                    "return": "bool",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "hasResource": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "uri",
+                            "type": "string",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "bool",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "hasResourceTemplate": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "uriTemplate",
+                            "type": "string",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "bool",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "hasResourceTemplates": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [],
+                    "return": "bool",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "hasResources": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [],
+                    "return": "bool",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "hasTool": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "name",
+                            "type": "string",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "bool",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "hasTools": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [],
+                    "return": "bool",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "load": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [],
+                    "return": "void",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "loadFrom": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "loader",
+                            "type": "Mcp\\Capability\\Registry\\Loader\\LoaderInterface",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "void",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "paginateResults": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "items",
+                            "type": "array",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "limit",
+                            "type": "int",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "cursor",
+                            "type": "?string",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "array",
+                    "static": false,
+                    "visibility": "private"
+                },
+                "registerPrompt": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "prompt",
+                            "type": "Mcp\\Schema\\Prompt",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "handler",
+                            "type": "callable|array|string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "completionProviders",
+                            "type": "array",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Capability\\Registry\\PromptReference",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "registerResource": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "resource",
+                            "type": "Mcp\\Schema\\ResourceDefinition",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "handler",
+                            "type": "callable|array|string",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Capability\\Registry\\ResourceReference",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "registerResourceTemplate": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "template",
+                            "type": "Mcp\\Schema\\ResourceTemplate",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "handler",
+                            "type": "callable|array|string",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "completionProviders",
+                            "type": "array",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Capability\\Registry\\ResourceTemplateReference",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "registerTool": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "tool",
+                            "type": "Mcp\\Schema\\Tool",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "handler",
+                            "type": "callable|array|string",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Capability\\Registry\\ToolReference",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "unregisterPrompt": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "name",
+                            "type": "string",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "void",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "unregisterResource": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "uri",
+                            "type": "string",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "void",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "unregisterResourceTemplate": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "uriTemplate",
+                            "type": "string",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "void",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "unregisterTool": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "name",
+                            "type": "string",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "void",
+                    "static": false,
+                    "visibility": "public"
+                }
+            },
+            "properties": {
+                "eventDispatcher": {
+                    "hasDefault": false,
+                    "readonly": true,
+                    "static": false,
+                    "type": "?Psr\\EventDispatcher\\EventDispatcherInterface",
+                    "visibility": "private"
+                },
+                "loaded": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "bool",
+                    "visibility": "private"
+                },
+                "loader": {
+                    "hasDefault": false,
+                    "readonly": true,
+                    "static": false,
+                    "type": "?Mcp\\Capability\\Registry\\Loader\\LoaderInterface",
+                    "visibility": "private"
+                },
+                "loading": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "bool",
+                    "visibility": "private"
+                },
+                "logger": {
+                    "hasDefault": false,
+                    "readonly": true,
+                    "static": false,
+                    "type": "Psr\\Log\\LoggerInterface",
+                    "visibility": "private"
+                },
+                "nameValidator": {
+                    "hasDefault": false,
+                    "readonly": true,
+                    "static": false,
+                    "type": "Mcp\\Capability\\Tool\\NameValidator",
+                    "visibility": "private"
+                },
+                "prompts": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "array",
+                    "visibility": "private"
+                },
+                "resourceTemplates": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "array",
+                    "visibility": "private"
+                },
+                "resources": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "array",
+                    "visibility": "private"
+                },
+                "tools": {
+                    "hasDefault": true,
+                    "readonly": false,
+                    "static": false,
+                    "type": "array",
+                    "visibility": "private"
+                }
+            },
+            "readonly": false
+        },
         "Mcp\\Schema\\Result\\CallToolResult": {
             "abstract": false,
             "abstractMethods": [],
@@ -1638,6 +2428,137 @@
                     "readonly": false,
                     "static": false,
                     "type": "array",
+                    "visibility": "private"
+                }
+            },
+            "readonly": false
+        },
+        "Mcp\\Server\\Handler\\Request\\CallToolHandler": {
+            "abstract": false,
+            "abstractMethods": [],
+            "constants": [],
+            "final": true,
+            "methods": {
+                "__construct": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "registry",
+                            "type": "Mcp\\Capability\\RegistryInterface",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "referenceHandler",
+                            "type": "Mcp\\Capability\\Registry\\ReferenceHandlerInterface",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "logger",
+                            "type": "Psr\\Log\\LoggerInterface",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": true,
+                            "name": "schemaValidator",
+                            "type": "?Mcp\\Capability\\Discovery\\SchemaValidator",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "handle": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "request",
+                            "type": "Mcp\\Schema\\JsonRpc\\Request",
+                            "variadic": false
+                        },
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "session",
+                            "type": "Mcp\\Server\\Session\\SessionInterface",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "Mcp\\Schema\\JsonRpc\\Response|Mcp\\Schema\\JsonRpc\\Error",
+                    "static": false,
+                    "visibility": "public"
+                },
+                "isJsonObject": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "value",
+                            "type": "mixed",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "bool",
+                    "static": true,
+                    "visibility": "private"
+                },
+                "supports": {
+                    "abstract": false,
+                    "final": false,
+                    "parameters": [
+                        {
+                            "byReference": false,
+                            "hasDefault": false,
+                            "name": "request",
+                            "type": "Mcp\\Schema\\JsonRpc\\Request",
+                            "variadic": false
+                        }
+                    ],
+                    "return": "bool",
+                    "static": false,
+                    "visibility": "public"
+                }
+            },
+            "properties": {
+                "logger": {
+                    "hasDefault": false,
+                    "readonly": true,
+                    "static": false,
+                    "type": "Psr\\Log\\LoggerInterface",
+                    "visibility": "private"
+                },
+                "referenceHandler": {
+                    "hasDefault": false,
+                    "readonly": true,
+                    "static": false,
+                    "type": "Mcp\\Capability\\Registry\\ReferenceHandlerInterface",
+                    "visibility": "private"
+                },
+                "registry": {
+                    "hasDefault": false,
+                    "readonly": true,
+                    "static": false,
+                    "type": "Mcp\\Capability\\RegistryInterface",
+                    "visibility": "private"
+                },
+                "schemaValidator": {
+                    "hasDefault": false,
+                    "readonly": false,
+                    "static": false,
+                    "type": "Mcp\\Capability\\Discovery\\SchemaValidator",
                     "visibility": "private"
                 }
             },

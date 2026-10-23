@@ -22,8 +22,8 @@ final class AgentCat
     private function __construct() {}
 
     /**
-     * Adds AgentCat analytics to an MCP server. Call it before the server is built: for mcp/sdk, pass the
-     * `Mcp\Server\Builder` before `build()`.
+     * Adds AgentCat analytics to an MCP server. For mcp/sdk, pass the `Mcp\Server\Builder` or the `Mcp\Server` built
+     * from it, before or after `build()`, and before or after your tools and request handlers.
      *
      * It never throws. When the server cannot be tracked, it logs why and returns the server unchanged. Tracking
      * the same server again, from any client, changes nothing.

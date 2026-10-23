@@ -61,19 +61,19 @@ final readonly class McpSdkLibrary implements Library
     #[\Override]
     public function inspect(object $server): void
     {
-        McpSdkAdapter::inspect($this->builder($server));
+        McpSdkAdapter::inspect($this->mcp($server));
     }
 
     #[\Override]
     public function serverInfo(object $server): \Closure
     {
-        return McpSdkAdapter::serverInfo($this->builder($server));
+        return McpSdkAdapter::serverInfo($this->mcp($server));
     }
 
     #[\Override]
     public function install(object $server, TrackedServer $state, Publisher $publisher, CallInterceptor $interceptor): void
     {
-        McpSdkAdapter::install($this->builder($server), $state, $publisher, $interceptor);
+        McpSdkAdapter::install($this->mcp($server), $state, $publisher, $interceptor);
     }
 
     #[\Override]
@@ -83,8 +83,8 @@ final readonly class McpSdkLibrary implements Library
     }
 
     /** `track()` asks `supports()` first, so this never throws there. */
-    private function builder(object $server): Builder
+    private function mcp(object $server): Builder|Server
     {
-        return $server instanceof Builder ? $server : throw new \UnexpectedValueException('Not an mcp/sdk Builder: ' . get_debug_type($server));
+        return $server instanceof Builder || $server instanceof Server ? $server : throw new \UnexpectedValueException('Not an mcp/sdk Builder or server: ' . get_debug_type($server));
     }
 }

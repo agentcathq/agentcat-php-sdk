@@ -18,4 +18,16 @@ final class BuilderMembers
     {
         return Members::uninitialize(Builder::class, $member);
     }
+
+    /** @return \Closure(Builder): mixed */
+    public static function reader(string $member): \Closure
+    {
+        return Members::reader(Builder::class, $member);
+    }
+
+    /** @return \Closure(Builder, mixed): void */
+    public static function writer(string $member): \Closure
+    {
+        return Members::writer(Builder::class, $member);
+    }
 }

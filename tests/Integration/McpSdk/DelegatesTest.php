@@ -15,6 +15,7 @@ use AgentCat\McpSdk\Internal\Delegates;
 use AgentCat\McpSdk\Internal\ListToolsInterceptor;
 use AgentCat\McpSdk\Internal\RequestReader;
 use AgentCat\Options;
+use AgentCat\Tests\Support\McpSdk\BuilderMembers;
 use AgentCat\Tests\Support\McpSdk\CustomerHandler;
 use AgentCat\Tests\Support\MemoryLogger;
 use AgentCat\Tests\Support\RecordingTransport;
@@ -23,6 +24,7 @@ use Mcp\Schema\Request\CallToolRequest;
 use Mcp\Schema\Request\ListToolsRequest;
 use Mcp\Schema\Result\ListToolsResult;
 use Mcp\Server;
+use Mcp\Server\Handler\Request\CallToolHandler;
 use Mcp\Server\Handler\Request\ListToolsHandler;
 use Mcp\Server\Session\InMemorySessionStore;
 use Mcp\Server\Session\Session;
@@ -31,7 +33,7 @@ use Psr\Log\LogLevel;
 
 final class DelegatesTest extends TestCase
 {
-    private const string COMPATIBILITY = 'AgentCat SDK Compatibility: AgentCat supports mcp/sdk 0.8.1+ (pass the Mcp\Server\Builder to AgentCat::track() before build()).';
+    private const string COMPATIBILITY = 'AgentCat SDK Compatibility: AgentCat supports mcp/sdk 0.8.1+ (pass the Mcp\Server\Builder or the Mcp\Server built from it to AgentCat::track()).';
 
     private MemoryLogger $logger;
 
@@ -130,6 +132,67 @@ final class DelegatesTest extends TestCase
         $this->assertEquals(Delegates::notFound($call), $interceptor->handle($call, $session));
         $this->assertEquals(Delegates::notFound($list), $interceptor->handle($list, $session));
         $this->assertSame([self::COMPATIBILITY], $this->logger->messages());
+    }
+
+    public function testTheRunnerOfTheLibrarysCallHandlerIsOneCopyThatStashesTheToolsException(): void
+    {
+        $self = $this->caller();
+        $builder = Server::builder()->addRequestHandler($self)->addTool(static function (): never {
+            throw new \RuntimeException('tool boom');
+        }, 'boom');
+        $builder->build();
+        $delegates = new Delegates($builder);
+        $stash = new ThrowableStash();
+        $request = (new CallToolRequest('boom', []))->withId(1);
+
+        $runner = $delegates->runner($self, $request, $stash);
+        $library = $delegates->after($self, $request);
+
+        $this->assertInstanceOf(CallToolHandler::class, $runner);
+        $this->assertInstanceOf(CallToolHandler::class, $library);
+        $this->assertNotSame($library, $runner, 'a copy of the library\'s handler');
+        $this->assertSame($runner, $delegates->runner($self, $request, $stash), 'made once');
+        $answer = $runner->handle($request, new Session(new InMemorySessionStore()));
+        $this->assertInstanceOf(Error::class, $answer);
+        $this->assertSame('Error while executing tool', $answer->message, 'the library\'s answer');
+        $thrown = $stash->take($request);
+        $this->assertInstanceOf(\RuntimeException::class, $thrown);
+        $this->assertSame('tool boom', $thrown->getMessage());
+        $this->assertSame([], $this->logger->messages());
+    }
+
+    public function testTheRunnerOfACustomersCallHandlerIsTheHandler(): void
+    {
+        $self = $this->caller();
+        $customer = new CustomerHandler(CallToolRequest::class, static fn(): ListToolsResult => new ListToolsResult([]));
+        $builder = Server::builder()->addRequestHandler($self)->addRequestHandler($customer);
+        $builder->build();
+
+        $this->assertSame($customer, (new Delegates($builder))->runner($self, (new CallToolRequest('echo', []))->withId(1), new ThrowableStash()));
+    }
+
+    /** A library handler whose members cannot be read runs the tools itself; the drift is reported once. */
+    public function testTheLibrarysCallHandlerRunsTheToolsWhenItCannotBeCopied(): void
+    {
+        $self = $this->caller();
+        $builder = Server::builder()->addRequestHandler($self);
+        $builder->build();
+        $broken = (new \ReflectionClass(CallToolHandler::class))->newInstanceWithoutConstructor(); // no members at all
+        $parts = BuilderMembers::reader('parts')($builder);
+        $this->assertIsArray($parts);
+        $parts['requestHandlers'] = [$self, $broken];
+        BuilderMembers::writer('parts')($builder, $parts);
+        $delegates = new Delegates($builder);
+        $request = (new CallToolRequest('echo', []))->withId(1);
+
+        $this->assertSame($broken, $delegates->runner($self, $request, new ThrowableStash()));
+        $this->assertSame($broken, $delegates->runner($self, $request, new ThrowableStash()));
+        $this->assertSame([self::COMPATIBILITY], $this->logger->messages());
+    }
+
+    private function caller(): CustomerHandler
+    {
+        return new CustomerHandler(CallToolRequest::class, static fn(): ListToolsResult => new ListToolsResult([]));
     }
 
     private function lister(): CustomerHandler

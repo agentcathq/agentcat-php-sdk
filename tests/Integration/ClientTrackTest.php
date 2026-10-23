@@ -33,12 +33,17 @@ use AgentCat\Tests\Support\McpSdk\BuilderMembers;
 use AgentCat\Tests\Support\McpSdk\HttpHarness;
 use AgentCat\Tests\Support\McpSdk\Tools;
 use AgentCat\Tests\Support\McpSdk\TrackingFixture;
+use AgentCat\Tests\Support\Members;
 use AgentCat\Tests\Support\MemoryLogger;
 use AgentCat\Tests\Support\RecordingExporter;
 use AgentCat\Tests\Support\RecordingHttpChannel;
 use AgentCat\Tests\Support\RecordingTransport;
 use AgentCat\ToolCall;
 use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
+use Mcp\Capability\Registry;
+use Mcp\Capability\Registry\ElementReference;
+use Mcp\Capability\Registry\ReferenceHandler;
+use Mcp\Capability\Registry\ReferenceHandlerInterface;
 use Mcp\Server;
 use Mcp\Server\Builder;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -199,7 +204,6 @@ final class ClientTrackTest extends TestCase
     public static function unsupportedServers(): iterable
     {
         yield 'any object' => [static fn(): object => new \stdClass(), '(none)'];
-        yield 'a built mcp/sdk server whose Builder is not tracked' => [static fn(): object => Server::builder()->build(), 'mcpSdkServer'];
     }
 
     /** @param \Closure(): object $make */
@@ -226,20 +230,142 @@ final class ClientTrackTest extends TestCase
     }
 
     #[Group('ac-01-2')]
-    public function testABuiltBuilderIsLeftAlone(): void
+    /** @return iterable<string, array{bool}> */
+    public static function builtObjects(): iterable
+    {
+        yield 'the Builder after build()' => [true];
+        yield 'the built server' => [false];
+    }
+
+    /** track() after build(): the server lists AgentCat's parameters and gives one event per call. */
+    #[DataProvider('builtObjects')]
+    public function testAServerTrackedAfterBuildIsTracked(bool $trackTheBuilder): void
+    {
+        $builder = TrackingFixture::builder();
+        Tools::echo($builder);
+        $server = $builder->build();
+        $tracked = $trackTheBuilder ? $builder : $server;
+
+        $this->assertSame($tracked, $this->client->track($tracked, self::PROJECT));
+
+        $this->assertSame([
+            'AgentCat setup started | project ' . self::PROJECT . ' | sdk ' . ($trackTheBuilder ? 'mcp-sdk/builder | signals mcpSdkBuilder,built' : 'mcp-sdk/server | signals mcpSdkServer'),
+            'AgentCat setup complete | project ' . self::PROJECT . ' | tracing=true context=true reportMissing=true exporters=0',
+        ], $this->logger->messages());
+        $harness = $this->initialized($server);
+        $this->assertSame(['echo', GetMoreTools::NAME], $this->names($harness->listTools()));
+        $this->assertSame('echo: hi', JsonAssert::at(HttpHarness::result($harness->callTool('echo', ['msg' => 'hi', 'context' => 'why'])), 'content', 1, 'text'));
+        $this->assertTrue($this->queue->flush());
+        $this->assertCount(1, $this->exporter->events);
+        $this->assertSame(TrackedServers::get($tracked), Libraries::trackedServer($trackTheBuilder ? $server : $builder), 'the other object is the same tracked server');
+    }
+
+    /**
+     * After build(), AgentCat's tool handler would run inside the customer's reference handler, which could run each
+     * tool twice: such a server is tracked only before build(), and its tools answer as before.
+     */
+    public function testAServerWithAReferenceHandlerOfItsOwnIsNotTrackedAfterBuild(): void
+    {
+        $builder = TrackingFixture::builder()->setReferenceHandler(new readonly class implements ReferenceHandlerInterface {
+            /** @param array<string, mixed> $arguments */
+            #[\Override]
+            public function handle(ElementReference $reference, array $arguments): mixed
+            {
+                return (new ReferenceHandler())->handle($reference, $arguments);
+            }
+        });
+        Tools::echo($builder);
+        $server = $builder->build();
+
+        $this->assertSame($server, $this->client->track($server, self::PROJECT));
+
+        $messages = $this->logger->messages();
+        $this->assertSame('AgentCat SDK Compatibility: ' . McpSdkAdapter::SUPPORT_MATRIX, $messages[0] ?? null);
+        $this->assertStringStartsWith('Warning: Failed to track server - UnexpectedValueException: AgentCat SDK compatibility error: the mcp/sdk server has a reference handler of its own (', $messages[1] ?? '');
+        $this->assertStringContainsString('): track the Builder before build(). ' . McpSdkAdapter::SUPPORT_MATRIX, $messages[1] ?? '');
+        $this->assertCount(2, $messages);
+        $harness = $this->initialized($server);
+        $this->assertSame(['echo'], $this->names($harness->listTools()));
+        $this->assertSame('echo: hi', JsonAssert::at(HttpHarness::result($harness->callTool('echo', ['msg' => 'hi'])), 'content', 0, 'text'));
+    }
+
+    /** A registry entry that is not a tool: AgentCat changes nothing, and the server answers untracked. */
+    public function testAServerWhoseRegistryCannotBeReadIsReturnedUntracked(): void
+    {
+        $builder = TrackingFixture::builder();
+        Tools::echo($builder);
+        $server = $builder->build();
+        $parts = BuilderMembers::reader('parts')($builder);
+        $this->assertIsArray($parts);
+        $registry = $parts['registry'] ?? null;
+        $this->assertInstanceOf(Registry::class, $registry);
+        $registry->load();
+        $tools = Members::reader(Registry::class, 'tools')($registry);
+        $this->assertIsArray($tools);
+        Members::writer(Registry::class, 'tools')($registry, $tools + ['broken' => 'not a tool']);
+
+        $this->assertSame($server, $this->client->track($server, self::PROJECT));
+
+        $this->assertSame([
+            'AgentCat setup started | project ' . self::PROJECT . ' | sdk mcp-sdk/server | signals mcpSdkServer',
+            'Warning: Failed to track server - UnexpectedValueException: the mcp/sdk registry holds a tool AgentCat cannot read (string).',
+        ], $this->logger->messages());
+        $this->assertNull(Libraries::trackedServer($server), 'nothing is tracked');
+        Members::writer(Registry::class, 'tools')($registry, $tools); // the member is back
+        $harness = $this->initialized($server);
+        $this->assertSame(['echo'], $this->names($harness->listTools()));
+    }
+
+    /** A Builder tracked after buildStateless(): the StatelessProtocol shares its handlers and registry (D76). */
+    public function testABuilderTrackedAfterBuildStatelessIsTracked(): void
+    {
+        $builder = TrackingFixture::builder();
+        Tools::echo($builder);
+        $protocol = $builder->buildStateless();
+
+        $this->client->track($builder, self::PROJECT);
+
+        $call = ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/call', 'params' => HttpHarness::modernParams(['name' => 'echo', 'arguments' => ['msg' => 'hi', 'context' => 'why']], ['name' => 'modern-client', 'version' => '2.0.0'])];
+        $answer = json_decode($protocol->handle(json_encode($call, JSON_THROW_ON_ERROR), HttpHarness::modernHeaders('tools/call', 'echo'))->toJson(), flags: JSON_THROW_ON_ERROR);
+        $this->assertSame('echo: hi', JsonAssert::at($answer, 'result', 'content', 1, 'text'), 'after the mint-back text');
+        $this->assertTrue($this->queue->flush());
+        $this->assertCount(1, $this->exporter->events);
+        $this->assertSame('why', $this->exporter->events[0]->userIntent ?? null);
+    }
+
+    /** Each server tracked after build() keeps its tracking state when another one is tracked: its Builder finds it. */
+    public function testTwoServersTrackedAfterBuildStayTracked(): void
+    {
+        $builder = TrackingFixture::builder();
+        $first = $builder->build();
+        $second = TrackingFixture::builder()->build();
+
+        $this->client->track($first, self::PROJECT);
+        $this->client->track($second, self::PROJECT);
+        $this->client->track($builder, self::PROJECT);
+
+        $this->assertSame(['[SESSION DEBUG] track() - Server already being tracked, skipping initialization'], array_values(array_filter($this->logger->messages(), static fn(string $line): bool => str_starts_with($line, '[SESSION DEBUG]'))));
+        $this->assertSame(Libraries::trackedServer($first), Libraries::trackedServer($builder));
+        $this->assertNotSame(Libraries::trackedServer($first), Libraries::trackedServer($second));
+    }
+
+    /** Tracking the Builder and the server built from it, in any order, tracks one server once. */
+    #[DataProvider('builtObjects')]
+    public function testTrackingTheOtherObjectAgainChangesNothing(bool $builderFirst): void
     {
         $builder = TrackingFixture::builder();
         Tools::echo($builder);
         $server = $builder->build();
 
-        $this->assertSame($builder, $this->client->track($builder, self::PROJECT));
+        $this->client->track($builderFirst ? $builder : $server, self::PROJECT);
+        $this->client->track($builderFirst ? $server : $builder, self::PROJECT);
 
-        $this->assertSame([
-            'AgentCat SDK Compatibility: ' . McpSdkAdapter::SUPPORT_MATRIX,
-            'Warning: Failed to track server - UnexpectedValueException: AgentCat SDK compatibility error: the mcp/sdk Builder was already built. ' . McpSdkAdapter::SUPPORT_MATRIX,
-        ], $this->logger->messages());
-        $this->assertSame(['echo'], $this->names($this->initialized($server)->listTools()));
-        $this->assertSame(['echo'], $this->names($this->harness($builder)->listTools()), 'no AgentCat handler was added');
+        $this->assertContains('[SESSION DEBUG] track() - Server already being tracked, skipping initialization', $this->logger->messages());
+        $harness = $this->initialized($server);
+        $this->assertSame(['echo', GetMoreTools::NAME], $this->names($harness->listTools()));
+        $harness->callTool('echo', ['msg' => 'hi', 'context' => 'why']);
+        $this->assertTrue($this->queue->flush());
+        $this->assertCount(1, $this->exporter->events);
     }
 
     /** When `Builder::$parts` cannot be read, track() returns the Builder untracked, and the lines name the member. */
@@ -279,7 +405,7 @@ final class ClientTrackTest extends TestCase
         Tools::echo($builder);
         // The member becomes unreadable after the probe, while AgentCat logs its start line: install() then fails.
         $remove = static function () use ($builder): void {
-            BuilderMembers::uninitialize('referenceHandler')($builder);
+            BuilderMembers::uninitialize('requestHandlers')($builder);
         };
         $logger = new class ($remove) extends AbstractLogger {
             /** @var list<string> */
@@ -304,10 +430,10 @@ final class ClientTrackTest extends TestCase
 
         $this->assertSame([
             'AgentCat setup started | project ' . self::PROJECT . ' | sdk mcp-sdk/builder | signals mcpSdkBuilder',
-            'Warning: Failed to track server - Error: Typed property Mcp\Server\Builder::$referenceHandler must not be accessed before initialization',
+            'Warning: Failed to track server - Error: Typed property Mcp\Server\Builder::$requestHandlers must not be accessed before initialization',
         ], $logger->lines);
-        $this->assertNull(BuilderAccess::container($builder), 'AgentCat set no container');
-        $harness = $this->harness($builder); // build() reads the missing member with ??, which tolerates it
+        BuilderMembers::writer('requestHandlers')($builder, []); // the member is back
+        $harness = $this->harness($builder);
         $this->assertSame(['echo'], $this->names($harness->listTools()));
         $this->assertSame('echo: hi', JsonAssert::at(HttpHarness::result($harness->callTool('echo', ['msg' => 'hi'])), 'content', 0, 'text'));
         $this->assertTrue($this->queue->flush());
@@ -652,7 +778,7 @@ final class ClientTrackTest extends TestCase
         Log::reset();
         $builderLogger = new MemoryLogger();
         $builder = TrackingFixture::builder()->setLogger($builderLogger);
-        $builder->build();
+        BuilderMembers::uninitialize('parts')($builder);
 
         $this->client->track($builder, self::PROJECT);
 

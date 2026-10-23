@@ -38,7 +38,9 @@ if ($diagnostics !== null) {
     putenv('AGENTCAT_DISABLE_DIAGNOSTICS=false');
 }
 
-AgentCat::track($builder, 'proj_' . str_repeat('e', 27), new Options(
+// AGENTCAT_E2E_TRACK=server tracks the built server instead of the Builder (D76): the same tests run on both.
+$tracked = getenv('AGENTCAT_E2E_TRACK') === 'server' ? $builder->build() : $builder;
+AgentCat::track($tracked, 'proj_' . str_repeat('e', 27), new Options(
     identify: static function (ToolCall $call) use ($markers): Identity {
         if (($call->headers['x-e2e-identify-sleep'] ?? '') === '1') {
             usleep(3_000_000);
@@ -51,7 +53,8 @@ AgentCat::track($builder, 'proj_' . str_repeat('e', 27), new Options(
 ));
 
 $factory = new Psr17Factory();
-$response = $builder->build()->run(new StreamableHttpTransport($factory->createServerRequestFromGlobals(), $factory, $factory));
+$server = $tracked instanceof Mcp\Server ? $tracked : $builder->build();
+$response = $server->run(new StreamableHttpTransport($factory->createServerRequestFromGlobals(), $factory, $factory));
 $body = (string) $response->getBody();
 http_response_code($response->getStatusCode());
 foreach ($response->getHeaders() as $name => $values) {

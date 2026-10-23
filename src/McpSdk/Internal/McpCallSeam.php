@@ -29,6 +29,9 @@ final class McpCallSeam implements CallSeam
     /** The request sent to the library by `callStripped()`: the key of the stashed tool exception. */
     private ?CallToolRequest $sent = null;
 
+    /** The tool's exception that `observe()` took from the stash. */
+    private ?\Throwable $thrown = null;
+
     /**
      * @param RequestHandlerInterface<mixed> $delegate the handler that answers after AgentCat's
      * @param \Closure(): (RequestHandlerInterface<mixed>|null) $listDelegate the handler that lists after AgentCat's
@@ -89,11 +92,17 @@ final class McpCallSeam implements CallSeam
         return $this->delegate->handle($this->sent, $this->session);
     }
 
+    /** The exception of the tool, once `observe()` ran: null when the tool did not throw. */
+    public function thrown(): ?\Throwable
+    {
+        return $this->thrown;
+    }
+
     /** @param Response<mixed>|Error $result */
     #[\Override]
     public function observe(mixed $result): Observed
     {
-        $thrown = $this->stash->take($this->sent);
+        $thrown = $this->thrown = $this->stash->take($this->sent);
 
         return $result instanceof Error
             ? new Observed(protocolError: $result->message, thrown: $thrown)

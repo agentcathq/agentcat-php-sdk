@@ -7,6 +7,7 @@ namespace AgentCat\Tests\Contract;
 use AgentCat\Internal\Access\TouchesPrivateMember;
 use Laravel\Mcp\Server\Methods\CallTool;
 use Laravel\Mcp\Server\ToolInvoker;
+use Mcp\Capability\Discovery\SchemaValidator;
 use Mcp\Schema\Result\CallToolResult;
 use Mcp\Schema\Result\ListToolsResult;
 
@@ -24,6 +25,7 @@ final class PrivateMemberManifest
     public const array EXTENDED = [
         CallTool::class => 'handle(Laravel\\Mcp\\Transport\\JsonRpcRequest $request, Laravel\\Mcp\\Server\\ServerContext $context): Generator|Laravel\\Mcp\\Transport\\JsonRpcResponse',
         ToolInvoker::class => 'toErrorResponse(Throwable $e): Laravel\\Mcp\\Response',
+        SchemaValidator::class => 'validateAgainstJsonSchema(mixed $data, object|array $schema): array',
         CallToolResult::class => '__construct(array $content, bool $isError = false, mixed $structuredContent = null, ?array $meta = null)',
         ListToolsResult::class => '__construct(array $tools, ?string $nextCursor = null)',
     ];

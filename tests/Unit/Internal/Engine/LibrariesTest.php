@@ -51,7 +51,7 @@ final class LibrariesTest extends TestCase
     {
         $this->assertSame(McpSdkAdapter::SUPPORT_MATRIX . ' ' . LaravelMcpAdapter::SUPPORT_MATRIX, Libraries::supportMatrix());
         $this->assertSame(
-            'AgentCat supports mcp/sdk 0.8.1+ (pass the Mcp\Server\Builder to AgentCat::track() before build()). AgentCat supports laravel/mcp 1.0+ (the Laravel service provider tracks every server).',
+            'AgentCat supports mcp/sdk 0.8.1+ (pass the Mcp\Server\Builder or the Mcp\Server built from it to AgentCat::track()). AgentCat supports laravel/mcp 1.0+ (the Laravel service provider tracks every server).',
             Libraries::supportMatrix(),
         );
     }
