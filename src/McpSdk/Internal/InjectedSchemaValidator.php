@@ -28,7 +28,7 @@ final class InjectedSchemaValidator extends SchemaValidator
         LoggerInterface $logger,
         private readonly array $injected,
     ) {
-        parent::__construct($logger);
+        parent::__construct(logger: $logger); // named: mcp/sdk 0.9 puts a validator first
     }
 
     /**

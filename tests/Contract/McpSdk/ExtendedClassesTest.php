@@ -11,6 +11,7 @@ use Mcp\Schema\Result\ListToolsResult;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 
 /**
  * AgentCat answers `tools/list` and `tools/call` with subclasses of the library's result classes, so that a
@@ -45,7 +46,11 @@ final class ExtendedClassesTest extends TestCase
         $this->assertFalse($method->isFinal(), 'validateAgainstJsonSchema() is final');
         $this->assertTrue($method->isPublic());
         $this->assertSame(PrivateMemberManifest::EXTENDED[SchemaValidator::class], $this->signature($method) . ': ' . $method->getReturnType());
-        $this->assertTrue($constructor === null || $constructor->getNumberOfRequiredParameters() === 0, 'InjectedSchemaValidator calls parent::__construct() without arguments');
+        $this->assertInstanceOf(\ReflectionMethod::class, $constructor);
+        $this->assertSame(0, $constructor->getNumberOfRequiredParameters(), 'InjectedSchemaValidator passes the logger only');
+        $logger = array_values(array_filter($constructor->getParameters(), static fn(\ReflectionParameter $parameter): bool => $parameter->getName() === 'logger'));
+        $this->assertCount(1, $logger, 'InjectedSchemaValidator passes it as the named argument logger');
+        $this->assertSame(LoggerInterface::class, (string) $logger[0]->getType());
     }
 
     /** @param class-string $class */
