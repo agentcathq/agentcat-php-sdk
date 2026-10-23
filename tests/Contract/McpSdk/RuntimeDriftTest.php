@@ -17,12 +17,9 @@ use AgentCat\McpSdk\Internal\CallToolInterceptor;
 use AgentCat\McpSdk\Internal\ListToolsInterceptor;
 use AgentCat\McpSdk\McpSdkAdapter;
 use AgentCat\Options;
-use AgentCat\Tests\Support\JsonAssert;
 use AgentCat\Tests\Support\McpSdk\BuilderMembers;
 use AgentCat\Tests\Support\McpSdk\HttpHarness;
-use AgentCat\Tests\Support\McpSdk\NameService;
 use AgentCat\Tests\Support\McpSdk\RecordingTool;
-use AgentCat\Tests\Support\McpSdk\WiredTool;
 use AgentCat\Tests\Support\MemoryLogger;
 use AgentCat\Tests\Support\RecordingTransport;
 use AgentCat\Tests\Support\Thrown;
@@ -44,11 +41,9 @@ use Psr\Log\NullLogger;
 #[Group('contract')]
 final class RuntimeDriftTest extends TestCase
 {
-    private const string COMPATIBILITY = 'AgentCat SDK Compatibility: AgentCat supports mcp/sdk 0.8.1+ (pass the Mcp\Server\Builder to AgentCat::track() before build()).';
+    private const string COMPATIBILITY = 'AgentCat SDK Compatibility: AgentCat supports mcp/sdk 0.8.1+ (pass the Mcp\Server\Builder or the Mcp\Server built from it to AgentCat::track()).';
 
     private MemoryLogger $logger;
-
-    private RecordingTransport $transport;
 
     private EventQueue $queue;
 
@@ -57,8 +52,8 @@ final class RuntimeDriftTest extends TestCase
     {
         $this->logger = new MemoryLogger();
         Log::setLogger($this->logger);
-        $this->transport = new RecordingTransport();
-        $this->queue = new EventQueue(transport: $this->transport);
+        $transport = new RecordingTransport();
+        $this->queue = new EventQueue(transport: $transport);
     }
 
     #[\Override]
@@ -232,24 +227,6 @@ final class RuntimeDriftTest extends TestCase
         $this->assertObjectHasProperty('result', $answer);
         $this->assertNull($server->registry, 'nothing to rebuild from');
         $this->assertSame(['queueLength' => 1, 'activeRequests' => 0], $this->queue->stats(), 'the call is still traced');
-        $this->assertSame([self::COMPATIBILITY], $this->logger->messages());
-    }
-
-    public function testAnUnreadableContainerFallsBackToTheLibraryDefault(): void
-    {
-        $builder = $this->builder()->addTool(WiredTool::class, name: 'wired');
-        [, $harness] = $this->tracked($builder);
-        BuilderMembers::uninitialize('container')($builder);
-        $harness->initialize();
-        $harness->listTools();
-
-        $first = $harness->callTool('echo', ['msg' => 'hi', 'session_id' => 'start']);
-        $second = $harness->callTool('wired', ['name' => 'Ada', 'session_id' => 'start']);
-
-        $this->assertSame('ok', JsonAssert::at(HttpHarness::result($first), 'content', 1, 'text'));
-        $this->assertSame('wired Ada (' . NameService::class . ')', JsonAssert::at(HttpHarness::result($second), 'content', 1, 'text'), 'autowired like the library default');
-        $this->assertTrue($this->queue->flush());
-        $this->assertCount(2, $this->transport->deliveries, 'both calls are traced');
         $this->assertSame([self::COMPATIBILITY], $this->logger->messages());
     }
 

@@ -15,25 +15,19 @@ use PHPUnit\Framework\TestCase;
 
 final class CapturingReferenceHandlerTest extends TestCase
 {
-    public function testTheInnerHandlerIsResolvedOnceAndAnswersUnchanged(): void
+    public function testTheInnerHandlerAnswersUnchanged(): void
     {
-        $resolutions = new \ArrayObject();
-        $handler = new CapturingReferenceHandler(static function () use ($resolutions): ReferenceHandlerInterface {
-            $resolutions->append(true);
-
-            return self::inner(static fn(array $arguments): mixed => $arguments['n'] ?? null);
-        }, new ThrowableStash());
+        $handler = new CapturingReferenceHandler($this->inner(static fn(array $arguments): mixed => $arguments['n'] ?? null), new ThrowableStash());
 
         $this->assertSame(1, $handler->handle(self::tool(), ['n' => 1]));
         $this->assertSame(2, $handler->handle(self::tool(), ['n' => 2]));
-        $this->assertCount(1, $resolutions);
     }
 
     public function testAToolExceptionIsStashedForItsRequestAndRethrown(): void
     {
         $error = new \RuntimeException('tool boom');
         $stash = new ThrowableStash();
-        $handler = new CapturingReferenceHandler(static fn(): ReferenceHandlerInterface => self::inner(static function () use ($error): never {
+        $handler = new CapturingReferenceHandler($this->inner(static function () use ($error): never {
             throw $error;
         }), $stash);
         $request = new \stdClass();
@@ -48,7 +42,7 @@ final class CapturingReferenceHandlerTest extends TestCase
     {
         $error = new \RuntimeException('prompt boom');
         $stash = new ThrowableStash();
-        $handler = new CapturingReferenceHandler(static fn(): ReferenceHandlerInterface => self::inner(static function () use ($error): never {
+        $handler = new CapturingReferenceHandler($this->inner(static function () use ($error): never {
             throw $error;
         }), $stash);
         $request = new \stdClass();
@@ -66,7 +60,7 @@ final class CapturingReferenceHandlerTest extends TestCase
     }
 
     /** @param \Closure(array<string, mixed>): mixed $answer */
-    private static function inner(\Closure $answer): ReferenceHandlerInterface
+    private function inner(\Closure $answer): ReferenceHandlerInterface
     {
         return new readonly class ($answer) implements ReferenceHandlerInterface {
             /** @param \Closure(array<string, mixed>): mixed $answer */

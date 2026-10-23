@@ -7,9 +7,12 @@ namespace AgentCat\Tests\Integration\McpSdk;
 use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\SdkVersion;
 use AgentCat\McpSdk\McpSdkAdapter;
+use AgentCat\Tests\Support\McpSdk\BuilderMembers;
 use AgentCat\Tests\Support\MemoryLogger;
 use AgentCat\Tests\Support\Thrown;
+use Mcp\Capability\RegistryInterface;
 use Mcp\Server;
+use Mcp\Server\Handler\Request\InitializeHandler;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LogLevel;
@@ -17,7 +20,7 @@ use Psr\Log\NullLogger;
 
 final class McpSdkAdapterTest extends TestCase
 {
-    private const string MATRIX = 'AgentCat supports mcp/sdk 0.8.1+ (pass the Mcp\Server\Builder to AgentCat::track() before build()).';
+    private const string MATRIX = 'AgentCat supports mcp/sdk 0.8.1+ (pass the Mcp\Server\Builder or the Mcp\Server built from it to AgentCat::track()).';
 
     private MemoryLogger $logger;
 
@@ -42,12 +45,12 @@ final class McpSdkAdapterTest extends TestCase
 
         yield 'Builder' => [Server::builder(), true];
         yield 'built Builder' => [$built, true];
-        yield 'Server' => [Server::builder()->build(), false];
+        yield 'Server' => [Server::builder()->build(), true];
         yield 'anything else' => [new \stdClass(), false];
     }
 
     #[DataProvider('servers')]
-    public function testOnlyABuilderIsSupported(object $server, bool $supported): void
+    public function testABuilderAndAServerAreSupported(object $server, bool $supported): void
     {
         $this->assertSame($supported, McpSdkAdapter::supports($server));
     }
@@ -77,15 +80,59 @@ final class McpSdkAdapterTest extends TestCase
         $this->assertSame([], $this->logger->messages());
     }
 
-    public function testABuiltBuilderFailsInspection(): void
+    public function testABuiltBuilderAndABuiltServerPassInspection(): void
     {
         $builder = Server::builder();
-        $builder->build();
+        $server = $builder->build();
+
+        McpSdkAdapter::inspect($builder);
+        McpSdkAdapter::inspect($server);
+
+        $this->assertSame([], $this->logger->messages());
+    }
+
+    public function testABuilderWhoseHandlerListCannotBeReadFailsInspection(): void
+    {
+        $builder = Server::builder();
+        BuilderMembers::uninitialize('requestHandlers')($builder);
 
         $error = Thrown::by(\UnexpectedValueException::class, static fn() => McpSdkAdapter::inspect($builder));
 
-        $this->assertSame('AgentCat SDK compatibility error: the mcp/sdk Builder was already built. ' . self::MATRIX, $error->getMessage());
-        $this->assertNull($error->getPrevious());
+        $this->assertSame(sprintf('AgentCat SDK compatibility error: mcp/sdk %s internals changed (Error: Typed property Mcp\Server\Builder::$requestHandlers must not be accessed before initialization). %s', McpSdkAdapter::version(), self::MATRIX), $error->getMessage());
+    }
+
+    public function testABuiltBuilderWithoutTheLibrarysCallHandlerFailsInspection(): void
+    {
+        $builder = Server::builder();
+        $builder->build();
+        $parts = BuilderMembers::reader('parts')($builder);
+        $this->assertIsArray($parts);
+        $parts['requestHandlers'] = [];
+        BuilderMembers::writer('parts')($builder, $parts);
+
+        $error = Thrown::by(\UnexpectedValueException::class, static fn() => McpSdkAdapter::inspect($builder));
+
+        $this->assertSame('AgentCat SDK compatibility error: the mcp/sdk server has no tools/call handler of its own. ' . self::MATRIX, $error->getMessage());
+    }
+
+    /** The first `initialize` handler names the server; one without a configuration names none, and nothing drifted. */
+    public function testABuiltServerWhoseInitializeHandlerHasNoConfigurationHasNoName(): void
+    {
+        $server = Server::builder()->setServerInfo('named', '1.0.0')->addRequestHandler(new InitializeHandler())->build();
+
+        $this->assertSame([null, null], McpSdkAdapter::serverInfo($server)());
+        $this->assertSame(['named', '1.0.0'], McpSdkAdapter::serverInfo(Server::builder()->setServerInfo('named', '1.0.0')->build())());
+        $this->assertSame([], $this->logger->messages());
+    }
+
+    public function testAServerWithARegistryOfItsOwnFailsInspection(): void
+    {
+        $registry = self::createStub(RegistryInterface::class);
+        $server = Server::builder()->setRegistry($registry)->build();
+
+        $error = Thrown::by(\UnexpectedValueException::class, static fn() => McpSdkAdapter::inspect($server));
+
+        $this->assertSame('AgentCat SDK compatibility error: the mcp/sdk server has a registry of its own (' . $registry::class . '). ' . self::MATRIX, $error->getMessage());
         $this->assertSame([['level' => LogLevel::WARNING, 'message' => 'AgentCat SDK Compatibility: ' . self::MATRIX]], $this->logger->records);
     }
 

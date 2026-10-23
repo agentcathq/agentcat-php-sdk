@@ -19,13 +19,14 @@ use Psr\Log\NullLogger;
 
 final class McpSdkLibraryTest extends TestCase
 {
-    public function testTheLibraryAnswersForTheBuilder(): void
+    public function testTheLibraryAnswersForTheBuilderAndTheBuiltServer(): void
     {
         $library = new McpSdkLibrary();
         $builder = Server::builder();
 
         $this->assertTrue($library->supports($builder));
-        $this->assertFalse($library->supports(Server::builder()->build()));
+        $this->assertTrue($library->supports(Server::builder()->build()));
+        $this->assertFalse($library->supports(new \stdClass()));
         $this->assertSame('mcp-sdk/builder', $library->sdk($builder));
         $this->assertSame('mcp-sdk/server', $library->sdk(Server::builder()->build()));
         $this->assertSame(McpSdkAdapter::SUPPORT_MATRIX, $library->supportMatrix());
@@ -53,6 +54,13 @@ final class McpSdkLibraryTest extends TestCase
         $this->assertSame(['library-server', '2.0.0'], $info());
     }
 
+    public function testServerInfoReadsTheBuiltServer(): void
+    {
+        $info = (new McpSdkLibrary())->serverInfo(Server::builder()->setServerInfo('built-server', '3.0.0')->build());
+
+        $this->assertSame(['built-server', '3.0.0'], $info());
+    }
+
     public function testTheBuilderStepsRefuseAnyOtherObject(): void
     {
         $library = new McpSdkLibrary();
@@ -66,7 +74,7 @@ final class McpSdkLibraryTest extends TestCase
             'install' => static fn() => $library->install($object, $state, $publisher, new CallInterceptor($publisher)),
         ];
         foreach ($steps as $step => $run) {
-            $this->assertSame('Not an mcp/sdk Builder: stdClass', Thrown::by(\UnexpectedValueException::class, $run)->getMessage(), $step);
+            $this->assertSame('Not an mcp/sdk Builder or server: stdClass', Thrown::by(\UnexpectedValueException::class, $run)->getMessage(), $step);
         }
     }
 }

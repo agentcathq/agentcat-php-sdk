@@ -69,7 +69,7 @@ Once you have your project ID, set up AgentCat for your MCP library below; the [
 
 ### Plain `mcp/sdk`
 
-Install AgentCat next to `mcp/sdk` (`composer require agentcat/sdk mcp/sdk`), then track the `Mcp\Server\Builder` with one call, before `build()`:
+Install AgentCat next to `mcp/sdk` (`composer require agentcat/sdk mcp/sdk`), then track the server with one call. Pass the `Mcp\Server\Builder` or the `Mcp\Server` built from it, before or after your tools:
 
 ```php
 <?php

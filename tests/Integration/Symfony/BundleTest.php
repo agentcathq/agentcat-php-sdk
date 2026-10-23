@@ -175,14 +175,13 @@ final class BundleTest extends SymfonyTestCase
     public static function handlersCalls(): iterable
     {
         yield 'the bundle\'s own shape' => [null, 1];
-        yield 'a named argument' => [static fn(TaggedIteratorArgument $handlers): array => ['$handlers' => $handlers], 0];
-        yield 'a list of services' => [static fn(TaggedIteratorArgument $handlers): array => [[new Reference(CustomerCallHandler::class)]], 0];
+        yield 'a named argument' => [static fn(TaggedIteratorArgument $handlers): array => ['$handlers' => $handlers], 1];
+        yield 'a list of services' => [static fn(TaggedIteratorArgument $handlers): array => [[new Reference(CustomerCallHandler::class)]], 1];
     }
 
     /**
-     * With a compiled container, an `addRequestHandlers` call of another shape stays where it is. The customer's
-     * handler still answers; it comes before AgentCat's, which still tracks the server (its listing), but no longer
-     * sees the calls that the customer's handler answers.
+     * With a compiled container, an `addRequestHandlers` call of another shape stays where it is, before AgentCat's
+     * track(). AgentCat's handlers still come first: the customer's handler answers, and AgentCat records the call.
      *
      * @param (\Closure(TaggedIteratorArgument): array<array-key, mixed>)|null $shape
      */

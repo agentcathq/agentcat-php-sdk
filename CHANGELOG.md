@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `AgentCat::track()` takes the `Mcp\Server` built from a Builder, and a Builder after `build()` or `buildStateless()`, so `track()` can come before or after them.
+  A server tracked after `build()` gives no event for a call to an unknown tool, a call whose arguments fail the tool's schema, or a call that a `tools/call` handler of your own answers; with a reference handler of your own (`setReferenceHandler()`), track the Builder before `build()`.
+
+### Changed
+
+- AgentCat's request handlers come before every handler of the Builder, wherever `track()` is in your code.
+  A `tools/call` or `tools/list` handler that you add with `addRequestHandler()` before `track()`, or in a compiler pass of your own in Symfony, is now tracked: its listing gets AgentCat's parameters and `get_more_tools`, and each call gives an event.
+- With `setReferenceHandler()` after `track()`, the error event of a failing tool now carries the tool's exception.
+
 ## [1.0.0] - 2026-10-22
 
 ### Added
