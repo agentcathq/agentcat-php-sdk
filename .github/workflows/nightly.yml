@@ -2,7 +2,7 @@ name: Nightly
 
 on:
   schedule:
-    - cron: '17 3 * * *'
+    - cron: '0 2 * * *'
   workflow_dispatch:
     inputs:
       force_failure:
@@ -10,10 +10,9 @@ on:
         required: false
         default: ''
         type: string
+  # Every pull request starts the workflow; the `changes` job then runs the compat jobs only when the pull request
+  # changes SDK code, and the other jobs only when it changes this workflow or its issue script.
   pull_request:
-    paths:
-      - '.github/workflows/nightly.yml'
-      - '.github/nightly-issue.sh'
 
 permissions:
   contents: read
@@ -25,8 +24,53 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Which jobs a pull request runs. Scheduled and dispatched runs run every job.
+  changes:
+    name: Changed files
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      sdk: ${{ steps.changes.outputs.sdk }}
+      workflow: ${{ steps.changes.outputs.workflow }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      # SDK code: the library, its manifest and dist attributes, the tests and scripts that the compat jobs run, their
+      # PHPStan and PHPUnit configuration, and this workflow with its issue script.
+      - name: Compare the pull request with its base
+        id: changes
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT" != pull_request ]; then
+            { echo sdk=true; echo workflow=true; } >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files="$(git diff --name-only "$BASE...$HEAD")"
+          printf '%s\n' "$files"
+          sdk=false
+          workflow=false
+          if grep -qE '^(src/|config/|resources/|tests/|composer\.json$|\.gitattributes$|phpstan\.neon\.dist$|phpstan\.no-bundle\.neon$|phpunit\.xml\.dist$|\.github/workflows/nightly\.yml$|\.github/nightly-issue\.sh$)' <<<"$files"; then sdk=true; fi
+          if grep -qE '^\.github/(workflows/nightly\.yml|nightly-issue\.sh)$' <<<"$files"; then workflow=true; fi
+          { echo "sdk=${sdk}"; echo "workflow=${workflow}"; } >>"$GITHUB_OUTPUT"
+          echo "SDK code changed: ${sdk}; this workflow changed: ${workflow}" >>"$GITHUB_STEP_SUMMARY"
+      - name: Fail on purpose (workflow_dispatch force_failure)
+        if: github.event_name == 'workflow_dispatch' && inputs.force_failure == github.job
+        run: exit 1
+      - name: Open or update the nightly issue
+        if: failure() && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/nightly-issue.sh "${{ github.job }}"
+
   mcp-sdk-dev-main:
     name: mcp/sdk dev-main (PHP 8.5)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.sdk == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -70,6 +114,8 @@ jobs:
 
   laravel-mcp-dev-main:
     name: laravel/mcp dev-main (PHP 8.5)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.sdk == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -111,6 +157,8 @@ jobs:
 
   mcp-bundle-dev-main:
     name: symfony/mcp-bundle dev-main (PHP 8.5)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.sdk == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -152,6 +200,8 @@ jobs:
 
   discover:
     name: Discover the MCP library releases (Packagist)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.sdk == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -289,6 +339,8 @@ jobs:
 
   php-nightly:
     name: Tests (PHP nightly)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -319,6 +371,8 @@ jobs:
 
   mutation-full:
     name: Mutation testing (full run)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -345,6 +399,8 @@ jobs:
 
   audit:
     name: Composer audit (highest dependencies)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -371,6 +427,8 @@ jobs:
 
   network:
     name: Network tests (live OpenAPI schema)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -397,6 +455,8 @@ jobs:
 
   runtime-latest:
     name: Runtime delivery (Docker, latest image patches)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -439,6 +499,8 @@ jobs:
 
   package-dev-main:
     name: Package probe (PHP 8.3, mcp/sdk dev-main)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.sdk == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -463,6 +525,8 @@ jobs:
 
   member-snapshot:
     name: Member snapshot (${{ matrix.library }} dev-main)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.sdk == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -513,6 +577,8 @@ jobs:
 
   branding-drift:
     name: README branding drift (TypeScript SDK main)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
