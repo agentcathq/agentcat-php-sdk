@@ -1,4 +1,4 @@
-<!-- agentcat-typescript-sdk 9b56e9e README.md, verbatim below this line -->
+<!-- agentcat-typescript-sdk 170e1f4 README.md, verbatim below this line -->
 <div align="center">
   <img alt="AgentCat — see exactly how agents experience your product" src="docs/static/og-image.png" width="80%">
 </div>
@@ -13,7 +13,7 @@
     <span> · </span>
     <a href="#free-for-open-source">Open Source</a>
     <span> · </span>
-    <a href="https://meet.agentcat.com/meet">Schedule a Demo</a>
+    <a href="https://book.agentcat.com/meet">Schedule a Demo</a>
 </h3>
 <p align="center">
   <a href="https://badge.fury.io/js/agentcat"><img src="https://badge.fury.io/js/agentcat.svg" alt="npm version"></a>

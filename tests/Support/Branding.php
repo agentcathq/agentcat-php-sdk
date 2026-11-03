@@ -19,7 +19,7 @@ final class Branding
     public const string IMAGE_BASE = 'https://raw.githubusercontent.com/agentcathq/agentcat-php-sdk/main/';
 
     /** The first line of the TypeScript README copy; the README follows it byte for byte. */
-    public const string FIXTURE_HEADER = '<!-- agentcat-typescript-sdk 9b56e9e README.md, verbatim below this line -->';
+    public const string FIXTURE_HEADER = '<!-- agentcat-typescript-sdk 170e1f4 README.md, verbatim below this line -->';
 
     /** The shared sections under a heading of their own, by heading text. Getting Started shares its first paragraph only. */
     private const array HEADED = [
