@@ -21,7 +21,9 @@ require dirname(__DIR__, 3) . '/vendor/autoload.php';
 // curl_multi_exec() right after that call returns, inside CurlMulti::run(). A SIGUSR1 probe flood from a forked child
 // finds that moment: the probe handler runs at the curl_multi_exec() line of CurlMulti.php (PHP 8.3), or right below
 // the curl_multi_exec() frame (PHP 8.4+ runs it before it pops that frame), in a run() of the `transport` or the
-// `channel`. The probe then queues one more event, "drain", and sends SIGTERM, which PHP runs right after the probe. The drain must deliver "drain" on the event transport and its export on the side channel,
+// `channel`. A zero-time wait excludes a callback return that has the same stack while libcurl is still busy.
+// The probe then queues one more event, "drain", and sends SIGTERM, which PHP runs right after the probe.
+// The drain must deliver "drain" on the event transport and its export on the side channel,
 // then SIGTERM ends the process. Prints "sigterm <time>" to STDERR.
 // Usage: signal-after-exec.php <transport|channel> <large-answer-url> <events-url> <exports-url>
 $mode = $argv[1] ?? '';
@@ -65,13 +67,21 @@ $queue->configure($mode === 'transport' ? $largeUrl : $eventsUrl);
 $sent = false;
 pcntl_async_signals(true);
 pcntl_signal(SIGUSR1, static function () use ($queue, $eventsUrl, $execLine, $caller, $child, &$sent): void {
-    $frames = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS);
+    $frames = debug_backtrace(0, 4);
     $exec = ($frames[1]['function'] ?? '') === 'curl_multi_exec' ? 1 : 0; // PHP 8.4+: the returned call's frame is still there
     $at = $frames[$exec] ?? [];
     $run = $frames[$exec + 1] ?? [];
     $after = str_ends_with($at['file'] ?? '', '/CurlMulti.php') && ($at['line'] ?? 0) === $execLine && ($run['function'] ?? '') === 'run';
     if ($sent || !$after || ($frames[$exec + 2]['class'] ?? '') !== $caller) {
         return;
+    }
+    if ($exec === 1) {
+        // PHP also dispatches signals after popping a curl callback's frame, before returning to libcurl. The stack
+        // looks like a completed curl_multi_exec(), but libcurl still refuses multi calls. A zero-time wait tells them apart.
+        $multi = $frames[1]['args'][0] ?? null;
+        if (!$multi instanceof \CurlMultiHandle || curl_multi_select($multi, 0.0) === -1) {
+            return;
+        }
     }
     $sent = true;
     posix_kill($child, SIGKILL);
