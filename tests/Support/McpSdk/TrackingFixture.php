@@ -40,7 +40,7 @@ final readonly class TrackingFixture
     /** A Builder for the server `harness-server` 1.2.3. */
     public static function builder(): Builder
     {
-        return Server::builder()->setServerInfo('harness-server', '1.2.3');
+        return Server::builder()->setServerInfo('harness-server', '1.2.3')->setSession();
     }
 
     /** Tracks the Builder (`Entry::BeforeBuild`), or the Builder or its server once `harness()` builds it. */

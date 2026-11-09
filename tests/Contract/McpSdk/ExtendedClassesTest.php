@@ -65,9 +65,13 @@ final class ExtendedClassesTest extends TestCase
         $constructor = $parent->getConstructor();
         $this->assertInstanceOf(\ReflectionMethod::class, $constructor);
         $this->assertTrue($constructor->isPublic());
-        $this->assertSame(PrivateMemberManifest::EXTENDED[$class] ?? null, $this->signature($constructor));
+        $explicitNull = $class === CallToolResult::class && method_exists($class, 'hasStructuredContent');
+        $expected = $explicitNull
+            ? '__construct(array $content, bool $isError = false, mixed $structuredContent = Mcp\\Schema\\Enum\\StructuredContent::Absent, ?array $meta = null)'
+            : PrivateMemberManifest::EXTENDED[$class] ?? null;
+        $this->assertSame($expected, $this->signature($constructor));
         foreach ($constructor->getParameters() as $parameter) {
-            $this->assertTrue($parameter->isPromoted(), $class . '::$' . $parameter->getName() . ' is no longer a promoted property');
+            $this->assertSame(!($explicitNull && $parameter->getName() === 'structuredContent'), $parameter->isPromoted(), $class . '::$' . $parameter->getName() . ' promotion changed');
             $property = $parent->getProperty($parameter->getName());
             $this->assertTrue($property->isPublic() && $property->isReadOnly(), $class . '::$' . $parameter->getName() . ' is not public readonly');
         }
@@ -91,9 +95,12 @@ final class ExtendedClassesTest extends TestCase
         $parameters = array_map(static function (\ReflectionParameter $parameter): string {
             $text = $parameter->getType() . ' $' . $parameter->getName();
 
-            return $parameter->isDefaultValueAvailable()
-                ? $text . ' = ' . json_encode($parameter->getDefaultValue(), JSON_THROW_ON_ERROR)
-                : $text;
+            if (!$parameter->isDefaultValueAvailable()) {
+                return $text;
+            }
+            $default = $parameter->getDefaultValue();
+
+            return $text . ' = ' . ($default instanceof \UnitEnum ? $default::class . '::' . $default->name : json_encode($default, JSON_THROW_ON_ERROR));
         }, $method->getParameters());
 
         return $method->getName() . '(' . implode(', ', $parameters) . ')';

@@ -18,7 +18,11 @@ final class WireCallToolResult extends CallToolResult
 {
     public function __construct(CallToolResult $original, private readonly \stdClass $tree)
     {
-        parent::__construct($original->content, $original->isError, $original->structuredContent, $original->meta);
+        if (array_key_exists('structuredContent', $original->jsonSerialize())) {
+            parent::__construct($original->content, $original->isError, $original->structuredContent, $original->meta);
+        } else {
+            parent::__construct($original->content, $original->isError, meta: $original->meta);
+        }
     }
 
     /** @return array<string, mixed> the tree's members in order */

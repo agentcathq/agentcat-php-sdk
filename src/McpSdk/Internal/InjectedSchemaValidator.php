@@ -46,7 +46,12 @@ final class InjectedSchemaValidator extends SchemaValidator
             if ($original === null) {
                 return [];
             }
-            if (is_array($data)) {
+            if ($data instanceof \stdClass) {
+                $data = clone $data;
+                foreach ($names as $name) {
+                    unset($data->{$name});
+                }
+            } elseif (is_array($data)) {
                 foreach ($names as $name) {
                     unset($data[$name]);
                 }

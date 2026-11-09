@@ -173,7 +173,7 @@ abstract class RequestContextTestCase extends TestCase
         $reader = new RequestReader(static fn(): ?HttpContext => null);
         $session = new Session(new InMemorySessionStore());
 
-        $listed = $reader->read(CallToolRequest::fromArray(['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/call', 'params' => ['name' => 'echo', 'arguments' => ['zero', 'one']]]), $session);
+        $listed = $reader->read(CallToolRequest::fromArray(['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/call', 'params' => ['name' => 'echo', 'arguments' => (object) ['zero', 'one']]]), $session);
         $empty = $reader->read((new CallToolRequest('echo', []))->withId(2), $session);
         $emptyMeta = $reader->read((new CallToolRequest('echo', []))->withId(3)->withMeta([]), $session);
 
