@@ -28,16 +28,6 @@ final class WireResultsTest extends TestCase
         $this->assertSame(['m' => 1], $wire->meta);
     }
 
-    public function testAbsentAndNullStructuredContentKeepTheParentsSerialization(): void
-    {
-        $parentSerializer = new \ReflectionMethod(CallToolResult::class, 'jsonSerialize');
-        foreach ([new CallToolResult([], true, meta: ['m' => 1]), new CallToolResult([], structuredContent: null)] as $original) {
-            $wire = new WireCallToolResult($original, (object) ['content' => []]);
-
-            $this->assertSame($original->jsonSerialize(), $parentSerializer->invoke($wire));
-        }
-    }
-
     public function testAListToolsResultKeepsTheOriginalsTypedFields(): void
     {
         $tools = ['echo' => new Tool(name: 'echo', title: null, inputSchema: ['type' => 'object', 'properties' => [], 'required' => []], description: null, annotations: null)];

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AgentCat\Tests\Contract\McpSdk;
 
+use AgentCat\McpSdk\Internal\WireCallToolResult;
 use AgentCat\Tests\Contract\PrivateMemberManifest;
 use Mcp\Capability\Discovery\SchemaValidator;
 use Mcp\Schema\Result\CallToolResult;
@@ -36,6 +37,16 @@ final class ExtendedClassesTest extends TestCase
         }
     }
 
+    public function testAbsentAndNullStructuredContentKeepTheParentsSerialization(): void
+    {
+        $parentSerializer = new \ReflectionMethod(CallToolResult::class, 'jsonSerialize');
+        foreach ([new CallToolResult([], true, meta: ['m' => 1]), new CallToolResult([], structuredContent: null)] as $original) {
+            $wire = new WireCallToolResult($original, (object) ['content' => []]);
+
+            $this->assertSame($original->jsonSerialize(), $parentSerializer->invoke($wire));
+        }
+    }
+
     public function testTheSchemaValidatorStillHasTheMethodAgentCatOverrides(): void
     {
         $parent = new \ReflectionClass(SchemaValidator::class);
@@ -65,7 +76,7 @@ final class ExtendedClassesTest extends TestCase
         $constructor = $parent->getConstructor();
         $this->assertInstanceOf(\ReflectionMethod::class, $constructor);
         $this->assertTrue($constructor->isPublic());
-        $explicitNull = $class === CallToolResult::class && method_exists($class, 'hasStructuredContent');
+        $explicitNull = $class === CallToolResult::class && $parent->hasMethod('hasStructuredContent');
         $expected = $explicitNull
             ? '__construct(array $content, bool $isError = false, mixed $structuredContent = Mcp\\Schema\\Enum\\StructuredContent::Absent, ?array $meta = null)'
             : PrivateMemberManifest::EXTENDED[$class] ?? null;
