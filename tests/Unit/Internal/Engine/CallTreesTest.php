@@ -34,11 +34,24 @@ final class CallTreesTest extends TestCase
         $this->assertSame($expected, CallTrees::claimedVersion($meta));
     }
 
-    public function testTheRequestTreeHasTheRawArgumentsAndTheMetaAsObjects(): void
+    /** @return iterable<string, array{array<array-key, mixed>|\stdClass}> */
+    public static function requestParams(): iterable
     {
-        $tree = CallTrees::request(['name' => 'echo', 'arguments' => ['old' => true], 'extra' => [1, 2]], ['msg' => 'hi', 'session_id' => 'start'], ['progressToken' => 'p1']);
+        $params = ['name' => 'echo', 'arguments' => ['old' => true], 'extra' => [1, 2]];
 
-        $this->assertSame('{"method":"tools/call","params":{"name":"echo","arguments":{"msg":"hi","session_id":"start"},"extra":[1,2],"_meta":{"progressToken":"p1"}}}', $this->json($tree));
+        yield 'array params' => [$params];
+        yield 'object params' => [(object) $params];
+    }
+
+    /** @param array<array-key, mixed>|\stdClass $params */
+    #[DataProvider('requestParams')]
+    public function testTheRequestTreeHasTheRawArgumentsAndTheMetaAsObjects(array|\stdClass $params): void
+    {
+        $before = $this->json($params);
+        $tree = CallTrees::request($params, ['msg' => 'hi', 'session_id' => 'start', 'object' => new \stdClass(), 'list' => []], ['progressToken' => 'p1']);
+
+        $this->assertSame('{"method":"tools/call","params":{"name":"echo","arguments":{"msg":"hi","session_id":"start","object":{},"list":[]},"extra":[1,2],"_meta":{"progressToken":"p1"}}}', $this->json($tree));
+        $this->assertSame($before, $this->json($params));
     }
 
     #[Group('ac-02-47')]
