@@ -40,7 +40,7 @@ final class ExtendedClassesTest extends TestCase
     public function testAbsentAndNullStructuredContentKeepTheParentsSerialization(): void
     {
         $parentSerializer = new \ReflectionMethod(CallToolResult::class, 'jsonSerialize');
-        foreach ([new CallToolResult([], true, meta: ['m' => 1]), new CallToolResult([], structuredContent: null)] as $original) {
+        foreach ([new CallToolResult([], true, meta: ['m' => 1]), CallToolResult::fromArray(['content' => [], 'structuredContent' => null])] as $original) {
             $wire = new WireCallToolResult($original, (object) ['content' => []]);
 
             $this->assertSame($original->jsonSerialize(), $parentSerializer->invoke($wire));
@@ -82,7 +82,7 @@ final class ExtendedClassesTest extends TestCase
             : PrivateMemberManifest::EXTENDED[$class] ?? null;
         $this->assertSame($expected, $this->signature($constructor));
         foreach ($constructor->getParameters() as $parameter) {
-            $this->assertSame(!($explicitNull && $parameter->getName() === 'structuredContent'), $parameter->isPromoted(), $class . '::$' . $parameter->getName() . ' promotion changed');
+            $this->assertSame(!$explicitNull || $parameter->getName() !== 'structuredContent', $parameter->isPromoted(), $class . '::$' . $parameter->getName() . ' promotion changed');
             $property = $parent->getProperty($parameter->getName());
             $this->assertTrue($property->isPublic() && $property->isReadOnly(), $class . '::$' . $parameter->getName() . ' is not public readonly');
         }
