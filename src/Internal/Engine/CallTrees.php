@@ -32,14 +32,15 @@ final class CallTrees
      * `{"method":"tools/call","params":{…}}`, raw arguments included. The arguments are an object: empty arguments are
      * `{}` and integer keys stay keys. A sent `_meta` is an object too, so a sent `{}` stays `{}`.
      *
-     * @param array<array-key, mixed> $params the request's params, as the library holds them
+     * @param array<array-key, mixed>|\stdClass $params the request's params, as the library holds them
      * @param array<array-key, mixed> $arguments
      * @param array<array-key, mixed>|null $meta null when the call sent none
      *
      * @throws \JsonException for a value JSON cannot carry; a request decoded from JSON holds none
      */
-    public static function request(array $params, array $arguments, ?array $meta): \stdClass
+    public static function request(array|\stdClass $params, array $arguments, ?array $meta): \stdClass
     {
+        $params = (array) $params;
         $params['arguments'] = (object) $arguments;
         if ($meta !== null) {
             $params['_meta'] = (object) $meta;

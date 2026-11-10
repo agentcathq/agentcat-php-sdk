@@ -633,7 +633,7 @@ abstract class CallToolTestCase extends TestCase
         $harness->callTool('echo', $arguments + ['session_id' => 'start']);
 
         $this->assertCount(1, $twin->calls);
-        $this->assertSame($twin->calls, $echo->calls);
+        $this->assertSame(serialize($twin->calls), serialize($echo->calls));
         $this->assertSame(['msg', '0', '123', 'nested', 'session_id'], $this->keys(JsonAssert::at($this->fixture->event()->parameters, 'request', 'params', 'arguments')));
     }
 

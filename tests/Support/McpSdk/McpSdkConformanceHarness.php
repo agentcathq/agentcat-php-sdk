@@ -133,7 +133,7 @@ final class McpSdkConformanceHarness implements ConformanceHarness
     /** A Builder of `conformance-server` 2.0.0, without tools. */
     private static function builder(): Builder
     {
-        return Server::builder()->setServerInfo('conformance-server', '2.0.0');
+        return Server::builder()->setServerInfo('conformance-server', '2.0.0')->setSession();
     }
 
     /** `echo` and `t01` to `t14` with a page size of 15, then `own` on page 2 when `$withOwn`, tracked with defaults. */

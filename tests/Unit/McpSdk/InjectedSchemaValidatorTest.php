@@ -31,6 +31,19 @@ final class InjectedSchemaValidatorTest extends TestCase
         $this->assertSame([], $validator->validateAgainstJsonSchema(['msg' => 'hi', 'session_id' => 'ses_x', 'context' => 'why'], self::INJECTED));
     }
 
+    public function testObjectArgumentsAreStrippedWithoutChangingTheSource(): void
+    {
+        $validator = $this->validator([[self::INJECTED, self::OWN, ['session_id', 'context']]]);
+        $arguments = (object) ['msg' => 'hi', 'session_id' => 'ses_x', 'context' => 'why'];
+        $before = clone $arguments;
+
+        $this->assertSame([], $validator->validateAgainstJsonSchema($arguments, self::INJECTED));
+        $this->assertEquals($before, $arguments);
+        $this->assertNotSame([], $validator->validateAgainstJsonSchema($arguments, self::OWN));
+        $invalid = (object) ['msg' => 7, 'session_id' => 'ses_x', 'extra' => true];
+        $this->assertEquals((new SchemaValidator())->validateAgainstJsonSchema((object) ['msg' => 7, 'extra' => true], self::OWN), $validator->validateAgainstJsonSchema($invalid, self::INJECTED));
+    }
+
     public function testTheErrorsAreTheLibrarysForTheToolsOwnSchema(): void
     {
         $validator = $this->validator([[self::INJECTED, self::OWN, ['session_id', 'context']]]);
