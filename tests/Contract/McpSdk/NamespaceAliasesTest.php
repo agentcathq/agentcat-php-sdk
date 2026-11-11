@@ -16,7 +16,7 @@ final class NamespaceAliasesTest extends TestCase
         $server = Server::builder()->setServerInfo('namespace-test', '1.0')->build();
 
         $expected = class_exists('Mcp\\Server\\Server') ? 'Mcp\\Server\\Server' : Server::class;
-        $this->assertSame($expected, $server::class);
+        $this->assertSame($server::class, $expected);
     }
 
     public function testTheRenamedClassesAndInterfacesKeepTheirIdentity(): void

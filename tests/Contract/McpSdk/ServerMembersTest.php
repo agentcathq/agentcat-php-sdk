@@ -101,7 +101,7 @@ final class ServerMembersTest extends TestCase
 
         $error = Thrown::by(\Error::class, static fn(): Protocol => ServerAccess::protocol($server));
 
-        $this->assertStringContainsString('Mcp\Server::$protocol must not be accessed before initialization', $error->getMessage());
+        $this->assertStringContainsString($server::class . '::$protocol must not be accessed before initialization', $error->getMessage());
     }
 
     public function testUnreadableRequestHandlersThrow(): void
