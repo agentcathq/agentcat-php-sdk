@@ -88,7 +88,7 @@ final class PrivateMemberManifest
             $class = 'AgentCat\\' . str_replace('/', '\\', substr($file, strlen($src), -4));
             $parent = class_exists($class) ? get_parent_class($class) : false;
             if ($parent !== false && !str_starts_with($parent, 'AgentCat\\')) {
-                $parents[] = $parent;
+                $parents[] = $parent === 'Mcp\\Server\\Capability\\Discovery\\SchemaValidator' ? SchemaValidator::class : $parent;
             }
         }
         $parents = array_values(array_unique($parents));

@@ -195,11 +195,11 @@ final class MemberSnapshot
     private static function type(?\ReflectionType $type, string $class): string
     {
         $parent = get_parent_class($class);
-        return preg_replace_callback(
+        return \AgentCat\Tests\Contract\McpSdk\NamespaceNames::legacy(preg_replace_callback(
             '/(?<![\\\\\w])(self|parent)(?![\\\\\w])/',
             static fn(array $match): string => $match[1] === 'self' ? $class : ($parent === false ? 'parent' : $parent),
             (string) $type,
-        ) ?? (string) $type;
+        ) ?? (string) $type);
     }
 
     private static function visibility(bool $public, bool $protected): string
