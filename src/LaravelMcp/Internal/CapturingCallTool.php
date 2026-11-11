@@ -38,7 +38,7 @@ final class CapturingCallTool extends CallTool
         }
         $tool = $context->tools()->first(
             static fn(Tool $tool): bool => $tool->name() === $name,
-            static fn(): never => throw new JsonRpcException(sprintf('Tool [%s] not found.', (string) $name), -32602, $request->id),
+            static fn(): never => throw new JsonRpcException(sprintf('Tool [%s] not found.', $name), -32602, $request->id),
         );
 
         return (new CapturingToolInvoker())->capturingInto($this->stash, $request)->invoke($tool, $request);
