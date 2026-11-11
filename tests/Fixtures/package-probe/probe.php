@@ -69,7 +69,7 @@ $deadline = microtime(true) + PROBE_TIMEOUT_SECONDS;
 $buffer = '';
 
 /** Reads stdout until the answer to request $id arrives. */
-$receive = static function (int $id) use ($stdout, &$buffer, $deadline): stdClass {
+$receive = static function (int $id) use ($stdout, $stderrPipe, &$buffer, $deadline): stdClass {
     while (true) {
         while (($newline = strpos($buffer, "\n")) !== false) {
             $line = substr($buffer, 0, $newline);
@@ -89,7 +89,8 @@ $receive = static function (int $id) use ($stdout, &$buffer, $deadline): stdClas
         if (stream_select($read, $write, $except, 0, (int) min(500_000, $remaining * 1_000_000)) === 1) {
             $chunk = fread($stdout, 65536);
             if ($chunk === '' || $chunk === false) {
-                fail('the server closed stdout before it answered request ' . $id);
+                stream_set_blocking($stderrPipe, false);
+                fail('the server closed stdout before it answered request ' . $id . ': ' . stream_get_contents($stderrPipe));
             }
             $buffer .= $chunk;
         }

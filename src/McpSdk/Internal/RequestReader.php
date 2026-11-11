@@ -41,7 +41,7 @@ final readonly class RequestReader
     public function read(CallToolRequest $request, SessionInterface $session): CallContext
     {
         $meta = $request->getMeta();
-        $requestMeta = $session->get(RequestMeta::class);
+        $requestMeta = $session->get(RequestMeta::class) ?? $session->get('Mcp\\Schema\\RequestMeta');
         $requestMeta = $requestMeta instanceof RequestMeta ? $requestMeta : null; // set in the modern era only
         [$clientName, $clientVersion] = ClientIdentity::pick(
             $requestMeta?->clientInfo,

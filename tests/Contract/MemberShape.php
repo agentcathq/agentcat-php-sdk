@@ -45,12 +45,12 @@ final class MemberShape
             Assert::assertTrue(property_exists($member->class, $member->member), $member->class . '::$' . $member->member . ' is gone');
 
             $property = new \ReflectionProperty($member->class, $member->member);
-            Assert::assertSame($member->class, $property->getDeclaringClass()->getName());
+            Assert::assertSame((new \ReflectionClass($member->class))->getName(), $property->getDeclaringClass()->getName());
             Assert::assertSame($member->visibility === 'private', $property->isPrivate());
             Assert::assertSame($member->visibility === 'protected', $property->isProtected());
             Assert::assertSame($member->static, $property->isStatic());
             Assert::assertSame($member->readonly, $property->isReadOnly());
-            Assert::assertSame($member->type, (string) $property->getType());
+            Assert::assertSame($member->type, \AgentCat\Tests\Contract\McpSdk\NamespaceNames::legacy((string) $property->getType()));
         }
     }
 }

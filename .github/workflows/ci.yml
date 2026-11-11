@@ -281,6 +281,8 @@ jobs:
           base="$(git tag --list 'v1.*' --sort=-v:refname | head -n 1)"
           if [ -z "$base" ]; then echo "No v1.* tag yet: nothing to compare against (D63)."; exit 0; fi
           composer global require --no-interaction roave/backward-compatibility-check:8.19.0
+          # Roave installs the historical tag's dependencies too; keep its known advisory visible to audit.
+          composer config --global --json audit.ignore '{"PKSA-s52d-n7sx-trsg":{"apply":"block","reason":"Install the historical SDK tag only for API comparison."}}'
           "$(composer global config bin-dir --absolute)/roave-backward-compatibility-check" --from="$base" --format=github-actions --install-development-dependencies
 
   all-green:

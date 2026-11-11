@@ -23,6 +23,14 @@ return RectorConfig::configure()
         NoSetupWithParentCallOverrideRector::class,
         // Names test-runner classes as strings: PHPUnit and Pest are not dependencies of the SDK (D31). AfterRequest
         // names the Octane event class, which is not a dependency either.
-        StringClassNameToClassConstantRector::class => [__DIR__ . '/src/Internal/Support/TestMode.php', __DIR__ . '/src/Laravel/Internal/AfterRequest.php'],
+        StringClassNameToClassConstantRector::class => [
+            __DIR__ . '/src/Internal/Support/TestMode.php',
+            __DIR__ . '/src/Laravel/Internal/AfterRequest.php',
+            // MCP compatibility names include types absent from older supported releases.
+            __DIR__ . '/src/McpSdk/compat.php',
+            __DIR__ . '/src/McpSdk/Internal/RequestReader.php',
+            __DIR__ . '/tests/Contract/McpSdk/NamespaceNames.php',
+            __DIR__ . '/tests/Integration/McpSdk/RequestContextTestCase.php',
+        ],
     ])
     ->withCache(__DIR__ . '/.cache/rector');

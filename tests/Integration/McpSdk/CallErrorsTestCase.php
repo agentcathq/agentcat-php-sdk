@@ -65,7 +65,7 @@ abstract class CallErrorsTestCase extends TestCase
         $this->assertSame([$this->issued($event->sessionId), 'no luck'], $this->texts($result));
         $this->assertSameAsTheTwinAfterTheIssuedBlock($twin, $result);
         $this->assertTrue($event->isError);
-        $this->assertSame(\Mcp\Exception\ToolCallException::class, JsonAssert::at($event->error, 'type'));
+        $this->assertSame((new \ReflectionClass(\Mcp\Exception\ToolCallException::class))->getName(), JsonAssert::at($event->error, 'type'));
         $this->assertSame('no luck', JsonAssert::at($event->error, 'message'));
         $this->assertNotSame([], JsonAssert::at($event->error, 'frames'), 'the stashed exception wins over the result text');
     }

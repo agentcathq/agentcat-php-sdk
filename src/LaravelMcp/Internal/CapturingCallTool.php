@@ -32,13 +32,13 @@ final class CapturingCallTool extends CallTool
     public function handle(JsonRpcRequest $request, ServerContext $context): \Generator|JsonRpcResponse
     {
         $name = $request->get('name');
-        if (!is_scalar($name)) {
+        if (!is_string($name)) {
             // No name, or one that no tool has: the library answers, and fails, on its own, with its own message.
             return parent::handle($request, $context);
         }
         $tool = $context->tools()->first(
             static fn(Tool $tool): bool => $tool->name() === $name,
-            static fn(): never => throw new JsonRpcException(sprintf('Tool [%s] not found.', (string) $name), -32602, $request->id),
+            static fn(): never => throw new JsonRpcException(sprintf('Tool [%s] not found.', $name), -32602, $request->id),
         );
 
         return (new CapturingToolInvoker())->capturingInto($this->stash, $request)->invoke($tool, $request);
