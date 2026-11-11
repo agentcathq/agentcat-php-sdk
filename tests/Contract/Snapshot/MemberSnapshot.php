@@ -121,6 +121,7 @@ final class MemberSnapshot
     private static function ofClass(string $class): array
     {
         $reflection = new \ReflectionClass($class);
+        $class = $reflection->getName();
 
         $constants = [];
         foreach ($reflection->getReflectionConstants() as $constant) {

@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 // Type declarations and instanceof do not autoload aliases, so register the adapter's renamed types up front.
 // Composer runs this only after its loader is ready; installations without mcp/sdk define no aliases.
-foreach ([
+/** @var array<string, string> $aliases */
+$aliases = [
     'Mcp\\Server' => 'Mcp\\Server\\Server',
     'Mcp\\Capability\\Attribute\\CompletionProvider' => 'Mcp\\Server\\Capability\\Attribute\\CompletionProvider',
     'Mcp\\Capability\\Attribute\\McpTool' => 'Mcp\\Server\\Capability\\Attribute\\McpTool',
@@ -20,9 +21,10 @@ foreach ([
     'Mcp\\Event\\ResponseEvent' => 'Mcp\\Server\\Event\\ResponseEvent',
     'Mcp\\Exception\\ToolCallException' => 'Mcp\\Server\\Exception\\ToolCallException',
     'Mcp\\Server\\Stateless\\RequestMeta' => 'Mcp\\Schema\\RequestMeta',
-] as $alias => $class) {
+];
+foreach ($aliases as $alias => $class) {
     if (!class_exists($alias) && !interface_exists($alias) && (class_exists($class) || interface_exists($class))) {
         class_alias($class, $alias);
     }
 }
-unset($alias, $class);
+unset($aliases, $alias, $class);

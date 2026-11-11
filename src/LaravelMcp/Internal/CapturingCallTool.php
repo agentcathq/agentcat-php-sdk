@@ -32,7 +32,7 @@ final class CapturingCallTool extends CallTool
     public function handle(JsonRpcRequest $request, ServerContext $context): \Generator|JsonRpcResponse
     {
         $name = $request->get('name');
-        if (!is_scalar($name)) {
+        if (!is_string($name)) {
             // No name, or one that no tool has: the library answers, and fails, on its own, with its own message.
             return parent::handle($request, $context);
         }

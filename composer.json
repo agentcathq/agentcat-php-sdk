@@ -107,12 +107,12 @@
     },
     "minimum-stability": "stable",
     "autoload": {
-        "files": [
-            "src/McpSdk/compat.php"
-        ],
         "psr-4": {
             "AgentCat\\": "src/"
-        }
+        },
+        "files": [
+            "src/McpSdk/compat.php"
+        ]
     },
     "autoload-dev": {
         "psr-4": {
