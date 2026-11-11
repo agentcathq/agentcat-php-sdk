@@ -188,6 +188,7 @@ abstract class RequestContextTestCase extends TestCase
     {
         $session = new Session(new InMemorySessionStore());
         $session->set(RequestMeta::class, new RequestMeta('2026-07-28', new ClientCapabilities(), new Implementation('modern-client', '2.0.0')));
+        $session->set('Mcp\\Schema\\RequestMeta', new RequestMeta('2026-07-28', new ClientCapabilities(), new Implementation('fallback-client', '1.0.0')));
         $session->set('protocol_version', '2026-07-28');
         $request = (new CallToolRequest('echo', []))->withId(3)->withMeta([
             Constants::META_PROTOCOL_VERSION_KEY => '2099-01-01',
