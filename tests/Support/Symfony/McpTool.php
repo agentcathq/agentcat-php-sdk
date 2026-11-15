@@ -11,6 +11,4 @@ use Mcp\Capability\Attribute\McpTool as BaseMcpTool;
  * canonical name as its parent, both before and after the mcp/sdk 0.10 namespace move.
  */
 #[\Attribute(\Attribute::TARGET_METHOD | \Attribute::TARGET_CLASS)]
-final class McpTool extends BaseMcpTool
-{
-}
+final class McpTool extends BaseMcpTool {}
