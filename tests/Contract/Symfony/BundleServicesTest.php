@@ -33,7 +33,7 @@ final class BundleServicesTest extends SymfonyTestCase
         $builder = $probe->builders['conformance'] ?? null;
         $this->assertIsArray($builder, 'no service tagged mcp.server.builder with server: conformance');
         $this->assertSame('mcp.server.conformance.builder', $builder['id']);
-        $this->assertEquals([Server::class, 'builder'], $builder['factory']);
+        $this->assertEquals([(new \ReflectionClass(Server::class))->getName(), 'builder'], $builder['factory']);
         $this->assertNull($builder['configurator']);
         $calls = array_values(array_filter($builder['calls'], static fn(array $call): bool => $call[0] === 'addRequestHandlers'));
         $this->assertCount(1, $calls);

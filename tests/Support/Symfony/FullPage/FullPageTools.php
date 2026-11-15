@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace AgentCat\Tests\Support\Symfony\FullPage;
 
-use Mcp\Capability\Attribute\McpTool;
+use AgentCat\Tests\Support\Symfony\McpTool;
 
 /**
  * `t01` to `t14`: no input; each answers its name. With `echo`, the 15 tools of `TestKernel::FULL_PAGE`, one full page.
