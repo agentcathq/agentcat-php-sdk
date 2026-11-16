@@ -15,10 +15,10 @@ use AgentCat\Internal\Transport\ApiBaseUrl;
  * customer's `redactSensitiveInformation` function, and queues the request (`Sender`).
  *
  * Whatever fails, it sends nothing and logs one line, and nothing of the customer's code leaves it: no error, no PHP
- * warning or notice (an error handler takes them), no output (`OutputGuard`). A log line names the class of what was
- * thrown, never its message, because a message can hold what the redaction function is there to hide. When the build
- * has ended, it has let go of the lists of the request, and so of the session or the context that they hold; what it
- * hands back for a request on its way (`SentHeartbeat`) holds nothing of the request.
+ * warning or notice (`ErrorShield`), no output (`OutputGuard`). A log line names the class of what was thrown, never
+ * its message, because a message can hold what the redaction function is there to hide. When the build has ended, it
+ * has let go of the lists of the request, and so of the session or the context that they hold; what it hands back for
+ * a request on its way (`SentHeartbeat`) holds nothing of the request.
  *
  * @internal
  */
@@ -50,7 +50,7 @@ final class PendingHeartbeat implements DeferredWork
             return null; // it ran already
         }
         $body = null;
-        set_error_handler(static fn(): bool => true);
+        $errors = ErrorShield::start();
 
         try {
             $output = OutputGuard::start();
@@ -65,7 +65,7 @@ final class PendingHeartbeat implements DeferredWork
                 $output->end(); // drops nothing from here on; removes what the customer's code printed and left open
             }
         } finally {
-            restore_error_handler(); // in every case: the handler of the application is back when the run ends
+            $errors->end(); // in every case: from here on, every error goes where it went before the run
         }
         unset($source);
 

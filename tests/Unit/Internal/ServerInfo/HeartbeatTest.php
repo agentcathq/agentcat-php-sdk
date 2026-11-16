@@ -587,6 +587,75 @@ final class HeartbeatTest extends TestCase
         $this->assertHeartbeats(1);
     }
 
+    public function testAListHandlerThatLeavesAnErrorHandlerKeepsItAndLaterWarningsReachTheHandlerOfTheApplication(): void
+    {
+        $this->oldMemory();
+        $left = [];
+        $lists = FakeServerInfo::demo();
+        $lists[ServerInfoSource::PROMPTS] = static function () use (&$left): array {
+            set_error_handler(static function (int $severity, string $message) use (&$left): bool {
+                $left[] = $message;
+
+                return true;
+            });
+            trigger_error('inside the build', E_USER_WARNING);
+
+            return [[], null];
+        };
+        $seen = [];
+        set_error_handler(static function (int $severity, string $message) use (&$seen): bool {
+            $seen[] = $message;
+
+            return true;
+        });
+
+        try {
+            $this->toolCall($this->server(), source: new FakeServerInfo($lists));
+            $this->queue->endRequest(1.0);
+            trigger_error('reaches the handler that the list method left', E_USER_WARNING);
+            restore_error_handler(); // the customer's code removes its own handler later
+            trigger_error('reaches the handler of the application', E_USER_WARNING);
+            restore_error_handler(); // the inactive handler of the SDK
+        } finally {
+            restore_error_handler();
+        }
+
+        $this->assertSame(['inside the build', 'reaches the handler that the list method left'], $left);
+        $this->assertSame(['reaches the handler of the application'], $seen);
+        $this->assertHeartbeats(1);
+    }
+
+    public function testAWarningInsideTheBuildIsSwallowedAndTheHandlerOfTheApplicationIsBackOnTop(): void
+    {
+        $this->oldMemory();
+        $lists = FakeServerInfo::demo();
+        $lists[ServerInfoSource::PROMPTS] = static function (): array {
+            trigger_error('inside the build', E_USER_WARNING);
+
+            return [[], null];
+        };
+        $seen = [];
+        $application = static function (int $severity, string $message) use (&$seen): bool {
+            $seen[] = $message;
+
+            return true;
+        };
+        set_error_handler($application);
+
+        try {
+            $this->toolCall($this->server(), source: new FakeServerInfo($lists));
+            $this->queue->endRequest(1.0);
+            $top = set_error_handler(static fn(): bool => true);
+            restore_error_handler();
+        } finally {
+            restore_error_handler();
+        }
+
+        $this->assertSame($application, $top);
+        $this->assertSame([], $seen);
+        $this->assertHeartbeats(1);
+    }
+
     public function testWhatAListHandlerOrTheRedactorPrintsIsDiscarded(): void
     {
         $this->oldMemory();
