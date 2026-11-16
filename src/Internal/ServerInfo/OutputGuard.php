@@ -41,13 +41,11 @@ final class OutputGuard
         if (!$this->buffered) {
             return;
         }
-        for ($open = ob_get_level() - $this->level; $open > 0 && ob_get_level() > $this->level; --$open) {
+        for ($open = ob_get_level() - $this->level; $open > 0; --$open) {
             ($this->remove)();
         }
-        foreach (array_slice(ob_get_status(true), $this->level + 1) as $above) {
-            $used = is_array($above) ? $above['buffer_used'] ?? null : null;
-            $this->discardBytes += is_int($used) ? $used : 0;
-        }
+        // What still waits from this buffer upwards (this one holds nothing: each write left it at once).
+        $this->discardBytes = array_sum(array_filter(array_column(array_slice(ob_get_status(true), $this->level), 'buffer_used'), is_int(...)));
         $this->discardAll = false;
     }
 

@@ -45,16 +45,19 @@ final class OutputGuardTest extends TestCase
 
             return false; // as ob_end_clean() answers for a buffer that cannot be removed
         });
-        echo 'x';
         echo 'printed by a list handler';
-        ob_start(); // stands for the buffer that cannot be removed
-        echo 'held'; // 4 bytes wait in it when the build ends
+        echo 'x'; // one byte, the last write into the guard's own buffer: it does not wait there
+        ob_start(); // stands for a buffer that cannot be removed
+        echo 'he'; // 2 bytes wait in it when the build ends
+        ob_start(); // and a second one above it
+        echo 'ld'; // with 2 more
         $guard->end();
-        $this->assertSame(2, $tries, 'one try for each open buffer, not a loop without end');
-        $this->assertSame($level + 2, ob_get_level(), 'both buffers are still there');
+        $this->assertSame(3, $tries, 'one try for each open buffer, not a loop without end');
+        $this->assertSame($level + 3, ob_get_level(), 'the three buffers are still there');
 
         echo 'later';
-        ob_end_flush(); // the buffer above goes at last: its content comes down to the guard's buffer
+        ob_end_flush();
+        ob_end_flush(); // the buffers above go at last: their content comes down to the guard's buffer
         echo ' and after';
         ob_end_flush();
 
