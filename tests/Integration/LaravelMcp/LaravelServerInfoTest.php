@@ -56,7 +56,7 @@ final class LaravelServerInfoTest extends LaravelTestCase
         $answers = [
             'the handler answered with a stream' => static fn(JsonRpcRequest $request): array => [JsonRpcResponse::result($request->id, ['resources' => []])],
             'the handler answered with a JSON-RPC error: bad cursor' => static fn(JsonRpcRequest $request): JsonRpcResponse => JsonRpcResponse::error($request->id, -32602, 'bad cursor'),
-            'the handler answered with a JSON-RPC error: ' => static fn(): JsonRpcResponse => new JsonRpcResponse(['error' => 'odd']),
+            'the handler answered with a JSON-RPC error: ' => static fn(): JsonRpcResponse => new JsonRpcResponse(['error' => ['code' => -1]]),
             'the answer of the handler has no list' => static fn(JsonRpcRequest $request): JsonRpcResponse => JsonRpcResponse::result($request->id, ['prompts' => []]),
         ];
         foreach ($answers as $message => $answer) {
@@ -73,6 +73,9 @@ final class LaravelServerInfoTest extends LaravelTestCase
 
             $this->assertSame('the answer of the handler has no list', Thrown::by(\UnexpectedValueException::class, static fn(): ?array => $info->page(ServerInfoSource::RESOURCES, null))->getMessage());
         }
+        $this->handler(static fn(): JsonRpcResponse => new JsonRpcResponse(['error' => 'odd']));
+        $info = new LaravelServerInfo(['resources/list' => 'handler'], $this->context());
+        $this->assertSame('the handler answered with a JSON-RPC error: ', Thrown::by(\UnexpectedValueException::class, static fn(): ?array => $info->page(ServerInfoSource::RESOURCES, null))->getMessage());
         $this->handler(static fn(): JsonRpcResponse => new JsonRpcResponse(['result' => 'text']));
         $info = new LaravelServerInfo(['resources/list' => 'handler'], $this->context());
         $this->assertSame('the answer of the handler has no list', Thrown::by(\UnexpectedValueException::class, static fn(): ?array => $info->page(ServerInfoSource::RESOURCES, null))->getMessage());

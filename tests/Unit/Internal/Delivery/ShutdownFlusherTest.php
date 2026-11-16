@@ -379,7 +379,7 @@ final class ShutdownFlusherTest extends TestCase
     {
         yield 'the whole answer is out' => [static fn(): bool => true, true];
         yield 'the client still waits for the script' => [static fn(): bool => false, false];
-        yield 'nothing can tell' => [null, false];
+        yield 'the default check, on the command line' => [null, false];
     }
 
     /** @param (\Closure(): bool)|null $answerSent */

@@ -74,6 +74,15 @@ final class GuardTest extends TestCase
         $this->assertFalse(Guard::claim(self::PROJECT, 'one-more', 2.0), 'and holds the new key');
     }
 
+    public function testTheKeyOfTwoDifferentPairsIsNeverTheSame(): void
+    {
+        $this->assertSame(Guard::key('p', 'n'), Guard::key('p', 'n'));
+        $this->assertNotSame(Guard::key('p', 'n'), Guard::key('n', 'p'));
+        $this->assertNotSame(Guard::key('ab', 'c'), Guard::key('a', 'bc'));
+        $this->assertNotSame(Guard::key('a:1:"b', 'c'), Guard::key('a', '1:"b:c'));
+        $this->assertNotSame(Guard::key('p', ''), Guard::key('', 'p'));
+    }
+
     public function testForgetEmptiesTheMemory(): void
     {
         Guard::open(true, 0.0);

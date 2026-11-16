@@ -43,9 +43,8 @@ final readonly class PendingHeartbeat implements DeferredWork
             Log::write(self::SKIPPED . $skipped->getMessage());
         } catch (\Throwable $e) {
             Log::write(self::SKIPPED . ErrorText::of($e));
-        } finally {
-            restore_error_handler();
         }
+        restore_error_handler(); // every throwable is caught above, and the log never throws
     }
 
     #[\Override]

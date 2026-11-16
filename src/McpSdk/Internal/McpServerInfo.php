@@ -44,7 +44,7 @@ final readonly class McpServerInfo implements ServerInfoSource
     #[\Override]
     public function title(): string
     {
-        return ($this->configuration)()?->serverInfo->title ?? '';
+        return ($this->configuration)()->serverInfo->title ?? '';
     }
 
     #[\Override]

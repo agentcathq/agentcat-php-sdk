@@ -93,6 +93,7 @@ final class ServerInfoTest extends LaravelTestCase
         $this->assertSame([2, 1, 2], [count(JsonAssert::list(JsonAssert::at($body, 'features', 'resources'))), count(JsonAssert::list(JsonAssert::at($body, 'features', 'resourceTemplates'))), count(JsonAssert::list(JsonAssert::at($body, 'features', 'prompts')))]);
         $this->assertSame('file:///{name}.txt', JsonAssert::at($body, 'features', 'resourceTemplates', 0, 'uriTemplate'));
         $this->assertSame('who', JsonAssert::at($body, 'features', 'prompts', 0, 'arguments', 0, 'name'));
+        $this->assertStringNotContainsString('already', implode("\n", $this->logger->messages()), 'the heartbeat read the server\'s own tool list, not the one AgentCat had injected');
     }
 
     public function testV2AToolListOnTwoPagesArrivesWholeWithGetMoreToolsOnce(): void
@@ -106,6 +107,7 @@ final class ServerInfoTest extends LaravelTestCase
         $names = JsonAssert::column(JsonAssert::at($this->body(0), 'features', 'tools'), 'name');
 
         $this->assertCount(17, $names);
+        $this->assertStringNotContainsString('already', implode("\n", $this->logger->messages()), 'the heartbeat read the server\'s own tool list, not the one AgentCat had injected');
         $this->assertSame(['echo', 't01', 't15', 'get_more_tools'], [$names[0], $names[1], $names[15], $names[16]]);
     }
 

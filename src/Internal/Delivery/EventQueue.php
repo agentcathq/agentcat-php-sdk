@@ -133,7 +133,7 @@ final class EventQueue
     {
         if (!self::$global instanceof self) {
             $finish = FinishRequest::detect();
-            $flusher = new ShutdownFlusher(static fn(): self => self::global(), null, $finish, RequestEnd::detect($finish instanceof \Closure), answerSent: static fn(): bool => RequestEnd::answerSent());
+            $flusher = new ShutdownFlusher(static fn(): self => self::global(), null, $finish, RequestEnd::detect($finish instanceof \Closure));
             $signals = new SignalDrain(static fn(): self => self::global());
             self::$global = new self(onEnqueue: static function () use ($flusher, $signals): void {
                 $flusher->ensureRegistered();

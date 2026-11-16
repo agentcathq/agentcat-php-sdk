@@ -104,11 +104,11 @@ final class Heartbeat
             if (!Guard::open($always, $clock())) {
                 return;
             }
-            [$name] = $server->serverInfo();
-            if (!Guard::claim($server->projectId, $name ?? '', $clock())) {
+            $name = $server->serverInfo()[0] ?? '';
+            if (!Guard::claim($server->projectId, $name, $clock())) {
                 return;
             }
-            $server->publisher()->queue()->defer('server-info:' . $server->projectId . ':' . $name, new PendingHeartbeat($server, $source(), $clock));
+            $server->publisher()->queue()->defer(Guard::key($server->projectId, $name), new PendingHeartbeat($server, $source(), $clock));
         } catch (\Throwable $e) {
             Log::write('Skipped the server info heartbeat: the check failed - ' . $e::class);
         }

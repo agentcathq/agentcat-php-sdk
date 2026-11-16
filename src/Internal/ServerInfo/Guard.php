@@ -48,7 +48,7 @@ final class Guard
      */
     public static function claim(string $projectId, string $serverName, float $now): bool
     {
-        $key = strlen($projectId) . ':' . $projectId . $serverName;
+        $key = self::key($projectId, $serverName);
         $last = self::$attempts[$key] ?? null;
         if ($last !== null && $now - $last < self::INTERVAL_SECONDS) {
             return false;
@@ -59,6 +59,12 @@ final class Guard
         self::$attempts[$key] = $now;
 
         return true;
+    }
+
+    /** One string for a project and a server name; two different pairs never give the same one. */
+    public static function key(string $projectId, string $serverName): string
+    {
+        return serialize([$projectId, $serverName]);
     }
 
     /** Tests only: an empty memory, as a new process has. */

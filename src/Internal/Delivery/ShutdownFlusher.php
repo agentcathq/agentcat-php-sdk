@@ -29,6 +29,9 @@ final class ShutdownFlusher
     /** @var (\Closure(\Closure(): void): void)|null null where a host disabled `register_shutdown_function()` */
     private readonly ?\Closure $register;
 
+    /** @var \Closure(): bool */
+    private readonly \Closure $answerSent;
+
     private bool $registered = false;
 
     /**
@@ -38,7 +41,7 @@ final class ShutdownFlusher
      * @param RequestEnd|null                         $requestEnd    runs before the finish call when the queue has work
      * @param (\Closure(string): bool)|null           $functionExists tests only: tells whether `register_shutdown_function()` exists; default `function_exists()`
      * @param (\Closure(): bool)|null                 $answerSent    without a finish call: whether the client has the whole answer
-     *                                                               after `$requestEnd` ran; null: it never has
+     *                                                               after `$requestEnd` ran; default `RequestEnd::answerSent()`
      */
     public function __construct(
         private readonly \Closure $queue,
@@ -46,8 +49,9 @@ final class ShutdownFlusher
         private readonly ?\Closure $finishRequest = null,
         private readonly ?RequestEnd $requestEnd = null,
         ?\Closure $functionExists = null,
-        private readonly ?\Closure $answerSent = null,
+        ?\Closure $answerSent = null,
     ) {
+        $this->answerSent = $answerSent ?? static fn(): bool => RequestEnd::answerSent();
         $this->register = $register ?? (($functionExists ?? function_exists(...))('register_shutdown_function') ? register_shutdown_function(...) : null);
     }
 
@@ -96,7 +100,7 @@ final class ShutdownFlusher
                     } catch (\Throwable) {
                         // keep going: delivery matters more than the finish call
                     }
-                } elseif ($this->answerSent instanceof \Closure && ($this->answerSent)()) {
+                } elseif (($this->answerSent)()) {
                     $queue->responseSent();
                 }
             }

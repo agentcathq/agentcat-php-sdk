@@ -145,6 +145,11 @@ final class EventQueueDeferredWorkTest extends TestCase
     public function testAFlushWithoutAWindowRunsNoWork(): void
     {
         $queue = $this->queue(outlivesRequest: true);
+        $this->transport->complete = false;
+        $queue->add($this->event('evt_1'));
+        $queue->flush(2.0); // the clock of the transport is at 2 s now
+        $this->transport->complete = true;
+        $queue->pump();
         $work = new RecordingDeferredWork();
         $queue->defer('a', $work);
 
@@ -153,7 +158,18 @@ final class EventQueueDeferredWorkTest extends TestCase
         $queue->flush(NAN);
         $this->assertSame([], $work->runs);
 
-        $queue->flush();
+        $queue->flush(0.5);
+        $this->assertSame([0.5], $work->runs, 'the work gets exactly what is left of the window');
+    }
+
+    public function testAFlushWithoutALimitGivesTheWorkNoLimit(): void
+    {
+        $queue = $this->queue(outlivesRequest: true);
+        $work = new RecordingDeferredWork();
+        $queue->defer('a', $work);
+
+        $this->assertTrue($queue->flush());
+
         $this->assertSame([INF], $work->runs);
     }
 

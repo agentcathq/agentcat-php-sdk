@@ -97,7 +97,7 @@ final class BodyBuilder
             if (isset($followed[$cursor])) {
                 throw new \UnexpectedValueException(sprintf('the cursor "%s" came back after page %d', $cursor, $read));
             }
-            $followed[$cursor] = true;
+            $followed[$cursor] = $cursor;
             if ($read === self::MAX_PAGES) {
                 throw new \UnexpectedValueException(sprintf('it has more than %d pages', self::MAX_PAGES));
             }

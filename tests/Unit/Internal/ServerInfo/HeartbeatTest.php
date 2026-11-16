@@ -251,9 +251,13 @@ final class HeartbeatTest extends TestCase
             return $text;
         };
 
+        error_clear_last();
+        $this->expectOutputString('');
+
         try {
             $this->toolCall($this->server(options: new Options(redactSensitiveInformation: $redactor)), source: new FakeServerInfo($lists));
             $this->queue->pump();
+            $this->assertNull(error_get_last(), 'PHP\'s own error handling, which can print the message, saw nothing');
             trigger_error('after the run', E_USER_NOTICE);
         } finally {
             restore_error_handler();
@@ -498,6 +502,23 @@ final class HeartbeatTest extends TestCase
         $this->assertSame(['tools@'], $source->asked, 'the page that ran could not be stopped; no other page was asked for');
         $this->assertHeartbeats(0);
         $this->assertSame(['Skipped the server info heartbeat: the delivery time ended before the lists were read'], $this->logger->messages());
+    }
+
+    public function testAPageThatUsesExactlyTheWindowLeavesNoTimeForTheNextOne(): void
+    {
+        $this->oldMemory();
+        $lists = FakeServerInfo::demo();
+        $lists[ServerInfoSource::TOOLS] = function (): array {
+            $this->now += 1.0;
+
+            return [[FakeServerInfo::tool('alpha')], null];
+        };
+
+        $this->toolCall($this->server(), source: $source = new FakeServerInfo($lists));
+        $this->queue->flush(1.0);
+
+        $this->assertSame(['tools@'], $source->asked);
+        $this->assertHeartbeats(0);
     }
 
     public function testAPendingHeartbeatDoesNotMakeAWorkersRequestEndWaitLonger(): void

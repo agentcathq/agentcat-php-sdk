@@ -105,9 +105,11 @@ final class BodyBuilderTest extends TestCase
         $lists = FakeServerInfo::demo();
         $lists[ServerInfoSource::TOOLS] = new \RuntimeException('no tools today');
 
-        $this->expectException(Skipped::class);
-        $this->expectExceptionMessage('the tool list failed - RuntimeException: no tools today');
-        $this->build(new FakeServerInfo($lists));
+        $skipped = Thrown::by(Skipped::class, fn(): ServerInfoBody => $this->build(new FakeServerInfo($lists)));
+
+        $this->assertSame('the tool list failed - RuntimeException: no tools today', $skipped->getMessage());
+        $this->assertSame(0, $skipped->getCode());
+        $this->assertSame($lists[ServerInfoSource::TOOLS], $skipped->getPrevious());
     }
 
     public function testAServerWithoutAToolListHandlerStopsTheBuild(): void
