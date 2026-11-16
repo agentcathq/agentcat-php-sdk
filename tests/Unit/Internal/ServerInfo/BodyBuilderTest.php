@@ -114,9 +114,9 @@ final class BodyBuilderTest extends TestCase
 
     public function testAServerWithoutAToolListHandlerStopsTheBuild(): void
     {
-        $this->expectException(Skipped::class);
-        $this->expectExceptionMessage('the server has no tool list');
-        $this->build(new FakeServerInfo([]));
+        $skipped = Thrown::by(Skipped::class, fn(): ServerInfoBody => $this->build(new FakeServerInfo([])));
+
+        $this->assertSame('the server has no tool list', $skipped->getMessage());
     }
 
     public function testV6AListWhoseCursorRepeatsFailsAtOnce(): void
@@ -136,9 +136,11 @@ final class BodyBuilderTest extends TestCase
 
     public function testV6AToolListWhoseCursorRepeatsStopsTheBuild(): void
     {
-        $this->expectException(Skipped::class);
-        $this->expectExceptionMessage('the tool list failed - a cursor came back after page 2');
-        $this->build(new FakeServerInfo([ServerInfoSource::TOOLS => static fn(?string $cursor): array => [[FakeServerInfo::tool('t')], 'again']]));
+        $source = new FakeServerInfo([ServerInfoSource::TOOLS => static fn(?string $cursor): array => [[FakeServerInfo::tool('t')], 'again']]);
+
+        $skipped = Thrown::by(Skipped::class, fn(): ServerInfoBody => $this->build($source));
+
+        $this->assertSame('the tool list failed - a cursor came back after page 2', $skipped->getMessage());
     }
 
     public function testAListOfExactlyOneHundredPagesIsReadAndOneMorePageFailsIt(): void

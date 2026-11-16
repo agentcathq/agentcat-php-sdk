@@ -55,7 +55,8 @@ AgentCat::track($builder, 'proj_' . str_repeat('c', 27), new Options(
 ));
 $harness = new HttpHarness($builder->build());
 $harness->initialize();
-foreach (array_slice($argv, 1) as $request) {
+$serverArgv = $_SERVER['argv'] ?? [];
+foreach (array_slice(is_array($serverArgv) ? $serverArgv : [], 1) as $request) {
     $answer = $request === 'list' ? $harness->request('tools/list') : $harness->callTool('alpha', []);
     fwrite(STDOUT, json_encode($answer, JSON_THROW_ON_ERROR) . "\n");
 }

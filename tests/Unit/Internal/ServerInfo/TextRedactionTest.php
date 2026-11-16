@@ -64,10 +64,13 @@ final class TextRedactionTest extends TestCase
 
     public function testV12ARedactorThatGivesNoStringStopsTheRedaction(): void
     {
-        $this->expectException(Skipped::class);
-        $this->expectExceptionMessage('redactSensitiveInformation must return a string, got null');
-        // @phpstan-ignore argument.type (a customer callback can return any type at runtime)
-        TextRedaction::apply($this->body(), static fn(string $text): mixed => null, static function (): void {});
+        $skipped = Thrown::by(
+            Skipped::class,
+            // @phpstan-ignore argument.type (a customer callback can return any type at runtime)
+            fn(): mixed => TextRedaction::apply($this->body(), static fn(string $text): mixed => null, static function (): void {}),
+        );
+
+        $this->assertSame('redactSensitiveInformation must return a string, got null', $skipped->getMessage());
     }
 
     public function testTheCheckRunsBeforeEachTextSoATimeLimitStopsTheRedaction(): void
