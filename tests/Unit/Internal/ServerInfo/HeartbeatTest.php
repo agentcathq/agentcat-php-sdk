@@ -552,6 +552,41 @@ final class HeartbeatTest extends TestCase
         $this->assertStringNotContainsString('secret', implode("\n", $diagnostics));
     }
 
+    public function testAfterARunWhoseListHandlerLeftABufferThatThrowsOnTheCleanCallTheProcessPrintsAndHandlesErrorsAsBefore(): void
+    {
+        $this->oldMemory();
+        $later = str_repeat('a later response, whole. ', 100);
+        $this->expectOutputString($later);
+        $lists = FakeServerInfo::demo();
+        $lists[ServerInfoSource::PROMPTS] = static function (): array {
+            echo 'printed by a list handler';
+            ob_start(static fn(string $output, int $phase): string => ($phase & PHP_OUTPUT_HANDLER_CLEAN) !== 0 ? throw new \RuntimeException('this buffer cannot be cleaned') : $output);
+            echo 'left in the bad buffer';
+
+            return [[], null];
+        };
+        $seen = [];
+        $level = ob_get_level();
+        set_error_handler(static function (int $severity, string $message) use (&$seen): bool {
+            $seen[] = $message;
+
+            return true;
+        });
+
+        try {
+            $this->toolCall($this->server(), source: new FakeServerInfo($lists));
+            $this->queue->endRequest(1.0);
+            echo $later;
+            trigger_error('after the run', E_USER_NOTICE);
+        } finally {
+            restore_error_handler();
+        }
+
+        $this->assertSame($level, ob_get_level());
+        $this->assertSame(['after the run'], $seen, 'the error handler of the application is active again');
+        $this->assertHeartbeats(1);
+    }
+
     public function testWhatAListHandlerOrTheRedactorPrintsIsDiscarded(): void
     {
         $this->oldMemory();

@@ -49,21 +49,25 @@ final class PendingHeartbeat implements DeferredWork
         if (!$source instanceof ServerInfoSource) {
             return null; // it ran already
         }
+        $body = null;
         set_error_handler(static fn(): bool => true);
-        $output = OutputGuard::start();
 
         try {
-            $body = $this->build($source, $secondsLeft);
-        } catch (Skipped $skipped) {
-            $body = null;
-            Log::write(self::SKIPPED . $skipped->getMessage());
-        } catch (\Throwable $e) {
-            $body = null;
-            Log::write(self::SKIPPED . ErrorName::of($e));
+            $output = OutputGuard::start();
+
+            try {
+                $body = $this->build($source, $secondsLeft);
+            } catch (Skipped $skipped) {
+                Log::write(self::SKIPPED . $skipped->getMessage());
+            } catch (\Throwable $e) {
+                Log::write(self::SKIPPED . ErrorName::of($e));
+            } finally {
+                $output->end(); // drops nothing from here on; removes what the customer's code printed and left open
+            }
+        } finally {
+            restore_error_handler(); // in every case: the handler of the application is back when the run ends
         }
         unset($source);
-        $output->end(); // what the customer's code printed, and every buffer it left open
-        restore_error_handler(); // every throwable is caught above, and the log never throws
 
         return $body instanceof ServerInfoBody ? $this->send($body) : null;
     }

@@ -180,9 +180,13 @@ final class ServerInfoEndToEndTest extends TestCase
         $this->assertStringNotContainsString('the list handler failed', $log, 'no message of the customer\'s code is logged');
     }
 
-    /** A list handler that leaves a buffer open that PHP cannot remove: the cleanup of the run ends, and the process goes on. */
+    /**
+     * A list handler that leaves a buffer open that PHP cannot remove: the cleanup of the run ends, and the process goes
+     * on. What the customer's code printed before that buffer is dropped. What it printed into that buffer is its own
+     * output, which PHP sends when the script ends: the SDK never cuts output that comes after the build.
+     */
     #[MaximumDuration(15000)]
-    public function testABufferThatCannotBeRemovedDoesNotHoldTheRunAndNothingReachesTheOutput(): void
+    public function testABufferThatCannotBeRemovedDoesNotHoldTheRunAndTheProcessGoesOn(): void
     {
         $scenario = $this->collector()->scenario();
 
@@ -190,9 +194,11 @@ final class ServerInfoEndToEndTest extends TestCase
 
         $this->assertSame('the process went on after the delivery', file_get_contents(self::$dir . '/markers/went-on'));
         $this->assertSame('', $child->getErrorOutput());
-        $lines = explode("\n", trim($child->getOutput()));
-        $this->assertCount(1, $lines, 'standard output holds the protocol answer only');
-        $this->assertSame('2.0', JsonAssert::at(json_decode($lines[0], false, flags: JSON_THROW_ON_ERROR), 'jsonrpc'));
+        $lines = explode("\n", $child->getOutput());
+        $this->assertCount(2, $lines);
+        $this->assertSame('2.0', JsonAssert::at(json_decode($lines[0], false, flags: JSON_THROW_ON_ERROR), 'jsonrpc'), 'the protocol answer went out first, and whole');
+        $this->assertStringNotContainsString('printed by the list handler', $child->getOutput(), 'printed during the build, below the bad buffer: dropped');
+        $this->assertSame('', str_replace('printed by the redaction function', '', $lines[1]), 'only what the customer printed into its own bad buffer comes late');
         $this->assertCount(1, $this->collector()->serverInfo($scenario), 'the heartbeat still goes out, without the failed list');
     }
 

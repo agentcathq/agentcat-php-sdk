@@ -7,9 +7,43 @@ namespace AgentCat\Tests\Unit\Internal\ServerInfo;
 use AgentCat\Internal\ServerInfo\OutputGuard;
 use PHPUnit\Framework\TestCase;
 
+/** Real output buffers; `OutputGuardProcessTest` has the buffer that PHP can never remove. */
 final class OutputGuardTest extends TestCase
 {
-    public function testWhatIsPrintedUnderTheGuardIsDiscardedWithEveryBufferLeftOpen(): void
+    public function testWhatIsPrintedDuringTheBuildIsDroppedWithEveryBufferLeftOpenAndABufferFromBeforeStays(): void
+    {
+        ob_start(); // a buffer of the customer's that was open before the run
+        echo 'before ';
+        $level = ob_get_level();
+
+        $guard = OutputGuard::start();
+        echo 'x';
+        echo 'printed by a list handler';
+        ob_start();
+        echo 'into a buffer of the handler';
+        ob_start();
+        $guard->end();
+
+        $this->assertSame($level, ob_get_level(), 'every buffer of the build is closed, and the one from before is open');
+        $this->assertSame('before ', ob_get_contents(), 'it keeps its content, and nothing of the build is in it');
+        echo 'after';
+        $this->assertSame('before after', ob_get_clean());
+    }
+
+    public function testEachWriteIsDroppedAtOnceSoNothingWaitsInTheGuardsBuffer(): void
+    {
+        ob_start();
+        $guard = OutputGuard::start();
+        echo 'x'; // one byte
+        $waiting = ob_get_length();
+        $guard->end();
+        ob_end_clean();
+
+        $this->assertSame(0, $waiting);
+    }
+
+    /** PHP removes a buffer whose handler throws on the clean call: the cleanup goes on to the guard's own buffer. */
+    public function testABufferWhoseHandlerThrowsOnTheCleanCallDoesNotStopTheEndAndLaterOutputPassesUnchanged(): void
     {
         ob_start(); // stands for the output of the process
         echo 'before ';
@@ -17,48 +51,32 @@ final class OutputGuardTest extends TestCase
 
         $guard = OutputGuard::start();
         echo 'printed by a list handler';
+        ob_start(static fn(string $output, int $phase): string => ($phase & PHP_OUTPUT_HANDLER_CLEAN) !== 0 ? throw new \RuntimeException('this buffer cannot be cleaned') : $output);
+        echo '[left]';
         ob_start();
-        echo 'into a buffer of the handler';
-        ob_start();
-        $guard->end();
-        $after = ob_get_level();
-        echo 'after';
+        echo 'above it';
+        $guard->end(); // does not throw
 
-        $this->assertSame('before after', ob_get_clean());
-        $this->assertSame($level, $after, 'every buffer of the build is closed');
+        $left = ob_get_level() - $level;
+        $later = str_repeat('later output of the process, byte for byte. ', 200);
+        echo $later;
+        for ($open = $left; $open > 0; --$open) {
+            ob_end_flush(); // a safety net: whatever stayed must not outlive the test
+        }
+
+        $this->assertSame(0, $left, 'every buffer of the build is gone');
+        $this->assertSame('before ' . $later, ob_get_clean());
     }
 
-    /**
-     * A buffer that PHP cannot remove stays above the guard's: the cleanup tries each open buffer once and ends. What
-     * waited in that buffer when the build ended never reaches the output; what is printed later does.
-     */
-    public function testABufferThatCannotBeRemovedEndsTheCleanupAndItsContentOfTheBuildIsDiscardedLater(): void
+    public function testTheEndCanBeCalledTwice(): void
     {
-        ob_start(); // stands for the output of the process
-        echo 'before ';
+        ob_start();
         $level = ob_get_level();
-        $tries = 0;
-
-        $guard = OutputGuard::start(static function () use (&$tries): bool {
-            ++$tries;
-
-            return false; // as ob_end_clean() answers for a buffer that cannot be removed
-        });
-        echo 'printed by a list handler';
-        ob_start(); // stands for a buffer that cannot be removed
-        echo 'he'; // 2 bytes wait in it when the build ends
-        ob_start(); // and a second one above it
-        echo 'ld'; // with 2 more
+        $guard = OutputGuard::start();
         $guard->end();
-        $this->assertSame(3, $tries, 'one try for each open buffer, not a loop without end');
-        $this->assertSame($level + 3, ob_get_level(), 'the three buffers are still there');
+        $guard->end();
 
-        echo 'later';
-        ob_end_flush();
-        ob_end_flush(); // the buffers above go at last: their content comes down to the guard's buffer
-        echo ' and after';
-        ob_end_flush();
-
-        $this->assertSame('before later and after', ob_get_clean());
+        $this->assertSame($level, ob_get_level(), 'the second call removes no buffer of the customer\'s');
+        ob_end_clean();
     }
 }

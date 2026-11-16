@@ -5,58 +5,65 @@ declare(strict_types=1);
 namespace AgentCat\Internal\ServerInfo;
 
 /**
- * Keeps what the customer's code prints during a heartbeat build out of the output of the process: an output buffer
- * whose handler discards what reaches it while the build runs. `end()` removes the buffer and every buffer that the
- * code left open above it, with one pass for each, so a buffer that PHP cannot remove ends the loop instead of holding
- * it. Such a buffer stays, with this one below it: the handler then discards the bytes that waited in the two when the
- * build ended, and passes on everything after them. Call it under an error handler that takes
- * PHP's notices: a buffer that cannot be removed raises one.
+ * Keeps what the customer's code prints during a heartbeat build out of the output of the process, and fails open: one
+ * output buffer whose handler drops what reaches it only while the build runs. `end()` clears that flag first, so from
+ * then on the handler passes on every byte unchanged, whatever the cleanup after it does. The buffer hands on each write
+ * at once (chunk size 1), so it holds nothing back when it has to stay.
+ *
+ * The cleanup removes the buffer and every buffer that the customer's code left open above it, with one try for each.
+ * It stops at the first buffer that is still there after its try (PHP cannot remove it): that buffer stays, with the
+ * guard's buffer below it as a pass-through. What the customer's code printed into such a buffer can then reach the output
+ * late; the guard never cuts a byte from output that comes after the build.
  *
  * @internal
  */
 final class OutputGuard
 {
-    /** True while the build runs: every write is discarded. */
-    private bool $discardAll = true;
-
-    /** After the build: how many of the next bytes are what a buffer above this one held when the build ended. */
-    private int $discardBytes = 0;
+    /** True only while the build runs: what reaches the buffer is dropped. */
+    private bool $building = true;
 
     private bool $buffered = false;
 
-    /** @param \Closure(): bool $remove */
-    private function __construct(private readonly int $level, private readonly \Closure $remove) {}
+    private function __construct(private readonly int $level) {}
 
-    /** @param (\Closure(): bool)|null $remove tests only: removes the buffer on top, or fails to; default `ob_end_clean()` */
-    public static function start(?\Closure $remove = null): self
+    /** Call it under an error handler that takes PHP's notices: a buffer that cannot be removed raises one in `end()`. */
+    public static function start(): self
     {
-        $guard = new self(ob_get_level(), $remove ?? ob_end_clean(...));
-        $guard->buffered = ob_start($guard->filter(...));
+        $guard = new self(ob_get_level());
+
+        try {
+            $guard->buffered = ob_start($guard->filter(...), 1);
+        } catch (\Throwable) {
+            // no buffer: the build runs without the guard
+        }
 
         return $guard;
     }
 
+    /** Never throws. After it, the guard drops nothing. */
     public function end(): void
     {
+        $this->building = false;
         if (!$this->buffered) {
             return;
         }
         for ($open = ob_get_level() - $this->level; $open > 0; --$open) {
-            ($this->remove)();
+            $before = ob_get_level();
+
+            try {
+                ob_end_clean();
+                // @phpstan-ignore catch.neverThrown (the clean call runs the output handler of the buffer, which is the customer's code)
+            } catch (\Throwable) {
+                // PHP may have removed the buffer all the same
+            }
+            if (ob_get_level() >= $before) {
+                return; // it cannot be removed, so nothing below it can
+            }
         }
-        // What still waits from this buffer upwards is output of the build.
-        $this->discardBytes = array_sum(array_filter(array_column(array_slice(ob_get_status(true), $this->level), 'buffer_used'), is_int(...)));
-        $this->discardAll = false;
     }
 
     private function filter(string $output): string
     {
-        if ($this->discardAll) {
-            return '';
-        }
-        $cut = min($this->discardBytes, strlen($output));
-        $this->discardBytes -= $cut;
-
-        return substr($output, $cut);
+        return $this->building ? '' : $output;
     }
 }
