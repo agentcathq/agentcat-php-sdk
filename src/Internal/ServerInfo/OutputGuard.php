@@ -10,10 +10,10 @@ namespace AgentCat\Internal\ServerInfo;
  * then on the handler passes on every byte unchanged, whatever the cleanup after it does. The buffer hands on each write
  * at once (chunk size 1), so it holds nothing back when it has to stay.
  *
- * The cleanup removes the buffer and every buffer that the customer's code left open above it, with one try for each.
- * It stops at the first buffer that is still there after its try (PHP cannot remove it): that buffer stays, with the
- * guard's buffer below it as a pass-through. What the customer's code printed into such a buffer can then reach the output
- * late; the guard never cuts a byte from output that comes after the build.
+ * The cleanup removes the buffer and every buffer that the customer's code left open above it, with one try for each
+ * and no more. A buffer that PHP cannot remove stays, with the guard's buffer below it as a pass-through. What the
+ * customer's code printed into such a buffer can then reach the output late; the guard never cuts a byte from output
+ * that comes after the build.
  *
  * @internal
  */
@@ -48,16 +48,11 @@ final class OutputGuard
             return;
         }
         for ($open = ob_get_level() - $this->level; $open > 0; --$open) {
-            $before = ob_get_level();
-
             try {
                 ob_end_clean();
                 // @phpstan-ignore catch.neverThrown (the clean call runs the output handler of the buffer, which is the customer's code)
             } catch (\Throwable) {
-                // PHP may have removed the buffer all the same
-            }
-            if (ob_get_level() >= $before) {
-                return; // it cannot be removed, so nothing below it can
+                // the next try finds the buffer gone, or fails as this one did
             }
         }
     }
