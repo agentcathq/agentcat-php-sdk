@@ -6,10 +6,10 @@ namespace AgentCat\Internal\ServerInfo;
 
 /**
  * Keeps what the customer's code prints during a heartbeat build out of the output of the process: an output buffer
- * whose handler discards every write at once (chunk size 1), so nothing waits in it. `end()` removes the buffer and
- * every buffer that the code left open above it, with one pass for each, so a buffer that PHP cannot remove ends the
- * loop instead of holding it. Such a buffer stays, with this one below it: the handler then discards the bytes that
- * waited in it when the build ended, and passes on everything after them. Call it under an error handler that takes
+ * whose handler discards what reaches it while the build runs. `end()` removes the buffer and every buffer that the
+ * code left open above it, with one pass for each, so a buffer that PHP cannot remove ends the loop instead of holding
+ * it. Such a buffer stays, with this one below it: the handler then discards the bytes that waited in the two when the
+ * build ended, and passes on everything after them. Call it under an error handler that takes
  * PHP's notices: a buffer that cannot be removed raises one.
  *
  * @internal
@@ -31,7 +31,7 @@ final class OutputGuard
     public static function start(?\Closure $remove = null): self
     {
         $guard = new self(ob_get_level(), $remove ?? ob_end_clean(...));
-        $guard->buffered = ob_start($guard->filter(...), 1);
+        $guard->buffered = ob_start($guard->filter(...));
 
         return $guard;
     }
@@ -44,7 +44,7 @@ final class OutputGuard
         for ($open = ob_get_level() - $this->level; $open > 0; --$open) {
             ($this->remove)();
         }
-        // What still waits from this buffer upwards (this one holds nothing: each write left it at once).
+        // What still waits from this buffer upwards is output of the build.
         $this->discardBytes = array_sum(array_filter(array_column(array_slice(ob_get_status(true), $this->level), 'buffer_used'), is_int(...)));
         $this->discardAll = false;
     }

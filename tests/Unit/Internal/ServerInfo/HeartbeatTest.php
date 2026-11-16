@@ -635,6 +635,7 @@ final class HeartbeatTest extends TestCase
         $this->assertNull($pending->run(1.0), 'it let go of the lists at its first run');
 
         $this->assertCount($asked, $source->asked);
+        $this->assertSame('', implode("\n", $this->logger->messages()), 'the second run does nothing and says nothing');
         $this->queue->endRequest(1.0);
         $this->assertHeartbeats(1);
     }

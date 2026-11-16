@@ -16,7 +16,6 @@ final class OutputGuardTest extends TestCase
         $level = ob_get_level();
 
         $guard = OutputGuard::start();
-        echo 'x'; // one byte: nothing waits in the guard's buffer
         echo 'printed by a list handler';
         ob_start();
         echo 'into a buffer of the handler';
@@ -46,7 +45,6 @@ final class OutputGuardTest extends TestCase
             return false; // as ob_end_clean() answers for a buffer that cannot be removed
         });
         echo 'printed by a list handler';
-        echo 'x'; // one byte, the last write into the guard's own buffer: it does not wait there
         ob_start(); // stands for a buffer that cannot be removed
         echo 'he'; // 2 bytes wait in it when the build ends
         ob_start(); // and a second one above it
