@@ -125,7 +125,7 @@ final class Heartbeat
             }
             $queue->defer(Guard::key($server->projectId, $key), new PendingHeartbeat($server, $source(), $clock));
         } catch (\Throwable $e) {
-            Log::write('Skipped the server info heartbeat: the check failed - ' . $e::class);
+            Log::write('Skipped the server info heartbeat: the check failed - ' . ErrorName::of($e));
         }
     }
 }

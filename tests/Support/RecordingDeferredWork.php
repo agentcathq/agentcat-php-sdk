@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AgentCat\Tests\Support;
 
 use AgentCat\Internal\Delivery\DeferredWork;
+use AgentCat\Internal\Delivery\Outstanding;
 
 /** Records what the queue does with it; `run()` can run a closure (post a request) or throw. */
 final class RecordingDeferredWork implements DeferredWork
@@ -15,8 +16,8 @@ final class RecordingDeferredWork implements DeferredWork
     /** @var list<string> the `$reason` of every `drop()` */
     public array $drops = [];
 
-    /** Whether something that `run()` started is still on its way. */
-    public bool $unfinished = false;
+    /** What `run()` leaves on its way; null: nothing. */
+    public ?Outstanding $leaves = null;
 
     /** @param (\Closure(float): void)|null $onRun */
     public function __construct(
@@ -25,7 +26,7 @@ final class RecordingDeferredWork implements DeferredWork
     ) {}
 
     #[\Override]
-    public function run(float $secondsLeft): void
+    public function run(float $secondsLeft): ?Outstanding
     {
         $this->runs[] = $secondsLeft;
         if ($this->onRun instanceof \Closure) {
@@ -34,12 +35,8 @@ final class RecordingDeferredWork implements DeferredWork
         if ($this->failure instanceof \Throwable) {
             throw $this->failure;
         }
-    }
 
-    #[\Override]
-    public function unfinished(): bool
-    {
-        return $this->unfinished;
+        return $this->leaves;
     }
 
     #[\Override]

@@ -180,18 +180,34 @@ final class ServerInfoEndToEndTest extends TestCase
         $this->assertStringNotContainsString('the list handler failed', $log, 'no message of the customer\'s code is logged');
     }
 
+    /** A list handler that leaves a buffer open that PHP cannot remove: the cleanup of the run ends, and the process goes on. */
+    #[MaximumDuration(15000)]
+    public function testABufferThatCannotBeRemovedDoesNotHoldTheRunAndNothingReachesTheOutput(): void
+    {
+        $scenario = $this->collector()->scenario();
+
+        $child = $this->child($scenario, ['list'], noisy: true, stuckBuffer: true);
+
+        $this->assertSame('the process went on after the delivery', file_get_contents(self::$dir . '/markers/went-on'));
+        $this->assertSame('', $child->getErrorOutput());
+        $lines = explode("\n", trim($child->getOutput()));
+        $this->assertCount(1, $lines, 'standard output holds the protocol answer only');
+        $this->assertSame('2.0', JsonAssert::at(json_decode($lines[0], false, flags: JSON_THROW_ON_ERROR), 'jsonrpc'));
+        $this->assertCount(1, $this->collector()->serverInfo($scenario), 'the heartbeat still goes out, without the failed list');
+    }
+
     /**
      * Runs the fixture of the finish lane for these requests, in a new process, and waits for its end.
      *
      * @param list<string> $requests each `list` or `call`
      */
-    private function child(string $scenario, array $requests, bool $noisy = false): Process
+    private function child(string $scenario, array $requests, bool $noisy = false, bool $stuckBuffer = false): Process
     {
         $home = self::$dir . '/child-home';
         if (!is_dir($home)) {
             $this->assertTrue(mkdir($home, 0o700));
         }
-        foreach (['list-handler', 'answered'] as $marker) { // what the child before left
+        foreach (['list-handler', 'answered', 'went-on'] as $marker) { // what the child before left
             if (is_file(self::$dir . '/markers/' . $marker)) {
                 unlink(self::$dir . '/markers/' . $marker);
             }
@@ -206,9 +222,10 @@ final class ServerInfoEndToEndTest extends TestCase
                 'SERVER_INFO_COLLECTOR' => $scenario,
                 'SERVER_INFO_MARKERS' => self::$dir . '/markers',
                 'SERVER_INFO_NOISY' => $noisy ? '1' : '0',
+                'SERVER_INFO_STUCK_BUFFER' => $stuckBuffer ? '1' : '0',
             ],
             null,
-            20.0,
+            10.0, // a cleanup loop that never ends fails the test here
         );
         $process->run();
         $this->assertSame(0, $process->getExitCode(), $process->getErrorOutput() . $process->getOutput());

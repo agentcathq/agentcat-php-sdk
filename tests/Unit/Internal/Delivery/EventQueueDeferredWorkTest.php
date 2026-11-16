@@ -15,6 +15,7 @@ use AgentCat\Tests\Support\MemoryLogger;
 use AgentCat\Tests\Support\RecordingCompanion;
 use AgentCat\Tests\Support\RecordingDeferredWork;
 use AgentCat\Tests\Support\RecordingHttpChannel;
+use AgentCat\Tests\Support\RecordingOutstanding;
 use AgentCat\Tests\Support\RecordingTransport;
 use PHPUnit\Framework\TestCase;
 
@@ -252,40 +253,60 @@ final class EventQueueDeferredWorkTest extends TestCase
         $queue = $this->worker();
         $waiting = new RecordingDeferredWork();
         $posted = new RecordingDeferredWork();
-        $posted->unfinished = true;
+        $posted->leaves = $onItsWay = new RecordingOutstanding();
         $answered = new RecordingDeferredWork();
+        $answered->leaves = $settled = new RecordingOutstanding();
         $queue->defer('a', $posted);
         $queue->defer('b', $answered);
         $queue->endRequest(1.0);
+        $settled->settled = true; // the API answered
         $queue->defer('c', $waiting);
 
         $queue->shutdown();
 
         $this->assertSame([[], ['the process is ending']], [$waiting->runs, $waiting->drops]);
-        $this->assertSame(['the delivery time ended before the AgentCat API answered'], $posted->drops, 'what the work started was still on its way');
-        $this->assertSame([], $answered->drops);
+        $this->assertSame(['the delivery time ended before the AgentCat API answered'], $onItsWay->abandons, 'what the work started was still on its way');
+        $this->assertSame([[], [], []], [$settled->abandons, $posted->drops, $answered->drops]);
         $this->assertEqualsWithDelta(0.0, $this->transport->now(), PHP_FLOAT_EPSILON, 'the shutdown did not wait');
         $this->assertFalse($queue->hasWork());
-        $said = count($posted->drops) + count($waiting->drops);
         $queue->shutdown();
-        $this->assertSame($said, count($posted->drops) + count($waiting->drops), 'a second shutdown says nothing again');
+        $this->assertSame(['the delivery time ended before the AgentCat API answered'], $onItsWay->abandons, 'a second shutdown says nothing again');
     }
 
-    public function testWorkThatIsAnsweredIsForgottenAtTheNextRun(): void
+    public function testTheQueueLetsGoOfWorkWhenItsRunEndsAndOfWhatItLeftWhenThatIsAnswered(): void
     {
         $queue = $this->worker();
-        $first = new RecordingDeferredWork();
-        $first->unfinished = true;
-        $queue->defer('a', $first);
-        $queue->endRequest(1.0);
-        $first->unfinished = false; // the API answered
-        $queue->defer('a', new RecordingDeferredWork());
-        $queue->endRequest(1.0);
-        $first->unfinished = true;
+        $work = new RecordingDeferredWork();
+        $work->leaves = $left = new RecordingOutstanding();
+        $ranWork = \WeakReference::create($work);
+        $onItsWay = \WeakReference::create($left);
+        $queue->defer('a', $work);
 
-        $queue->shutdown();
+        $queue->endRequest(1.0);
+        unset($work);
+        $this->assertNull($ranWork->get(), 'the queue holds no work after its run, also while what it left is on its way');
+        $this->assertInstanceOf(RecordingOutstanding::class, $onItsWay->get());
 
-        $this->assertSame([], $first->drops);
+        $left->settled = true; // the API answered
+        unset($left);
+        $queue->pump(); // the pass that reads the answer
+
+        $this->assertNull($onItsWay->get(), 'forgotten in the pass that settled it, not at the next run');
+    }
+
+    public function testWorkThatIsDroppedIsNotKept(): void
+    {
+        $queue = $this->worker();
+        $this->transport->complete = false;
+        $work = new RecordingDeferredWork();
+        $dropped = \WeakReference::create($work);
+        $queue->defer('a', $work);
+        $queue->add($this->event('evt_1'));
+
+        $queue->endRequest(1.0);
+        unset($work);
+
+        $this->assertNull($dropped->get());
     }
 
     public function testAPerRequestSapiDropsTheWorkAtShutdownWhenTheClientDoesNotHaveItsResponse(): void
@@ -334,7 +355,7 @@ final class EventQueueDeferredWorkTest extends TestCase
         $work = new RecordingDeferredWork(function (): void {
             $this->channel->post(new HttpRequest('https://example.test/', [], '{}', true), static function (): void {});
         });
-        $work->unfinished = true;
+        $work->leaves = $left = new RecordingOutstanding();
         $queue->defer('a', $work);
         $queue->responseSent();
 
@@ -342,7 +363,7 @@ final class EventQueueDeferredWorkTest extends TestCase
 
         $this->assertCount(1, $this->channel->requests);
         $this->assertSame(EventQueue::SHUTDOWN_TIMEOUT_SECONDS, $this->transport->now(), 'the one 5 s deadline of the events');
-        $this->assertSame(['the delivery time ended before the AgentCat API answered'], $work->drops);
+        $this->assertSame(['the delivery time ended before the AgentCat API answered'], $left->abandons);
     }
 
     public function testEventsThatUseTheWholeShutdownTimeLeaveNoneForTheWork(): void
@@ -423,33 +444,48 @@ final class EventQueueDeferredWorkTest extends TestCase
         $this->assertCount(2, $failing->drops);
     }
 
-    public function testWorkWhoseStateCannotBeReadCountsAsFinished(): void
+    public function testWhatIsOnItsWayAndFailsStopsNeitherThePassesNorTheShutdown(): void
     {
         $queue = $this->worker();
-        $work = new class implements \AgentCat\Internal\Delivery\DeferredWork {
-            public int $drops = 0;
-
-            #[\Override]
-            public function run(float $secondsLeft): void {}
-
-            #[\Override]
-            public function unfinished(): bool
-            {
-                throw new \LogicException('no state');
-            }
-
-            #[\Override]
-            public function drop(string $reason): void
-            {
-                ++$this->drops;
-            }
-        };
+        $work = new RecordingDeferredWork();
+        $work->leaves = $failing = new RecordingOutstanding(new \LogicException('no state'));
+        $other = new RecordingDeferredWork();
+        $other->leaves = $left = new RecordingOutstanding();
         $queue->defer('a', $work);
-        $queue->endRequest(1.0);
+        $queue->defer('b', $other);
 
+        $queue->endRequest(1.0);
+        $queue->pump();
         $queue->shutdown();
 
-        $this->assertSame(0, $work->drops);
+        $this->assertSame([], $failing->abandons, 'one whose state cannot be read counts as settled');
+        $this->assertSame(['the delivery time ended before the AgentCat API answered'], $left->abandons);
+
+        $again = $this->worker();
+        $throws = new class implements \AgentCat\Internal\Delivery\Outstanding {
+            #[\Override]
+            public function settled(): bool
+            {
+                return false;
+            }
+
+            #[\Override]
+            public function abandon(string $reason): void
+            {
+                throw new \LogicException('no log');
+            }
+        };
+        $first = new RecordingDeferredWork();
+        $first->leaves = $throws;
+        $second = new RecordingDeferredWork();
+        $second->leaves = $last = new RecordingOutstanding();
+        $again->defer('a', $first);
+        $again->defer('b', $second);
+        $again->endRequest(1.0);
+
+        $again->shutdown();
+
+        $this->assertCount(1, $last->abandons, 'the error of one stays inside, and the next one is told');
     }
 
     public function testAWindowWhoseClockFailsRunsNoWork(): void

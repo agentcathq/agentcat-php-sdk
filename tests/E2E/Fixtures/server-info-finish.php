@@ -17,7 +17,8 @@ require dirname(__DIR__, 3) . '/vendor/autoload.php';
 
 // One request of a per-request SAPI with a finish call, as a command: the queue is told that the SAPI finishes its
 // requests, the answer goes to STDOUT, and the script then makes the two calls of the last shutdown pass. The heartbeat
-// goes over real HTTP to $SERVER_INFO_COLLECTOR. With SERVER_INFO_NOISY=1 the customer's code warns, prints and fails.
+// goes over real HTTP to $SERVER_INFO_COLLECTOR. With SERVER_INFO_NOISY=1 the customer's code warns, prints and fails;
+// with SERVER_INFO_STUCK_BUFFER=1 its list handler also leaves an output buffer open that cannot be removed.
 // Arguments: the requests to answer, each `list` or `call`.
 $queue = new EventQueue(finishesRequests: true);
 EventQueue::setGlobal($queue);
@@ -29,6 +30,9 @@ $resources = new CustomerHandler(ListResourcesRequest::class, static function ()
     if ($noisy) {
         trigger_error('a warning of the list handler', E_USER_WARNING);
         echo 'printed by the list handler';
+        if (getenv('SERVER_INFO_STUCK_BUFFER') === '1') {
+            ob_start(null, 0, 0); // a buffer that PHP can neither clean nor remove, left open
+        }
 
         throw new \RuntimeException('the list handler failed');
     }
@@ -59,3 +63,4 @@ file_put_contents($markers . '/answered', is_file($markers . '/list-handler') ? 
 
 $queue->responseSent();
 $queue->finalShutdown();
+file_put_contents($markers . '/went-on', 'the process went on after the delivery');

@@ -14,18 +14,15 @@ namespace AgentCat\Internal\Delivery;
 interface DeferredWork
 {
     /**
-     * Runs the work. It blocks the window while it runs, so it starts nothing once `$secondsLeft` have passed.
+     * Runs the work. It blocks the window while it runs, so it starts nothing once `$secondsLeft` have passed. When it
+     * returns, the queue lets go of the work, and the work has let go of everything of its request.
      *
      * @param float $secondsLeft what is left of the window that runs it
+     *
+     * @return Outstanding|null what the work left on its way (a request on the side channel), or null
      */
-    public function run(float $secondsLeft): void;
+    public function run(float $secondsLeft): ?Outstanding;
 
-    /** After `run()`: whether something that the work started (a request on the side channel) is still on its way. */
-    public function unfinished(): bool;
-
-    /**
-     * The queue gave the work up: before `run()`, which will not be called, or after it, when the process ends while
-     * what the work started is still on its way. `$reason` says why, as the end of a log line.
-     */
+    /** The queue gave the work up, and `run()` will not be called; `$reason` says why, as the end of a log line. */
     public function drop(string $reason): void;
 }

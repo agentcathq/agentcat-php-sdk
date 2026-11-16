@@ -26,29 +26,28 @@ final class Sender
     /**
      * Queues the request; the channel's passes send it. Nothing blocks.
      *
-     * @param (\Closure(): void)|null $settled runs once, when the last answer for the heartbeat is in or it failed
+     * @return SentHeartbeat the request on its way: settled once the last answer for the heartbeat is in or it failed
      *
      * @throws \JsonException for a body JSON cannot carry: nothing is queued
      */
-    public static function send(HttpChannel $channel, string $url, ServerInfoBody $body, ?\Closure $settled = null): void
+    public static function send(HttpChannel $channel, string $url, ServerInfoBody $body): SentHeartbeat
     {
-        self::post($channel, $url, $body, true, $settled ?? static function (): void {});
+        $sent = new SentHeartbeat();
+        self::post($channel, $url, $body, true, $sent);
+
+        return $sent;
     }
 
-    /**
-     * @param \Closure(): void $settled
-     *
-     * @throws \JsonException
-     */
-    private static function post(HttpChannel $channel, string $url, ServerInfoBody $body, bool $full, \Closure $settled): void
+    /** @throws \JsonException */
+    private static function post(HttpChannel $channel, string $url, ServerInfoBody $body, bool $full, SentHeartbeat $sent): void
     {
         $json = $body->encode();
         $request = new HttpRequest($url, ['Content-Type' => 'application/json', 'Accept' => 'application/json'], $json, true, totalTimeoutSeconds: self::TIMEOUT_SECONDS);
-        $channel->post($request, static function (HttpResponse $response) use ($channel, $url, $body, $full, $json, $settled): void {
+        $channel->post($request, static function (HttpResponse $response) use ($channel, $url, $body, $full, $json, $sent): void {
             try {
                 if ($full && $response->status === self::TOO_LARGE) {
                     Log::write('Server info heartbeat was too large (HTTP 413); sending it once more without the tool schemas');
-                    self::post($channel, $url, $body->withoutSchemas(), false, $settled);
+                    self::post($channel, $url, $body->withoutSchemas(), false, $sent);
 
                     return;
                 }
@@ -58,9 +57,9 @@ final class Sender
                     Log::write('Server info heartbeat failed: ' . ($response->error ?? 'HTTP ' . $response->status));
                 }
             } catch (\Throwable $e) {
-                Log::write('Server info heartbeat failed: ' . $e::class);
+                Log::write('Server info heartbeat failed: ' . ErrorName::of($e));
             }
-            $settled();
+            $sent->settle();
         });
     }
 

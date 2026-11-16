@@ -42,7 +42,7 @@ final class BodyBuilder
             } catch (Skipped $skipped) {
                 throw $skipped;
             } catch (\Throwable $e) {
-                $reason = $e instanceof ListFailure ? $e->getMessage() : $e::class;
+                $reason = $e instanceof ListFailure ? $e->getMessage() : ErrorName::of($e);
                 if ($list === ServerInfoSource::TOOLS) {
                     throw Skipped::after('the tool list failed - ' . $reason, $e);
                 }

@@ -578,6 +578,67 @@ final class HeartbeatTest extends TestCase
         $this->assertHeartbeats(1);
     }
 
+    /** @return iterable<string, array{string}> */
+    public static function endsOfABuild(): iterable
+    {
+        yield 'a body, and the POST is on its way' => ['sent'];
+        yield 'a skip: the tool list failed' => ['skipped'];
+        yield 'a failure: JSON cannot carry the body' => ['failed'];
+        yield 'dropped: the window ended before the events were delivered' => ['dropped'];
+    }
+
+    #[DataProvider('endsOfABuild')]
+    public function testWhenTheBuildHasEndedNothingRefersToTheSourceOfTheRequest(string $end): void
+    {
+        $this->oldMemory();
+        $this->channel->complete = false; // the API does not answer
+        $lists = FakeServerInfo::demo();
+        if ($end === 'skipped') {
+            $lists[ServerInfoSource::TOOLS] = new \RuntimeException('down');
+        } elseif ($end === 'failed') {
+            $lists[ServerInfoSource::PROMPTS] = ['' => [[(object) ['name' => NAN]], null]];
+        } elseif ($end === 'dropped') {
+            $this->transport->complete = false;
+            $this->queue->add(new QueuedEvent(new Event(id: 'evt_1', projectId: self::PROJECT, eventType: 'mcp:tools/call')));
+        }
+        $source = new FakeServerInfo($lists);
+        $request = \WeakReference::create($source); // stands for the session or the context of the request
+
+        $this->toolCall($this->server(), source: $source);
+        $this->assertInstanceOf(FakeServerInfo::class, $request->get(), 'until the window, the pending heartbeat keeps it');
+        $this->queue->endRequest(1.0);
+        unset($source, $lists);
+
+        $this->assertHeartbeats($end === 'sent' ? 1 : 0);
+        $this->assertSame($end === 'sent' ? 1 : 0, $this->channel->pending(), 'the POST has no answer yet');
+        $this->assertNull($request->get());
+    }
+
+    public function testAnAnonymousClassOfTheCustomersCodeIsNamedByAFixedWord(): void
+    {
+        $this->oldMemory();
+        $prompts = FakeServerInfo::demo();
+        $prompts[ServerInfoSource::PROMPTS] = new class ('boom') extends \RuntimeException {};
+        $tools = FakeServerInfo::demo();
+        $tools[ServerInfoSource::TOOLS] = new class ('boom') extends \RuntimeException {};
+        $redactor = static fn(string $text): string => throw new class ('boom') extends \DomainException {};
+
+        $this->toolCall($this->server('one'), source: new FakeServerInfo($prompts));
+        $this->toolCall($this->server('two'), source: new FakeServerInfo($tools));
+        $this->toolCall($this->server('three', new Options(redactSensitiveInformation: $redactor)));
+        Heartbeat::onToolList($this->server('four'), static fn(): string => throw new class ('boom') extends \LogicException {}, static fn(): FakeServerInfo => new FakeServerInfo());
+        $this->queue->endRequest(1.0);
+
+        $lines = implode("\n", $this->logger->messages());
+        $this->assertStringContainsString('| without prompts (an anonymous class)', $lines);
+        $this->assertStringContainsString('Skipped the server info heartbeat: the tool list failed - an anonymous class', $lines);
+        $this->assertStringContainsString('Skipped the server info heartbeat: redactSensitiveInformation failed - an anonymous class', $lines);
+        $this->assertStringContainsString('Skipped the server info heartbeat: the check failed - an anonymous class', $lines);
+        $this->assertStringNotContainsString('@anonymous', $lines);
+        $this->assertStringNotContainsString("\0", $lines);
+        $this->assertStringNotContainsString('HeartbeatTest.php', $lines, 'no path of the file that declares the class');
+    }
+
     public function testAServerWhoseNameIsUnknownSendsNothing(): void
     {
         $this->oldMemory();

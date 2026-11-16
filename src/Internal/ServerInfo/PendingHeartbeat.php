@@ -15,9 +15,10 @@ use AgentCat\Internal\Transport\ApiBaseUrl;
  * customer's `redactSensitiveInformation` function, and queues the request (`Sender`).
  *
  * Whatever fails, it sends nothing and logs one line, and nothing of the customer's code leaves it: no error, no PHP
- * warning or notice (an error handler takes them), no output (an output buffer takes what a handler prints, and it is
- * discarded). A log line names the class of what was thrown, never its message, because a message can hold what the
- * redaction function is there to hide.
+ * warning or notice (an error handler takes them), no output (`OutputGuard`). A log line names the class of what was
+ * thrown, never its message, because a message can hold what the redaction function is there to hide. When the build
+ * has ended, it has let go of the lists of the request, and so of the session or the context that they hold; what it
+ * hands back for a request on its way (`SentHeartbeat`) holds nothing of the request.
  *
  * @internal
  */
@@ -28,50 +29,49 @@ final class PendingHeartbeat implements DeferredWork
 
     private const string SKIPPED = 'Skipped the server info heartbeat: ';
 
-    /** True from the moment the request is queued until the API's last answer for it is in. */
-    private bool $onItsWay = false;
+    /** The lists of the request; null once the run took them, so nothing of the request outlives the build. */
+    private ?ServerInfoSource $source;
 
     /** @param \Closure(): float $clock seconds on a monotonic clock */
     public function __construct(
         private readonly TrackedServer $server,
-        private readonly ServerInfoSource $source,
+        ServerInfoSource $source,
         private readonly \Closure $clock,
-    ) {}
+    ) {
+        $this->source = $source;
+    }
 
     #[\Override]
-    public function run(float $secondsLeft): void
+    public function run(float $secondsLeft): ?SentHeartbeat
     {
+        $source = $this->source;
+        $this->source = null;
+        if (!$source instanceof ServerInfoSource) {
+            return null; // it ran already
+        }
         set_error_handler(static fn(): bool => true);
-        $level = ob_get_level();
-        $buffered = ob_start();
+        $output = OutputGuard::start();
 
         try {
-            $body = $this->build($secondsLeft);
+            $body = $this->build($source, $secondsLeft);
         } catch (Skipped $skipped) {
             $body = null;
             Log::write(self::SKIPPED . $skipped->getMessage());
         } catch (\Throwable $e) {
             $body = null;
-            Log::write(self::SKIPPED . $e::class);
+            Log::write(self::SKIPPED . ErrorName::of($e));
         }
-        while ($buffered && ob_get_level() > $level) {
-            ob_end_clean(); // what the customer's code printed, and every buffer it left open
-        }
+        unset($source);
+        $output->end(); // what the customer's code printed, and every buffer it left open
         restore_error_handler(); // every throwable is caught above, and the log never throws
-        if ($body instanceof ServerInfoBody) {
-            $this->send($body);
-        }
-    }
 
-    #[\Override]
-    public function unfinished(): bool
-    {
-        return $this->onItsWay;
+        return $body instanceof ServerInfoBody ? $this->send($body) : null;
     }
 
     #[\Override]
     public function drop(string $reason): void
     {
+        $this->source = null;
         Log::write(self::SKIPPED . $reason);
     }
 
@@ -80,9 +80,9 @@ final class PendingHeartbeat implements DeferredWork
      *
      * @throws \Throwable
      */
-    private function build(float $secondsLeft): ServerInfoBody
+    private function build(ServerInfoSource $source, float $secondsLeft): ServerInfoBody
     {
-        [$name, $version] = $this->source->server();
+        [$name, $version] = $source->server();
         if ($name === null || $name === '') {
             throw new Skipped('the server name is unknown');
         }
@@ -97,7 +97,7 @@ final class PendingHeartbeat implements DeferredWork
                 throw new Skipped('the delivery time ended before the lists were read');
             }
         };
-        $body = BodyBuilder::build($this->server->projectId, $name, $version, $this->source, $this->server->injectionConfig(), $clock, $check);
+        $body = BodyBuilder::build($this->server->projectId, $name, $version, $source, $this->server->injectionConfig(), $clock, $check);
         $redactor = $this->server->options->redactSensitiveInformation;
         if ($redactor instanceof \Closure) {
             try {
@@ -105,7 +105,7 @@ final class PendingHeartbeat implements DeferredWork
             } catch (Skipped $skipped) {
                 throw $skipped;
             } catch (\Throwable $e) {
-                throw Skipped::after('redactSensitiveInformation failed - ' . $e::class, $e);
+                throw Skipped::after('redactSensitiveInformation failed - ' . ErrorName::of($e), $e);
             }
         }
         $check();
@@ -113,17 +113,16 @@ final class PendingHeartbeat implements DeferredWork
         return $body;
     }
 
-    private function send(ServerInfoBody $body): void
+    private function send(ServerInfoBody $body): ?SentHeartbeat
     {
         try {
             $queue = $this->server->publisher()->queue();
-            $this->onItsWay = true;
-            Sender::send($queue->channel(), ApiBaseUrl::serverInfoEndpoint($queue->baseUrl()), $body, function (): void {
-                $this->onItsWay = false;
-            });
+
+            return Sender::send($queue->channel(), ApiBaseUrl::serverInfoEndpoint($queue->baseUrl()), $body);
         } catch (\Throwable $e) {
-            $this->onItsWay = false;
-            Log::write(self::SKIPPED . $e::class);
+            Log::write(self::SKIPPED . ErrorName::of($e));
+
+            return null;
         }
     }
 }

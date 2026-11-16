@@ -133,26 +133,62 @@ final class SenderTest extends TestCase
         $this->assertSame([$line], $this->logger->messages());
     }
 
-    public function testTheSenderSaysOnceWhenTheLastAnswerIsIn(): void
+    public function testWhatTheSenderReturnsIsSettledWhenTheLastAnswerIsIn(): void
     {
-        $settled = new \ArrayObject();
-        $count = static function () use ($settled): void {
-            $settled->append('settled');
-        };
         $channel = new RecordingHttpChannel([new HttpResponse(413, '', ''), new HttpResponse(202, '', '')], complete: false);
 
-        Sender::send($channel, self::URL, $this->body(), $count);
-        $this->assertCount(0, $settled, 'the request is on its way');
+        $sent = Sender::send($channel, self::URL, $this->body());
+        $this->assertFalse($sent->settled(), 'the request is on its way');
         $channel->complete = true;
         $channel->pump();
-        $this->assertCount(1, $settled, 'after the second answer, not after the 413');
+        $this->assertTrue($sent->settled(), 'after the second answer');
 
-        Sender::send(new RecordingHttpChannel(default: new HttpResponse(500, '', '')), self::URL, $this->body(), $count);
-        $this->assertCount(1, $settled, 'a request that got no answer yet is not settled');
+        $resend = new RecordingHttpChannel([new HttpResponse(413, '', '')], complete: false);
+        $twice = Sender::send($resend, self::URL, $this->body());
+        $resend->complete = true;
+        $resend->pump();
+        $resend->complete = false;
+        $this->assertTrue($twice->settled());
+
         $failing = new RecordingHttpChannel(default: HttpResponse::failed('cURL error 7'));
-        Sender::send($failing, self::URL, $this->body(), $count);
+        $failed = Sender::send($failing, self::URL, $this->body());
         $failing->pump();
-        $this->assertCount(2, $settled, 'a failure settles it too');
+        $this->assertTrue($failed->settled(), 'a failure settles it too');
+
+        $failed->abandon('the delivery time ended before the AgentCat API answered');
+        $this->assertContains('Skipped the server info heartbeat: the delivery time ended before the AgentCat API answered', $this->logger->messages());
+    }
+
+    public function testAfterThe413TheHeartbeatIsStillOnItsWay(): void
+    {
+        $channel = new class implements HttpChannel {
+            /** @var list<\Closure(HttpResponse): void> */
+            public array $waiting = [];
+
+            #[\Override]
+            public function post(HttpRequest $request, \Closure $onDone): void
+            {
+                $this->waiting[] = $onDone;
+            }
+
+            #[\Override]
+            public function pump(): void {}
+
+            #[\Override]
+            public function pending(bool $includeBackground = true): int
+            {
+                return count($this->waiting);
+            }
+
+            #[\Override]
+            public function waitForActivity(float $seconds): void {}
+        };
+        $sent = Sender::send($channel, self::URL, $this->body());
+
+        ($channel->waiting[0] ?? static function (): void {})(new HttpResponse(413, '', ''));
+
+        $this->assertCount(2, $channel->waiting, 'the smaller body is queued');
+        $this->assertFalse($sent->settled(), 'the 413 is not the last answer');
     }
 
     public function testAResendThatCannotBeQueuedIsLoggedAndStaysInside(): void
@@ -191,15 +227,12 @@ final class SenderTest extends TestCase
             public function waitForActivity(float $seconds): void {}
         };
 
-        $settled = 0;
-        Sender::send($channel, self::URL, $this->body(), static function () use (&$settled): void {
-            ++$settled;
-        });
+        $sent = Sender::send($channel, self::URL, $this->body());
         $channel->pump();
 
         $this->assertSame(2, $channel->posts);
         $this->assertSame('Server info heartbeat failed: LogicException', $this->logger->messages()[1] ?? null);
-        $this->assertSame(1, $settled);
+        $this->assertTrue($sent->settled());
     }
 
     public function testWithoutSchemasAToolThatIsNoObjectStaysAsItIs(): void

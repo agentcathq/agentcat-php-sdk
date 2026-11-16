@@ -18,6 +18,7 @@ use AgentCat\Tests\Support\JsonAssert;
 use AgentCat\Tests\Support\LaravelMcp\LaravelHarness;
 use AgentCat\Tests\Support\LaravelMcp\LaravelTestCase;
 use AgentCat\Tests\Support\LaravelMcp\PagedServer;
+use AgentCat\Tests\Support\LaravelMcp\ServerInfo\ContextProbe;
 use AgentCat\Tests\Support\LaravelMcp\ServerInfo\DemoServer;
 use AgentCat\Tests\Support\LaravelMcp\ServerInfo\FailingMethod;
 use AgentCat\Tests\Support\LaravelMcp\ServerInfo\ToolsOnlyServer;
@@ -230,6 +231,22 @@ final class ServerInfoTest extends LaravelTestCase
 
         $this->assertSame(['ok', 4, 'ok', 4, 'ok', 4], $answers);
         $this->assertHeartbeats(3);
+    }
+
+    public function testTheServerContextOfTheRequestIsLetGoWhenTheBuildEndsAlsoWhileThePostIsOnItsWay(): void
+    {
+        $this->oldMemory();
+        $this->channel->complete = false; // the API does not answer: the POST stays on its way
+        ContextProbe::reset();
+        $harness = $this->harness(DemoServer::class, methods: ['resources/list' => ContextProbe::class]);
+
+        $harness->callTool('alpha', []);
+        $this->queue->endRequest(1.0);
+        gc_collect_cycles();
+
+        $this->assertHeartbeats(1);
+        $this->assertSame(1, $this->channel->pending());
+        $this->assertSame([null], ContextProbe::contexts(), 'the heartbeat called the list handler once, with the context of the request, and nothing of the SDK refers to that context any more');
     }
 
     /** V8 for laravel/mcp: a new server object for each request, in a memory that lasts, sends one heartbeat an hour. */

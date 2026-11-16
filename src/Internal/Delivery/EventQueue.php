@@ -94,8 +94,8 @@ final class EventQueue
     /** @var array<string, DeferredWork> the work that waits for the events and the response, by its key */
     private array $deferred = [];
 
-    /** @var list<DeferredWork> the work that ran, kept while something that it started is still on its way */
-    private array $started = [];
+    /** @var list<Outstanding> what deferred work left on its way, each kept only until it is settled */
+    private array $outstanding = [];
 
     /** Whether the SAPI runs one request per script and has a finish call: the shutdown delivery then comes after the response. */
     private readonly bool $finishesRequests;
@@ -380,12 +380,15 @@ final class EventQueue
             Log::write(sprintf('Shutting down with %d events still in queue', $this->queued()));
         }
         $this->dropDeferred($this->responseSent ? 'the delivery time ended before the events were delivered' : 'the client does not have its response yet');
-        foreach ($this->started as $work) {
-            if ($this->unfinished($work)) {
-                $this->drop($work, 'the delivery time ended before the AgentCat API answered');
+        $outstanding = $this->unsettled();
+        $this->outstanding = [];
+        foreach ($outstanding as $left) {
+            try {
+                $left->abandon('the delivery time ended before the AgentCat API answered');
+            } catch (\Throwable) {
+                // deferred work never stops the queue
             }
         }
-        $this->started = [];
     }
 
     /**
@@ -568,13 +571,17 @@ final class EventQueue
         } catch (\Throwable) {
             // the side channel never stops the queue
         }
+        if ($this->outstanding !== []) {
+            $this->outstanding = $this->unsettled(); // what the channel just answered is forgotten at once
+        }
 
         return $ran;
     }
 
     /**
      * Runs the deferred work, once, when every event is delivered and the window has time left. Each piece of work
-     * gets the seconds left of the window. Work that ran is kept while what it started is on its way, so the shutdown
+     * gets the seconds left of the window. The queue lets go of work that ran; it keeps only what the work left on its way
+     * (`Outstanding`), until that is settled, so the shutdown
      * can say that it gave it up. Never throws.
      *
      * @return bool whether work ran
@@ -594,26 +601,35 @@ final class EventQueue
         }
         $deferred = $this->deferred;
         $this->deferred = [];
-        $this->started = array_values(array_filter($this->started, $this->unfinished(...)));
         foreach ($deferred as $work) {
             try {
-                $work->run(max(0.0, $until - $this->transport->now()));
+                $left = $work->run(max(0.0, $until - $this->transport->now()));
+                if ($left instanceof Outstanding) {
+                    $this->outstanding[] = $left;
+                }
             } catch (\Throwable) {
                 // deferred work never stops the queue
             }
-            $this->started[] = $work;
         }
 
         return true;
     }
 
-    private function unfinished(DeferredWork $work): bool
+    /** @return list<Outstanding> what is still on its way; one whose state cannot be read counts as settled */
+    private function unsettled(): array
     {
-        try {
-            return $work->unfinished();
-        } catch (\Throwable) {
-            return false; // deferred work never stops the queue
+        $unsettled = [];
+        foreach ($this->outstanding as $left) {
+            try {
+                if (!$left->settled()) {
+                    $unsettled[] = $left;
+                }
+            } catch (\Throwable) {
+                // deferred work never stops the queue
+            }
         }
+
+        return $unsettled;
     }
 
     private function dropDeferred(string $reason): void
