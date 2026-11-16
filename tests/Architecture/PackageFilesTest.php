@@ -54,7 +54,7 @@ final class PackageFilesTest extends TestCase
     private const array PUBLIC_PATHS = [
         'src', 'tests', 'config', 'resources', 'recipe', '.github', 'README.md', 'CHANGELOG.md', 'CONTRIBUTING.md',
         'composer.json', 'composer-dependency-analyser.php', 'phpstan.neon.dist', 'phpstan.no-bundle.neon',
-        'phpstan.php85.neon', 'rector.php', 'infection.json5', 'phpunit.xml.dist', 'phpunit-baseline.xml',
+        'phpstan.php85.neon', 'rector.php', 'phpunit.xml.dist', 'phpunit-baseline.xml',
         '.php-cs-fixer.dist.php', '.gitattributes', '.gitignore', '.editorconfig',
     ];
 
