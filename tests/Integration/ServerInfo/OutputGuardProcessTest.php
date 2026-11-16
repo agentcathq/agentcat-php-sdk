@@ -10,8 +10,8 @@ use Symfony\Component\Process\Process;
 
 /**
  * The output guard of the heartbeat build in a real process, with real output buffers that a test process could never
- * get rid of. The fixture is a worker that writes its responses with `echo`: after a heartbeat run whose list handler
- * left a bad buffer open, the later responses must arrive whole.
+ * get rid of. The fixture is a worker that serves three requests and writes each response with `echo`; the heartbeat
+ * runs at the end of the first, and its list handler leaves a bad buffer open. All three responses must arrive whole.
  */
 final class OutputGuardProcessTest extends TestCase
 {
@@ -34,9 +34,8 @@ final class OutputGuardProcessTest extends TestCase
 
         $this->assertSame(0, $process->getExitCode(), $process->getErrorOutput() . $process->getOutput());
         $this->assertSame('', $process->getErrorOutput());
-        $expected = "response 0\n"
+        $expected = sprintf("response 1: %s\n", str_repeat('1', 5000))
             . $late
-            . sprintf("response 1: %s\n", str_repeat('1', 5000))
             . sprintf("response 2: %s\n", str_repeat('2', 5000))
             . sprintf("response 3: %s\n", str_repeat('3', 5000))
             . $held

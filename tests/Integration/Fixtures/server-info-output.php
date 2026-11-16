@@ -18,12 +18,11 @@ use AgentCat\Tests\Support\RecordingTransport;
 
 require dirname(__DIR__, 3) . '/vendor/autoload.php';
 
-// A worker that writes its responses with echo. Between response 0 and response 1, one server info heartbeat runs in
-// the request-end window, and its list handler prints text and leaves a bad output buffer open: one that PHP cannot
-// remove (`stuck`, or `flushable`, which the worker flushes after each response), or one whose handler throws when the
-// buffer is cleaned (`throwing`). Nothing is sent: the queue
-// records. The last lines say which PHP errors the error handler of the "application" saw, and how many heartbeats
-// were queued.
+// A worker that serves three requests in one process and writes each response with echo. In the request-end window
+// of the first request, one server info heartbeat runs, and its list handler prints text and leaves a bad output buffer
+// open: one that PHP cannot remove (`stuck`, or `flushable`, which the worker flushes after each response), or one
+// whose handler throws when the buffer is cleaned (`throwing`). Nothing is sent: the queue records. The last lines say
+// which PHP errors the error handler of the "application" saw, and how many heartbeats were queued.
 $mode = $argv[1] ?? '';
 $logger = new MemoryLogger();
 Log::setLogger($logger);
@@ -53,14 +52,16 @@ $lists[ServerInfoSource::RESOURCES] = static function () use ($mode): array {
 };
 $server = new TrackedServer('proj_' . str_repeat('o', 27), new Options(), static fn(): array => ['output-server', '1.0.0'], new Publisher($queue));
 
-echo "response 0\n";
-Heartbeat::onToolList($server, static fn(): string => 'output-server', static fn(): FakeServerInfo => new FakeServerInfo($lists, name: 'output-server', version: '1.0.0'));
-$queue->endRequest(1.0);
-
-trigger_error('a notice of the application after the run', E_USER_NOTICE);
 $held = 0;
-foreach ([1, 2, 3] as $response) {
-    echo sprintf("response %d: %s\n", $response, str_repeat((string) $response, 5000));
+foreach ([1, 2, 3] as $request) {
+    echo sprintf("response %d: %s\n", $request, str_repeat((string) $request, 5000));
+    if ($request === 1) {
+        Heartbeat::onToolList($server, static fn(): string => 'output-server', static fn(): FakeServerInfo => new FakeServerInfo($lists, name: 'output-server', version: '1.0.0'));
+    }
+    $queue->endRequest(1.0);
+    if ($request === 1) {
+        trigger_error('a notice of the application after the run', E_USER_NOTICE);
+    }
     if ($mode === 'flushable') {
         ob_flush(); // the worker sends the response: the bad buffer passes it down to the buffer of the SDK below it
         $held += array_sum(array_filter(array_column(array_slice(ob_get_status(true), 0, -1), 'buffer_used'), is_int(...)));
