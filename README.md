@@ -61,19 +61,6 @@ AgentCat works as a lightweight middleware inside your MCP server. When you call
 
 Injected parameters are stripped from arguments before your tool handler runs, so your code never sees them. For tools that declare an output schema, issued IDs are also mirrored into `structuredContent` (as `mcp_session`), so clients that only read structured results still receive them.
 
-## Server info
-
-AgentCat also sends what an agent sees on your server: its name, version, title and instructions, and its full lists of tools, resources, resource templates and prompts. The tool list is the one a client gets, with AgentCat's parameters and `get_more_tools`. AgentCat uses it to tell you what your server offers to agents. The request carries your project ID and no credentials.
-
-- **When.** After a `tools/list` or `tools/call` request, AgentCat calls your server's own list handlers and sends the result, about once an hour for each PHP process and server name. It does this only after the client has its response, in the delivery that sends the events of the request. No timer runs, and nothing of it runs while a request is answered.
-- **PHP-FPM and other per-request runtimes.** Each request starts with a new memory, so AgentCat cannot remember the last time. There it sends after each `tools/list` request and after each `get_more_tools` call, and after no other tool call. It needs a SAPI that can end the request before the script ends: PHP-FPM, LiteSpeed, FrankenPHP and NGINX Unit.
-- **Workers.** In a Laravel Octane worker and in a Symfony Runtime worker, the Laravel provider and the Symfony bundle run it at the end of the request, in the same wait of at most one second that sends the events. The first request of a worker process sends none.
-- **Runtimes that send none.** A stdio server, a worker loop of your own without the Laravel provider or the Symfony bundle, and a SAPI that sends the response only when the script ends (Apache mod_php, php-cgi, `php -S`). There AgentCat has no moment after the response that belongs to the request, so it sends nothing.
-- **Tracked after `build()`.** For a Builder or a server that you track after `build()`, mcp/sdk answers `tools/list` without AgentCat. Such a server sends after tool calls only: in a worker about once an hour, and under a per-request runtime only after a `get_more_tools` call. Track the Builder before `build()` to send after each tool list request.
-- **Redaction.** Your `redactSensitiveInformation` function runs on every text of it: the title, the instructions and every description. The names stay as they are: the server name and version, and the `name`, `uri` and `uriTemplate` of each item. If the function fails, AgentCat sends nothing. AgentCat's log names the class of an error of your list handlers or of this function, never its message.
-- **No file.** AgentCat writes no file and uses no cache for this. Its only state is a few timestamps in the memory of the process.
-- **What it can cost.** A list handler that fails, or an AgentCat API that does not answer, never changes or delays a response of your server. PHP cannot stop a list handler that is slow: AgentCat reads the time between two list pages and between two calls of your redaction function, and stops there when the time of the delivery is over (5 seconds under a per-request runtime, 1 second in a worker). One slow list call can pass that time, and it keeps the PHP worker busy after the response for as long as it runs. Under a per-request runtime this can happen after each `tools/list` request. It is on with tracing and a project ID, and no option turns it off.
-
 ## Getting Started
 
 To get started with AgentCat, first create an account and obtain your project ID by signing up at [agentcat.com](https://agentcat.com). For detailed setup instructions visit our [documentation](https://docs.agentcat.com).
