@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- The server info heartbeat: about once an hour for each process, and after each `tools/list` request under PHP-FPM, AgentCat calls the server's own list handlers and sends the server's name, version, title, instructions and its lists of tools, resources, resource templates and prompts to AgentCat, after the response and with `redactSensitiveInformation` applied to the text.
+- The server info heartbeat: after a `tools/list` request under PHP-FPM, and about once an hour in a Laravel Octane or Symfony Runtime worker, AgentCat calls the server's own list handlers after the response and sends the server's name, version, title, instructions and its lists of tools, resources, resource templates and prompts to AgentCat, with `redactSensitiveInformation` applied to the text. A stdio server and a SAPI that sends the response only when the script ends send none.
 
 ## [1.1.0] - 2026-10-23
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AgentCat\Tests\Integration\LaravelMcp;
 
+use AgentCat\Internal\ServerInfo\ListFailure;
 use AgentCat\Internal\ServerInfo\ServerInfoSource;
 use AgentCat\LaravelMcp\Internal\LaravelServerInfo;
 use AgentCat\Tests\Support\LaravelMcp\LaravelTestCase;
@@ -55,15 +56,14 @@ final class LaravelServerInfoTest extends LaravelTestCase
     {
         $answers = [
             'the handler answered with a stream' => static fn(JsonRpcRequest $request): array => [JsonRpcResponse::result($request->id, ['resources' => []])],
-            'the handler answered with a JSON-RPC error: bad cursor' => static fn(JsonRpcRequest $request): JsonRpcResponse => JsonRpcResponse::error($request->id, -32602, 'bad cursor'),
-            'the handler answered with a JSON-RPC error: ' => static fn(): JsonRpcResponse => new JsonRpcResponse(['error' => ['code' => -1]]),
+            'the handler answered with a JSON-RPC error' => static fn(JsonRpcRequest $request): JsonRpcResponse => JsonRpcResponse::error($request->id, -32602, 'a secret cursor'),
             'the answer of the handler has no list' => static fn(JsonRpcRequest $request): JsonRpcResponse => JsonRpcResponse::result($request->id, ['prompts' => []]),
         ];
         foreach ($answers as $message => $answer) {
             $this->handler($answer);
             $info = new LaravelServerInfo(['resources/list' => 'handler'], $this->context());
 
-            $error = Thrown::by(\UnexpectedValueException::class, static fn(): ?array => $info->page(ServerInfoSource::RESOURCES, null));
+            $error = Thrown::by(ListFailure::class, static fn(): ?array => $info->page(ServerInfoSource::RESOURCES, null));
 
             $this->assertSame($message, $error->getMessage());
         }
@@ -71,21 +71,21 @@ final class LaravelServerInfoTest extends LaravelTestCase
             $this->handler(static fn(JsonRpcRequest $request): JsonRpcResponse => JsonRpcResponse::result($request->id, $result));
             $info = new LaravelServerInfo(['resources/list' => 'handler'], $this->context());
 
-            $this->assertSame('the answer of the handler has no list', Thrown::by(\UnexpectedValueException::class, static fn(): ?array => $info->page(ServerInfoSource::RESOURCES, null))->getMessage());
+            $this->assertSame('the answer of the handler has no list', Thrown::by(ListFailure::class, static fn(): ?array => $info->page(ServerInfoSource::RESOURCES, null))->getMessage());
         }
         $this->handler(static fn(): JsonRpcResponse => new JsonRpcResponse(['error' => 'odd']));
         $info = new LaravelServerInfo(['resources/list' => 'handler'], $this->context());
-        $this->assertSame('the handler answered with a JSON-RPC error: ', Thrown::by(\UnexpectedValueException::class, static fn(): ?array => $info->page(ServerInfoSource::RESOURCES, null))->getMessage());
+        $this->assertSame('the handler answered with a JSON-RPC error', Thrown::by(ListFailure::class, static fn(): ?array => $info->page(ServerInfoSource::RESOURCES, null))->getMessage());
         $this->handler(static fn(): JsonRpcResponse => new JsonRpcResponse(['result' => 'text']));
         $info = new LaravelServerInfo(['resources/list' => 'handler'], $this->context());
-        $this->assertSame('the answer of the handler has no list', Thrown::by(\UnexpectedValueException::class, static fn(): ?array => $info->page(ServerInfoSource::RESOURCES, null))->getMessage());
+        $this->assertSame('the answer of the handler has no list', Thrown::by(ListFailure::class, static fn(): ?array => $info->page(ServerInfoSource::RESOURCES, null))->getMessage());
     }
 
     public function testANameThatIsNoListOfAHeartbeatIsRefused(): void
     {
         $info = new LaravelServerInfo([], $this->context());
 
-        $this->assertSame('"roots" is no list of a heartbeat', Thrown::by(\UnexpectedValueException::class, static fn(): ?array => $info->page('roots', null))->getMessage());
+        $this->assertSame('the list is no list of a heartbeat', Thrown::by(ListFailure::class, static fn(): ?array => $info->page('roots', null))->getMessage());
     }
 
     public function testTheTitleAndTheInstructionsComeFromTheContextOfTheRequest(): void
@@ -93,6 +93,7 @@ final class LaravelServerInfoTest extends LaravelTestCase
         $this->assertSame(['', 'Read me.'], [(new LaravelServerInfo([], $this->context()))->title(), (new LaravelServerInfo([], $this->context()))->instructions()]);
         $titled = new LaravelServerInfo([], $this->context(new Implementation('demo', '1', title: 'The Title')));
         $this->assertSame('The Title', $titled->title());
+        $this->assertSame(['demo', '1'], $titled->server());
     }
 
     /**

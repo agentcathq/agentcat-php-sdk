@@ -66,7 +66,7 @@ final readonly class RegistryCall
         try {
             return $this->answer($request, $session);
         } finally {
-            Heartbeat::onToolCall($this->server, $request->name, fn(): McpServerInfo => ($this->lists)($session)); // never throws
+            Heartbeat::onToolCall($this->server, $request->name, fn(): ?string => $this->server->serverInfo()[0], fn(): McpServerInfo => ($this->lists)($session)); // never throws
         }
     }
 

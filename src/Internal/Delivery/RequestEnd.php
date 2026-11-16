@@ -101,33 +101,6 @@ final readonly class RequestEnd
     }
 
     /**
-     * On a SAPI that sends a response only when the script ends: whether the client has the whole answer although the
-     * script still runs. The headers are out with a `Content-Length`, so the client knows where the answer ends, and no
-     * output buffer holds bytes of it back. Never throws: false when a function it needs is missing or fails.
-     *
-     * @param (\Closure(): bool)|null         $headersSent default `headers_sent()`
-     * @param (\Closure(): list<string>)|null $headers     the answer's header lines; default `headers_list()`
-     * @param (\Closure(): int)|null          $bufferLevel default `ob_get_level()`
-     */
-    public static function answerSent(?\Closure $headersSent = null, ?\Closure $headers = null, ?\Closure $bufferLevel = null): bool
-    {
-        try {
-            if (!($headersSent ?? headers_sent(...))() || ($bufferLevel ?? ob_get_level(...))() !== 0) {
-                return false;
-            }
-            foreach (($headers ?? headers_list(...))() as $line) {
-                if (stripos($line, 'Content-Length:') === 0) {
-                    return true;
-                }
-            }
-        } catch (\Throwable) {
-            // a disabled function: the answer counts as not sent
-        }
-
-        return false;
-    }
-
-    /**
      * Sends and closes the removable output buffers above `$keep` (Symfony `Response::closeOutputBuffers()`), from the
      * top down to the first one that may not be removed or flushed, then flushes the SAPI.
      */

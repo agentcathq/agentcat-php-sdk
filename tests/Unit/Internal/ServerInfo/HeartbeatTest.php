@@ -50,7 +50,8 @@ final class HeartbeatTest extends TestCase
         Log::setLogger($this->logger);
         $this->transport = new RecordingTransport();
         $this->channel = new RecordingHttpChannel();
-        $this->queue = new EventQueue(transport: $this->transport, channel: $this->channel, outlivesRequest: true);
+        $this->queue = new EventQueue(transport: $this->transport, channel: $this->channel, finishesRequests: false);
+        $this->queue->endRequest(1.0); // a worker whose bridge ends each request in a window
     }
 
     #[\Override]
@@ -69,7 +70,7 @@ final class HeartbeatTest extends TestCase
         $this->toolCall($this->server(), source: $source);
         $this->assertSame([], $source->asked, 'the check reads no list');
         $this->assertHeartbeats(0);
-        $this->queue->pump();
+        $this->queue->endRequest(1.0);
 
         $this->assertHeartbeats(1);
         $body = $this->body(0);
@@ -89,17 +90,17 @@ final class HeartbeatTest extends TestCase
         $this->toolCall($server);
         $this->toolList($server);
         $this->toolCall($server);
-        $this->queue->pump();
+        $this->queue->endRequest(1.0);
         $this->assertHeartbeats(1, 'three requests: one heartbeat');
 
         $this->now += 3599.0;
         $this->toolCall($server);
-        $this->queue->pump();
+        $this->queue->endRequest(1.0);
         $this->assertHeartbeats(1, 'none at 3,599 s');
 
         $this->now += 1.0;
         $this->toolCall($server);
-        $this->queue->pump();
+        $this->queue->endRequest(1.0);
         $this->assertHeartbeats(2, 'the second one at 3,600 s');
     }
 
@@ -111,15 +112,15 @@ final class HeartbeatTest extends TestCase
         $failing[ServerInfoSource::TOOLS] = new \RuntimeException('down');
 
         $this->toolCall($server, source: new FakeServerInfo($failing));
-        $this->queue->pump();
+        $this->queue->endRequest(1.0);
         $this->now += 3599.0;
         $this->toolCall($server);
-        $this->queue->pump();
+        $this->queue->endRequest(1.0);
         $this->assertHeartbeats(0);
 
         $this->now += 1.0;
         $this->toolCall($server);
-        $this->queue->pump();
+        $this->queue->endRequest(1.0);
         $this->assertHeartbeats(1);
     }
 
@@ -129,16 +130,16 @@ final class HeartbeatTest extends TestCase
 
         $this->toolCall($this->server());
         $this->toolCall($this->server()); // a new server object for each request
-        $this->queue->pump();
+        $this->queue->endRequest(1.0);
         $this->assertHeartbeats(1);
 
         $this->toolCall($this->server('other-server'));
-        $this->queue->pump();
+        $this->queue->endRequest(1.0);
         $this->assertHeartbeats(2);
         $this->assertSame(['demo-server', 'other-server'], [JsonAssert::at($this->body(0), 'server_name'), JsonAssert::at($this->body(1), 'server_name')]);
 
         $this->toolCall($this->server(project: 'proj_bbbbbbbbbbbbbbbbbbbbbbbbbbb'));
-        $this->queue->pump();
+        $this->queue->endRequest(1.0);
         $this->assertHeartbeats(3, 'the same name in another project');
     }
 
@@ -161,7 +162,7 @@ final class HeartbeatTest extends TestCase
         $this->toolList($server, $source);
         $this->toolCall($server, 'get_more_tools', $source);
         $this->assertFalse($this->queue->hasWork());
-        $this->queue->flush();
+        $this->queue->endRequest(1.0);
 
         $this->assertHeartbeats(0);
         $this->assertSame([], $source->asked);
@@ -174,11 +175,18 @@ final class HeartbeatTest extends TestCase
         $this->channel->complete = false;
 
         $this->toolCall($this->server());
-        $this->queue->pump();
-        $this->queue->pump();
+        $this->assertSame(0, $this->transport->waits, 'the check waited for nothing');
+        $this->assertFalse($this->queue->endRequest(1.0));
+        $this->assertEqualsWithDelta(1.0, $this->transport->now(), PHP_FLOAT_EPSILON, 'the request-end window ended at its 1 s');
+        $waits = $this->transport->waits;
+
+        $this->queue->pump(); // the next request
+        $this->assertTrue($this->queue->flush(), 'a flush of the customer does not wait for the heartbeat');
+        $this->queue->endRequest(1.0);
 
         $this->assertHeartbeats(1);
-        $this->assertSame(0, $this->transport->waits, 'no pass waited');
+        $this->assertSame($waits, $this->transport->waits, 'no later pass waited for it');
+        $this->assertEqualsWithDelta(1.0, $this->transport->now(), PHP_FLOAT_EPSILON);
         $this->assertSame([], $this->logger->messages());
     }
 
@@ -187,11 +195,11 @@ final class HeartbeatTest extends TestCase
     {
         $tools = FakeServerInfo::demo();
         $tools[ServerInfoSource::TOOLS] = new \RuntimeException('the handler failed');
-        yield 'a list handler fails' => [$tools, null, 'Skipped the server info heartbeat: the tool list failed - RuntimeException: the handler failed'];
+        yield 'a list handler fails' => [$tools, null, 'Skipped the server info heartbeat: the tool list failed - RuntimeException'];
         $error = FakeServerInfo::demo();
         $error[ServerInfoSource::TOOLS] = new \TypeError('not a handler');
-        yield 'a list handler fails with an Error' => [$error, null, 'Skipped the server info heartbeat: the tool list failed - TypeError: not a handler'];
-        yield 'the redaction function fails' => [FakeServerInfo::demo(), static fn(string $text): string => throw new \DomainException('redactor down'), 'Skipped the server info heartbeat: redactSensitiveInformation failed - DomainException: redactor down'];
+        yield 'a list handler fails with an Error' => [$error, null, 'Skipped the server info heartbeat: the tool list failed - TypeError'];
+        yield 'the redaction function fails' => [FakeServerInfo::demo(), static fn(string $text): string => throw new \DomainException('redactor down'), 'Skipped the server info heartbeat: redactSensitiveInformation failed - DomainException'];
     }
 
     /**
@@ -205,8 +213,8 @@ final class HeartbeatTest extends TestCase
         $this->expectOutputString('');
 
         $this->toolCall($this->server(options: new Options(redactSensitiveInformation: $redactor)), source: new FakeServerInfo($lists));
-        $this->queue->pump();
-        $this->queue->flush();
+        $this->queue->endRequest(1.0);
+        $this->queue->endRequest(1.0);
 
         $this->assertHeartbeats(0);
         $this->assertSame([$line], $this->logger->messages());
@@ -216,14 +224,15 @@ final class HeartbeatTest extends TestCase
     {
         $this->oldMemory();
         $this->channel = new RecordingHttpChannel(default: new HttpResponse(500, 'Internal Server Error', ''));
-        $this->queue = new EventQueue(transport: $this->transport, channel: $this->channel, outlivesRequest: true);
+        $this->queue = new EventQueue(transport: $this->transport, channel: $this->channel, finishesRequests: false);
+        $this->queue->endRequest(1.0); // a worker whose bridge ends each request in a window
         $server = $this->server();
 
         $this->toolCall($server);
-        $this->queue->pump();
+        $this->queue->endRequest(1.0);
         $this->toolCall($server);
-        $this->queue->pump();
-        $this->queue->flush();
+        $this->queue->endRequest(1.0);
+        $this->queue->endRequest(1.0);
 
         $this->assertHeartbeats(1);
         $this->assertSame(['Server info heartbeat failed: HTTP 500'], $this->logger->messages());
@@ -256,7 +265,7 @@ final class HeartbeatTest extends TestCase
 
         try {
             $this->toolCall($this->server(options: new Options(redactSensitiveInformation: $redactor)), source: new FakeServerInfo($lists));
-            $this->queue->pump();
+            $this->queue->endRequest(1.0);
             $this->assertNull(error_get_last(), 'PHP\'s own error handling, which can print the message, saw nothing');
             trigger_error('after the run', E_USER_NOTICE);
         } finally {
@@ -271,8 +280,8 @@ final class HeartbeatTest extends TestCase
     {
         $this->oldMemory();
 
-        Heartbeat::onToolList($this->server(), static fn(): ServerInfoSource => throw new \LogicException('the request has no session'));
-        $this->queue->flush();
+        Heartbeat::onToolList($this->server(), static fn(): string => 'demo-server', static fn(): ServerInfoSource => throw new \LogicException('the request has no session'));
+        $this->queue->endRequest(1.0);
 
         $this->assertHeartbeats(0);
         $this->assertSame(['Skipped the server info heartbeat: the check failed - LogicException'], $this->logger->messages());
@@ -288,7 +297,7 @@ final class HeartbeatTest extends TestCase
         $options = new Options(enableReportMissing: false, redactSensitiveInformation: static fn(string $text): string => str_replace('secret', '[x]', $text));
 
         $this->toolCall($this->server('secret-server', $options), source: new FakeServerInfo($lists, 'Secret Title', 'the secret plan'));
-        $this->queue->pump();
+        $this->queue->endRequest(1.0);
 
         $body = $this->body(0);
         $this->assertSame('the [x] plan', JsonAssert::at($body, 'instructions'));
@@ -305,7 +314,7 @@ final class HeartbeatTest extends TestCase
         $options = new Options(redactSensitiveInformation: static fn(string $text): int => 42);
 
         $this->toolCall($this->server(options: $options));
-        $this->queue->flush();
+        $this->queue->endRequest(1.0);
 
         $this->assertHeartbeats(0);
         $this->assertSame(['Skipped the server info heartbeat: redactSensitiveInformation must return a string, got int'], $this->logger->messages());
@@ -315,10 +324,11 @@ final class HeartbeatTest extends TestCase
     {
         $this->oldMemory();
         $this->channel = new RecordingHttpChannel([new HttpResponse(413, 'Payload Too Large', ''), new HttpResponse(202, 'Accepted', '')]);
-        $this->queue = new EventQueue(transport: $this->transport, channel: $this->channel, outlivesRequest: true);
+        $this->queue = new EventQueue(transport: $this->transport, channel: $this->channel, finishesRequests: false);
+        $this->queue->endRequest(1.0); // a worker whose bridge ends each request in a window
 
         $this->toolCall($this->server());
-        $this->assertTrue($this->queue->flush());
+        $this->assertTrue($this->queue->endRequest(1.0));
 
         $this->assertHeartbeats(2);
         $this->assertObjectHasProperty('inputSchema', JsonAssert::object(JsonAssert::at($this->body(0), 'features', 'tools', 0)));
@@ -330,10 +340,11 @@ final class HeartbeatTest extends TestCase
         }
 
         $this->channel = new RecordingHttpChannel(default: new HttpResponse(413, 'Payload Too Large', ''));
-        $this->queue = new EventQueue(transport: $this->transport, channel: $this->channel, outlivesRequest: true);
+        $this->queue = new EventQueue(transport: $this->transport, channel: $this->channel, finishesRequests: false);
+        $this->queue->endRequest(1.0); // a worker whose bridge ends each request in a window
         $this->toolCall($this->server('other-server'));
-        $this->assertTrue($this->queue->flush());
-        $this->queue->flush();
+        $this->assertTrue($this->queue->endRequest(1.0));
+        $this->queue->endRequest(1.0);
         $this->assertHeartbeats(2, '413 two times: two posts, no third');
     }
 
@@ -343,7 +354,7 @@ final class HeartbeatTest extends TestCase
         $this->queue->configure('https://custom.example.test/base/');
 
         $this->toolCall($this->server());
-        $this->queue->pump();
+        $this->queue->endRequest(1.0);
 
         $this->assertSame(['https://custom.example.test/base/v1/public/server-info/'], $this->channel->urls());
     }
@@ -353,24 +364,24 @@ final class HeartbeatTest extends TestCase
         $server = $this->server();
 
         $this->toolCall($server);
-        $this->queue->pump();
+        $this->queue->endRequest(1.0);
         $this->assertHeartbeats(0, 'none after the tool call');
         $this->assertFalse($this->queue->hasWork());
 
         $this->toolList($server);
-        $this->queue->pump();
+        $this->queue->endRequest(1.0);
         $this->assertHeartbeats(1, 'one after the list request');
 
         Heartbeat::forget(); // a second new memory
         $this->toolCall($server, 'get_more_tools');
-        $this->queue->pump();
+        $this->queue->endRequest(1.0);
         $this->assertHeartbeats(2, 'one after the get_more_tools call');
     }
 
     public function testV17WithReportMissingOffGetMoreToolsIsAToolCallLikeAnyOther(): void
     {
         $this->toolCall($this->server(options: new Options(enableReportMissing: false)), 'get_more_tools');
-        $this->queue->pump();
+        $this->queue->endRequest(1.0);
 
         $this->assertHeartbeats(0);
     }
@@ -381,7 +392,7 @@ final class HeartbeatTest extends TestCase
             Heartbeat::forget(); // the memory of the request before is gone
             $server = $this->server(); // and each request tracks a new server
             $request === 'call' ? $this->toolCall($server) : $this->toolList($server);
-            $this->queue->pump();
+            $this->queue->endRequest(1.0);
         }
 
         $this->assertHeartbeats(3);
@@ -392,15 +403,15 @@ final class HeartbeatTest extends TestCase
         $server = $this->server();
 
         $this->toolCall($server); // an age of 0 s
-        $this->queue->pump();
+        $this->queue->endRequest(1.0);
         $this->now += 59.0;
         $this->toolCall($server);
-        $this->queue->pump();
+        $this->queue->endRequest(1.0);
         $this->assertHeartbeats(0, 'none at 0 s and at 59 s');
 
         $this->now += 1.0;
         $this->toolCall($server);
-        $this->queue->pump();
+        $this->queue->endRequest(1.0);
         $this->assertHeartbeats(1, 'one at 60 s');
     }
 
@@ -411,11 +422,158 @@ final class HeartbeatTest extends TestCase
         $lists[ServerInfoSource::PROMPTS] = ['' => [[(object) ['name' => NAN]], null]]; // JSON cannot carry it
 
         $this->toolCall($this->server(), source: new FakeServerInfo($lists));
-        $this->queue->pump();
+        $this->queue->endRequest(1.0);
 
         $this->assertHeartbeats(0);
-        $this->assertStringStartsWith('Skipped the server info heartbeat: JsonException: ', implode("\n", $this->logger->messages()));
-        $this->assertCount(1, $this->logger->messages());
+        $this->assertSame(['Skipped the server info heartbeat: JsonException'], $this->logger->messages());
+    }
+
+    /** A stdio server and a worker loop without a framework bridge have no window after the response. */
+    public function testAProcessWithoutARequestEndWindowStartsNoBuildInAnyPumpAndNotesNothing(): void
+    {
+        $this->queue = new EventQueue(transport: $this->transport, channel: $this->channel, finishesRequests: false);
+        $source = new FakeServerInfo();
+        $made = 0;
+        $server = $this->server();
+        for ($request = 0; $request < 3; ++$request) {
+            $this->queue->pump(); // the first line of each hook
+            Heartbeat::onToolList($server, static fn(): string => 'demo-server', static function () use (&$made, $source): FakeServerInfo {
+                ++$made;
+
+                return $source;
+            });
+            $this->toolCall($server, 'get_more_tools', $source);
+            $this->now += Guard::INTERVAL_SECONDS;
+        }
+        $this->queue->pump();
+        $this->queue->flush();
+        $this->queue->shutdown();
+
+        $this->assertSame([0, []], [$made, $source->asked]);
+        $this->assertHeartbeats(0);
+        $this->assertSame([], $this->logger->messages(), 'decided once: no line for each request');
+
+        $this->queue = new EventQueue(transport: $this->transport, channel: $this->channel, finishesRequests: false);
+        $this->queue->endRequest(1.0);
+        $this->toolList($this->server());
+        $this->queue->endRequest(1.0);
+        $this->assertHeartbeats(1, 'no attempt was noted in the process without a window');
+    }
+
+    public function testAWorkerWhoseWindowEndsWithAnEventInFlightDropsTheHeartbeatAndTheNextRequestReadsNoList(): void
+    {
+        $this->oldMemory();
+        $this->transport->complete = false; // the event is not delivered inside the window
+        $this->queue->add(new QueuedEvent(new Event(id: 'evt_1', projectId: self::PROJECT, eventType: 'mcp:tools/call')));
+
+        $this->toolCall($this->server(), source: $source = new FakeServerInfo());
+        $this->assertFalse($this->queue->endRequest(1.0));
+        $this->assertSame(['Skipped the server info heartbeat: the request-end window ended before the events were delivered'], $this->logger->messages());
+
+        $this->transport->complete = true;
+        $this->queue->pump(); // the next request
+        $this->toolCall($this->server());
+        $this->queue->endRequest(1.0);
+
+        $this->assertSame([], $source->asked);
+        $this->assertHeartbeats(0, 'and the attempt holds the key for its hour');
+    }
+
+    public function testAFlushOfTheCustomerNeverRunsTheBuild(): void
+    {
+        $this->oldMemory();
+
+        $this->toolCall($this->server(), source: $source = new FakeServerInfo());
+        $this->queue->pump();
+        $this->assertTrue($this->queue->flush());
+        $this->assertTrue($this->queue->flush(1.0));
+
+        $this->assertSame([], $source->asked);
+        $this->assertHeartbeats(0);
+        $this->assertEqualsWithDelta(0.0, $this->transport->now(), PHP_FLOAT_EPSILON);
+    }
+
+    /** The name of the guard's key comes from the hook, and the names of the body from the source of the request. */
+    public function testNeitherTheCheckNorTheRunReadsTheServerInfoOfTheTrackedServer(): void
+    {
+        $this->oldMemory();
+        $reads = new \ArrayObject();
+        $server = new TrackedServer(self::PROJECT, new Options(), static function () use ($reads): array {
+            $reads->append('read');
+
+            return ['another-name', '9.9.9'];
+        }, new Publisher($this->queue));
+
+        Heartbeat::onToolList($server, static fn(): string => 'demo-server', static fn(): FakeServerInfo => new FakeServerInfo());
+        Heartbeat::onToolCall($server, 'alpha', static fn(): string => 'demo-server', static fn(): FakeServerInfo => new FakeServerInfo());
+        $this->queue->endRequest(1.0);
+
+        $this->assertCount(0, $reads);
+        $this->assertHeartbeats(1);
+        $this->assertSame(['demo-server', '1.2.3'], [JsonAssert::at($this->body(0), 'server_name'), JsonAssert::at($this->body(0), 'server_version')]);
+    }
+
+    public function testNoLogLineAndNoDiagnosticsLineHoldsAMessageOrACursorOfTheCustomersCode(): void
+    {
+        $this->oldMemory();
+        $diagnostics = [];
+        Log::setDiagnosticsSink(static function (string $line) use (&$diagnostics): void {
+            $diagnostics[] = $line;
+        });
+        $failing = FakeServerInfo::demo();
+        $failing[ServerInfoSource::TOOLS] = new \RuntimeException('the secret of the tool handler');
+        $partly = FakeServerInfo::demo();
+        $partly[ServerInfoSource::PROMPTS] = new \RuntimeException('the secret of the prompt handler');
+        $partly[ServerInfoSource::RESOURCES] = static fn(): array => [[], 'a secret cursor'];
+        $redactor = static fn(string $text): string => throw new \DomainException('the secret that the redactor hides: ' . $text);
+        $nan = FakeServerInfo::demo();
+        $nan[ServerInfoSource::PROMPTS] = ['' => [[(object) ['name' => NAN, 'description' => 'a secret description']], null]];
+
+        $this->toolCall($this->server('one'), source: new FakeServerInfo($failing));
+        $this->toolCall($this->server('two'), source: new FakeServerInfo($partly));
+        $this->toolCall($this->server('three', new Options(redactSensitiveInformation: $redactor)), source: new FakeServerInfo(instructions: 'secret instructions'));
+        $this->toolCall($this->server('four'), source: new FakeServerInfo($nan));
+        Heartbeat::onToolList($this->server('five'), static fn(): string => throw new \LogicException('a secret name'), static fn(): FakeServerInfo => new FakeServerInfo());
+        $this->queue->endRequest(1.0);
+
+        $lines = $this->logger->messages();
+        $this->assertCount(5, $lines);
+        $this->assertContains('Skipped the server info heartbeat: the tool list failed - RuntimeException', $lines);
+        $this->assertContains('Skipped the server info heartbeat: redactSensitiveInformation failed - DomainException', $lines);
+        $this->assertContains('Skipped the server info heartbeat: JsonException', $lines);
+        $this->assertContains('Skipped the server info heartbeat: the check failed - LogicException', $lines);
+        $sent = array_values(array_filter($lines, static fn(string $line): bool => str_starts_with($line, 'Sent server info heartbeat')));
+        $this->assertStringEndsWith(' | without resources (a cursor came back after page 2), prompts (RuntimeException)', implode("\n", $sent));
+        $this->assertCount(1, $sent);
+        $this->assertStringNotContainsString('secret', implode("\n", $lines));
+        $this->assertCount(5, $diagnostics);
+        $this->assertStringNotContainsString('secret', implode("\n", $diagnostics));
+    }
+
+    public function testWhatAListHandlerOrTheRedactorPrintsIsDiscarded(): void
+    {
+        $this->oldMemory();
+        $this->expectOutputString('');
+        $lists = FakeServerInfo::demo();
+        $lists[ServerInfoSource::PROMPTS] = static function (): array {
+            echo 'printed by a list handler';
+            ob_start(); // a buffer that the handler leaves open
+            print 'and into its own buffer';
+
+            return [[], null];
+        };
+        $redactor = static function (string $text): string {
+            echo 'printed by the redactor';
+
+            return $text;
+        };
+        $level = ob_get_level();
+
+        $this->toolCall($this->server(options: new Options(redactSensitiveInformation: $redactor)), source: new FakeServerInfo($lists));
+        $this->queue->endRequest(1.0);
+
+        $this->assertSame($level, ob_get_level(), 'every buffer of the run is closed');
+        $this->assertHeartbeats(1);
     }
 
     public function testAServerWhoseNameIsUnknownSendsNothing(): void
@@ -425,10 +583,10 @@ final class HeartbeatTest extends TestCase
         $empty = new TrackedServer(self::PROJECT, new Options(), static fn(): array => ['', '1'], new Publisher($this->queue));
 
         $this->toolCall($server);
-        $this->queue->pump();
+        $this->queue->endRequest(1.0);
         $this->now += Guard::INTERVAL_SECONDS;
         $this->toolCall($empty);
-        $this->queue->pump();
+        $this->queue->endRequest(1.0);
 
         $this->assertHeartbeats(0);
         $this->assertSame(array_fill(0, 2, 'Skipped the server info heartbeat: the server name is unknown'), $this->logger->messages());
@@ -445,7 +603,7 @@ final class HeartbeatTest extends TestCase
         };
 
         $this->toolCall($this->server(), source: $source = new FakeServerInfo($lists));
-        $this->queue->pump();
+        $this->queue->endRequest(60.0);
 
         $this->assertHeartbeats(0);
         $this->assertNotContains('prompts@', $source->asked, 'no page was asked for after the limit');
@@ -464,7 +622,7 @@ final class HeartbeatTest extends TestCase
         };
 
         $this->toolCall($this->server(options: new Options(redactSensitiveInformation: $redactor)));
-        $this->queue->pump();
+        $this->queue->endRequest(60.0);
 
         $this->assertSame(2, $calls, 'the limit is checked before each call');
         $this->assertHeartbeats(0);
@@ -481,9 +639,10 @@ final class HeartbeatTest extends TestCase
         };
 
         $this->toolCall($this->server(options: new Options(redactSensitiveInformation: $redactor)));
-        $this->queue->pump();
+        $this->queue->endRequest(60.0);
 
         $this->assertHeartbeats(0);
+        $this->assertSame(['Skipped the server info heartbeat: reading and redacting the lists took more than 30 s'], $this->logger->messages());
     }
 
     public function testInADeliveryWithAWindowTheBuildStopsWhenTheWindowIsOver(): void
@@ -497,7 +656,7 @@ final class HeartbeatTest extends TestCase
         };
 
         $this->toolCall($this->server(), source: $source = new FakeServerInfo($lists));
-        $this->assertTrue($this->queue->flush(1.0));
+        $this->assertTrue($this->queue->endRequest(1.0));
 
         $this->assertSame(['tools@'], $source->asked, 'the page that ran could not be stopped; no other page was asked for');
         $this->assertHeartbeats(0);
@@ -515,7 +674,7 @@ final class HeartbeatTest extends TestCase
         };
 
         $this->toolCall($this->server(), source: $source = new FakeServerInfo($lists));
-        $this->queue->flush(1.0);
+        $this->queue->endRequest(1.0);
 
         $this->assertSame(['tools@'], $source->asked);
         $this->assertHeartbeats(0);
@@ -528,7 +687,7 @@ final class HeartbeatTest extends TestCase
         $this->queue->add(new QueuedEvent(new Event(id: 'evt_1', projectId: self::PROJECT, eventType: 'mcp:tools/call')));
 
         $this->toolCall($this->server());
-        $this->assertFalse($this->queue->flush(1.0));
+        $this->assertFalse($this->queue->endRequest(1.0));
 
         $this->assertCount(1, $this->transport->deliveries, 'the event went first');
         $this->assertHeartbeats(1);
@@ -539,24 +698,26 @@ final class HeartbeatTest extends TestCase
     {
         $this->oldMemory();
         $this->channel->complete = false;
-        $this->queue = new EventQueue(transport: $this->transport, channel: $this->channel, outlivesRequest: false);
+        $this->queue = new EventQueue(transport: $this->transport, channel: $this->channel, finishesRequests: true);
         $this->queue->add(new QueuedEvent(new Event(id: 'evt_1', projectId: self::PROJECT, eventType: 'mcp:tools/call')));
 
         $this->toolCall($this->server());
         $this->queue->pump();
-        $this->queue->flush(0.0);
+        $this->queue->flush();
+        $this->queue->endRequest(0.0);
         $this->assertHeartbeats(0, 'nothing before the response is out');
         $this->queue->responseSent();
         $this->queue->finalShutdown();
 
         $this->assertHeartbeats(1);
         $this->assertSame(EventQueue::SHUTDOWN_TIMEOUT_SECONDS, $this->transport->now());
+        $this->assertSame(['Skipped the server info heartbeat: the delivery time ended before the AgentCat API answered'], $this->logger->messages(), 'the request that the deadline cut off gets its line');
     }
 
     public function testWhereTheClientDoesNotGetItsResponseFirstNoHeartbeatIsSent(): void
     {
         $this->oldMemory();
-        $this->queue = new EventQueue(transport: $this->transport, channel: $this->channel, outlivesRequest: false);
+        $this->queue = new EventQueue(transport: $this->transport, channel: $this->channel, finishesRequests: true);
 
         $this->toolCall($this->server(), source: $source = new FakeServerInfo());
         $this->queue->finalShutdown();
@@ -572,7 +733,7 @@ final class HeartbeatTest extends TestCase
         $server = new TrackedServer(self::PROJECT, new Options(), static fn(): array => ['demo-server', null], new Publisher($this->queue));
 
         $this->toolCall($server);
-        $this->queue->pump();
+        $this->queue->endRequest(1.0);
 
         $this->assertObjectNotHasProperty('server_version', $this->body(0));
         $this->assertSame(self::PROJECT, JsonAssert::at($this->body(0), 'project_id'));
@@ -592,12 +753,21 @@ final class HeartbeatTest extends TestCase
 
     private function toolCall(TrackedServer $server, string $tool = 'alpha', ?FakeServerInfo $source = null): void
     {
-        Heartbeat::onToolCall($server, $tool, static fn(): FakeServerInfo => $source ?? new FakeServerInfo());
+        Heartbeat::onToolCall($server, $tool, static fn(): ?string => $server->serverInfo()[0], static fn(): FakeServerInfo => self::named($server, $source));
     }
 
     private function toolList(TrackedServer $server, ?FakeServerInfo $source = null): void
     {
-        Heartbeat::onToolList($server, static fn(): FakeServerInfo => $source ?? new FakeServerInfo());
+        Heartbeat::onToolList($server, static fn(): ?string => $server->serverInfo()[0], static fn(): FakeServerInfo => self::named($server, $source));
+    }
+
+    /** The source of a request of this server: it names the server as the server does. */
+    private static function named(TrackedServer $server, ?FakeServerInfo $source): FakeServerInfo
+    {
+        $source ??= new FakeServerInfo();
+        [$source->name, $source->version] = $server->serverInfo();
+
+        return $source;
     }
 
     /** How many requests went to the side channel so far. */

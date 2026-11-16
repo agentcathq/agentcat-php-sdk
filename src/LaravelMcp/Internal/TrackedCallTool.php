@@ -56,7 +56,7 @@ final readonly class TrackedCallTool implements Method
         } finally {
             $name = $request->get('name');
             // A `tools/list` entry that names no method class has no handler AgentCat can call: the heartbeat then has no tool list.
-            Heartbeat::onToolCall($this->server, is_string($name) ? $name : '', fn(): LaravelServerInfo => new LaravelServerInfo(['tools/list' => $this->listOriginal] + ($this->methods)(), $context)); // never throws
+            Heartbeat::onToolCall($this->server, is_string($name) ? $name : '', static fn(): string => $context->implementation->name, fn(): LaravelServerInfo => new LaravelServerInfo(['tools/list' => $this->listOriginal] + ($this->methods)(), $context)); // never throws
         }
     }
 

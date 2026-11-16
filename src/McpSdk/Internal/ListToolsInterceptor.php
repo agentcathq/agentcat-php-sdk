@@ -48,7 +48,7 @@ final readonly class ListToolsInterceptor implements RequestHandlerInterface
         try {
             return $this->answer($request, $session);
         } finally {
-            Heartbeat::onToolList($this->server, fn(): McpServerInfo => $this->delegates->lists($this, $session)); // never throws
+            Heartbeat::onToolList($this->server, fn(): ?string => $this->server->serverInfo()[0], fn(): McpServerInfo => $this->delegates->lists($this, $session)); // never throws
         }
     }
 

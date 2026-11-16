@@ -287,6 +287,18 @@ final readonly class Client
     }
 
     /**
+     * Internal: the request-end window of a framework bridge. It is `flush($seconds)`, and in a worker it is also the
+     * one place after the response where AgentCat runs the work that it kept for the end of the request
+     * (`EventQueue::endRequest()`).
+     *
+     * @internal
+     */
+    public function endRequest(float $seconds): bool
+    {
+        return $this->publisher->queue()->endRequest($seconds);
+    }
+
+    /**
      * Stops accepting events, then sends the queued ones for at most 5 seconds. Events after this are dropped.
      * Rarely needed: AgentCat does this on its own when the process ends.
      */

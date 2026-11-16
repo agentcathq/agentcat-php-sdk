@@ -15,6 +15,9 @@ final class RecordingDeferredWork implements DeferredWork
     /** @var list<string> the `$reason` of every `drop()` */
     public array $drops = [];
 
+    /** Whether something that `run()` started is still on its way. */
+    public bool $unfinished = false;
+
     /** @param (\Closure(float): void)|null $onRun */
     public function __construct(
         private readonly ?\Closure $onRun = null,
@@ -31,6 +34,12 @@ final class RecordingDeferredWork implements DeferredWork
         if ($this->failure instanceof \Throwable) {
             throw $this->failure;
         }
+    }
+
+    #[\Override]
+    public function unfinished(): bool
+    {
+        return $this->unfinished;
     }
 
     #[\Override]

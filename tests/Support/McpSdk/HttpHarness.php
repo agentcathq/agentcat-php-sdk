@@ -215,8 +215,8 @@ final class HttpHarness
     }
 
     /**
-     * @param array<string, mixed> $message
-     * @param array<string, string> $headers
+     * @param array<array-key, mixed> $message  one message, or the list of messages of a batch
+     * @param array<string, string>   $headers
      */
     private function post(array $message, array $headers, bool $withSession): Response
     {
@@ -239,6 +239,21 @@ final class HttpHarness
         }
 
         return $response;
+    }
+
+    /**
+     * A JSON-RPC batch: every request in one HTTP request. Returns the body of the one HTTP response.
+     *
+     * @param list<array{0: string, 1: array<string, mixed>}> $requests each a method and its params
+     */
+    public function batch(array $requests): string
+    {
+        $messages = [];
+        foreach ($requests as [$method, $params]) {
+            $messages[] = ['jsonrpc' => '2.0', 'id' => $this->nextId++, 'method' => $method, 'params' => $params === [] ? new \stdClass() : $params];
+        }
+
+        return (string) $this->post($messages, [], true)->getBody();
     }
 
     /** A JSON body, or the `data:` line of an SSE body that answers request `$id`. */

@@ -6,6 +6,7 @@ namespace AgentCat\McpSdk\Internal;
 
 use AgentCat\Internal\Engine\ToolListing;
 use AgentCat\Internal\Json\JsonTree;
+use AgentCat\Internal\ServerInfo\ListFailure;
 use AgentCat\Internal\ServerInfo\ServerInfoSource;
 use Mcp\Schema\JsonRpc\Request;
 use Mcp\Schema\JsonRpc\Response;
@@ -42,6 +43,14 @@ final readonly class McpServerInfo implements ServerInfoSource
     ) {}
 
     #[\Override]
+    public function server(): array
+    {
+        $info = ($this->configuration)()?->serverInfo;
+
+        return [$info?->name, $info?->version];
+    }
+
+    #[\Override]
     public function title(): string
     {
         return ($this->configuration)()->serverInfo->title ?? '';
@@ -60,7 +69,7 @@ final readonly class McpServerInfo implements ServerInfoSource
     }
 
     /**
-     * @throws \UnexpectedValueException when the handler answers with a JSON-RPC error or without the list
+     * @throws ListFailure when the handler answers with a JSON-RPC error or without the list
      * @throws \Throwable                what the handler throws
      */
     #[\Override]
@@ -71,7 +80,7 @@ final readonly class McpServerInfo implements ServerInfoSource
             self::RESOURCES => new ListResourcesRequest($cursor),
             self::RESOURCE_TEMPLATES => new ListResourceTemplatesRequest($cursor),
             self::PROMPTS => new ListPromptsRequest($cursor),
-            default => throw new \UnexpectedValueException(sprintf('"%s" is no list of a heartbeat', $list)),
+            default => throw new ListFailure('the list is no list of a heartbeat'),
         })->withId(self::REQUEST_ID);
         $handler = ($this->handler)($request);
         if (!$handler instanceof RequestHandlerInterface) {
@@ -79,12 +88,12 @@ final readonly class McpServerInfo implements ServerInfoSource
         }
         $answer = $handler->handle($request, $this->session);
         if (!$answer instanceof Response) {
-            throw new \UnexpectedValueException('the handler answered with a JSON-RPC error: ' . $answer->message);
+            throw new ListFailure('the handler answered with a JSON-RPC error');
         }
         $tree = JsonTree::of($answer->result);
         $items = $tree instanceof \stdClass ? ($tree->{$list} ?? null) : null;
         if (!is_array($items) || !array_is_list($items)) {
-            throw new \UnexpectedValueException('the answer of the handler has no list');
+            throw new ListFailure('the answer of the handler has no list');
         }
 
         return [$items, ToolListing::nextCursor($tree->nextCursor ?? null)];

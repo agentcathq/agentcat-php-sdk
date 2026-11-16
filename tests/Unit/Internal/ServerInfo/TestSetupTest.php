@@ -37,8 +37,8 @@ final class TestSetupTest extends TestCase
         $queue = new EventQueue(transport: new RecordingTransport(), channel: $channel);
         $server = new TrackedServer(self::PROJECT, new Options(), static fn(): array => ['demo-server', '1.2.3'], new Publisher($queue));
 
-        Heartbeat::onToolList($server, static fn(): FakeServerInfo => new FakeServerInfo());
-        Heartbeat::onToolCall($server, 'alpha', static fn(): FakeServerInfo => new FakeServerInfo());
+        Heartbeat::onToolList($server, static fn(): string => 'demo-server', static fn(): FakeServerInfo => new FakeServerInfo());
+        Heartbeat::onToolCall($server, 'alpha', static fn(): string => 'demo-server', static fn(): FakeServerInfo => new FakeServerInfo());
 
         $this->assertSame([['project' => self::PROJECT, 'always' => true], ['project' => self::PROJECT, 'always' => false]], ServerInfoRecorder::$checks);
         $this->assertFalse($queue->hasWork(), 'the recorder defers nothing');
@@ -52,10 +52,11 @@ final class TestSetupTest extends TestCase
         Log::setLogger(new MemoryLogger());
         $channel = new RecordingHttpChannel();
         $queue = new EventQueue(transport: new RecordingTransport(), channel: $channel);
+        $queue->endRequest(1.0); // a worker whose bridge ends each request in a window
         $server = new TrackedServer(self::PROJECT, new Options(), static fn(): array => ['demo-server', '1.2.3'], new Publisher($queue));
 
-        Heartbeat::onToolList($server, static fn(): FakeServerInfo => new FakeServerInfo());
-        $queue->pump();
+        Heartbeat::onToolList($server, static fn(): string => 'demo-server', static fn(): FakeServerInfo => new FakeServerInfo());
+        $queue->endRequest(1.0);
 
         $this->assertCount(1, $channel->requests);
         $this->assertStringStartsWith('http://127.0.0.1:', $channel->requests[0]->url);

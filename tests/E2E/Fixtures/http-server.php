@@ -30,6 +30,28 @@ $builder = Server::builder()
         throw new \RuntimeException('e2e boom');
     }, 'boom', description: 'Always fails', inputSchema: ['type' => 'object', 'properties' => []]);
 
+if (($_SERVER['HTTP_X_E2E_SLOW_LISTS'] ?? null) === '1') {
+    // A resources/list handler of the customer's that takes 3 s: it writes the time it started, so a test can tell that
+    // the client had its answer first.
+    $builder->addRequestHandler(new readonly class ($markers) implements Mcp\Server\Handler\Request\RequestHandlerInterface {
+        public function __construct(private string $markers) {}
+
+        #[Override]
+        public function supports(Mcp\Schema\JsonRpc\Request $request): bool
+        {
+            return $request instanceof Mcp\Schema\Request\ListResourcesRequest;
+        }
+
+        #[Override]
+        public function handle(Mcp\Schema\JsonRpc\Request $request, Mcp\Server\Session\SessionInterface $session): Mcp\Schema\JsonRpc\Response
+        {
+            file_put_contents($this->markers . '/slow-list', sprintf('%.6F', microtime(true)));
+            usleep(3_000_000);
+
+            return new Mcp\Schema\JsonRpc\Response($request->getId(), new Mcp\Schema\Result\ListResourcesResult([]));
+        }
+    });
+}
 // Diagnostics stay off (the inherited AGENTCAT_DISABLE_DIAGNOSTICS=true) and point at a closed port, unless the test
 // sends the scenario that this request's diagnostics go to. putenv() lasts for this request only.
 $diagnostics = is_string($_SERVER['HTTP_X_E2E_DIAGNOSTICS'] ?? null) ? $_SERVER['HTTP_X_E2E_DIAGNOSTICS'] : null;
@@ -62,8 +84,6 @@ foreach ($response->getHeaders() as $name => $values) {
         header($name . ': ' . $value, false);
     }
 }
-if (($_SERVER['HTTP_X_E2E_NO_LENGTH'] ?? null) !== '1') {
-    header('Content-Length: ' . strlen($body)); // the client can finish reading before the shutdown delivery runs
-}
+header('Content-Length: ' . strlen($body)); // the client can finish reading before the shutdown delivery runs
 echo $body;
 flush();

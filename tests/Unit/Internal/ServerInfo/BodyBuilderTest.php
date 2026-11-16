@@ -97,7 +97,7 @@ final class BodyBuilderTest extends TestCase
 
         $this->assertSame([ServerInfoSource::TOOLS, ServerInfoSource::RESOURCES, ServerInfoSource::RESOURCE_TEMPLATES], array_keys($body->features));
         $this->assertSame(['alpha', 'beta', 'gamma', 'get_more_tools'], $this->toolNames($body));
-        $this->assertSame([ServerInfoSource::PROMPTS => 'RuntimeException: no prompts today'], $body->failedLists);
+        $this->assertSame([ServerInfoSource::PROMPTS => 'RuntimeException'], $body->failedLists);
     }
 
     public function testV5AFailingToolListStopsTheBuild(): void
@@ -107,7 +107,7 @@ final class BodyBuilderTest extends TestCase
 
         $skipped = Thrown::by(Skipped::class, fn(): ServerInfoBody => $this->build(new FakeServerInfo($lists)));
 
-        $this->assertSame('the tool list failed - RuntimeException: no tools today', $skipped->getMessage());
+        $this->assertSame('the tool list failed - RuntimeException', $skipped->getMessage());
         $this->assertSame(0, $skipped->getCode());
         $this->assertSame($lists[ServerInfoSource::TOOLS], $skipped->getPrevious());
     }
@@ -130,14 +130,14 @@ final class BodyBuilderTest extends TestCase
 
         $this->assertLessThan(5.0, microtime(true) - $started);
         $this->assertArrayNotHasKey(ServerInfoSource::RESOURCES, $body->features);
-        $this->assertSame('the cursor "again" came back after page 2', ($body->failedLists[ServerInfoSource::RESOURCES] ?? null));
+        $this->assertSame('a cursor came back after page 2', ($body->failedLists[ServerInfoSource::RESOURCES] ?? null));
         $this->assertSame(['resources@', 'resources@again'], array_values(array_filter($source->asked, static fn(string $asked): bool => str_starts_with($asked, 'resources@'))));
     }
 
     public function testV6AToolListWhoseCursorRepeatsStopsTheBuild(): void
     {
         $this->expectException(Skipped::class);
-        $this->expectExceptionMessage('the tool list failed - the cursor "again" came back after page 2');
+        $this->expectExceptionMessage('the tool list failed - a cursor came back after page 2');
         $this->build(new FakeServerInfo([ServerInfoSource::TOOLS => static fn(?string $cursor): array => [[FakeServerInfo::tool('t')], 'again']]));
     }
 

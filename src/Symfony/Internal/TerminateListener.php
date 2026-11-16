@@ -22,7 +22,7 @@ final class TerminateListener
     public function __invoke(): void
     {
         try {
-            AgentCat::client()->flush(RequestEndWait::seconds(console: false)); // kernel.terminate never runs for a command
+            AgentCat::client()->endRequest(RequestEndWait::seconds(console: false)); // kernel.terminate never runs for a command
         } catch (\Throwable) {
             // delivery never breaks the kernel's terminate phase
         }

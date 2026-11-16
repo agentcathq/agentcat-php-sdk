@@ -24,6 +24,13 @@ interface ServerInfoSource
     /** The lists of a heartbeat, by their key in `features`: the tool list first. */
     public const array LISTS = [self::TOOLS, self::RESOURCES, self::RESOURCE_TEMPLATES, self::PROMPTS];
 
+    /**
+     * The server name and version, as the events of the request carry them; null where one is unknown.
+     *
+     * @return array{0: ?string, 1: ?string}
+     */
+    public function server(): array;
+
     /** The title of the server's implementation info; '' when it has none. */
     public function title(): string;
 

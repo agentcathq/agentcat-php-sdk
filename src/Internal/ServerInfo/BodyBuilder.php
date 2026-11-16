@@ -7,12 +7,12 @@ namespace AgentCat\Internal\ServerInfo;
 use AgentCat\Internal\Engine\InjectionConfig;
 use AgentCat\Internal\Engine\InjectionState;
 use AgentCat\Internal\Engine\ToolListInjector;
-use AgentCat\Internal\Support\ErrorText;
 
 /**
  * Reads a server's lists, page by page, into the body of a heartbeat. The tool list must be read whole, or there is
  * no body; another list that cannot be read is left out. PHP cannot stop a handler that hangs: the limits stop only
- * the next page.
+ * the next page. The reason of a failed list is AgentCat's own words or the class of what the handler threw, never a
+ * message or a cursor, because the reason goes into a log line.
  *
  * @internal
  */
@@ -42,7 +42,7 @@ final class BodyBuilder
             } catch (Skipped $skipped) {
                 throw $skipped;
             } catch (\Throwable $e) {
-                $reason = $e instanceof \UnexpectedValueException ? $e->getMessage() : ErrorText::of($e);
+                $reason = $e instanceof ListFailure ? $e->getMessage() : $e::class;
                 if ($list === ServerInfoSource::TOOLS) {
                     throw Skipped::after('the tool list failed - ' . $reason, $e);
                 }
@@ -72,7 +72,7 @@ final class BodyBuilder
      *
      * @return list<mixed>|null
      *
-     * @throws \UnexpectedValueException when the list breaks a limit; its message is the reason
+     * @throws ListFailure when the list breaks a limit
      * @throws \Throwable                what the handler throws
      */
     private static function read(ServerInfoSource $source, string $list, \Closure $clock, \Closure $check): ?array
@@ -85,7 +85,7 @@ final class BodyBuilder
             $check();
             $page = $source->page($list, $cursor);
             if ($page === null) {
-                return $read === 1 ? null : throw new \UnexpectedValueException(sprintf('page %d has no list', $read));
+                return $read === 1 ? null : throw new ListFailure(sprintf('page %d has no list', $read));
             }
             [$listed, $cursor] = $page;
             foreach ($listed as $item) {
@@ -95,14 +95,14 @@ final class BodyBuilder
                 return $items;
             }
             if (isset($followed[$cursor])) {
-                throw new \UnexpectedValueException(sprintf('the cursor "%s" came back after page %d', $cursor, $read));
+                throw new ListFailure(sprintf('a cursor came back after page %d', $read));
             }
             $followed[$cursor] = $cursor;
             if ($read === self::MAX_PAGES) {
-                throw new \UnexpectedValueException(sprintf('it has more than %d pages', self::MAX_PAGES));
+                throw new ListFailure(sprintf('it has more than %d pages', self::MAX_PAGES));
             }
             if ($clock() > $deadline) {
-                throw new \UnexpectedValueException(sprintf('it took more than %s s', self::LIST_SECONDS));
+                throw new ListFailure(sprintf('it took more than %s s', self::LIST_SECONDS));
             }
         }
     }

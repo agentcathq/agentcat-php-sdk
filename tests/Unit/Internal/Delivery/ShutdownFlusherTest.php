@@ -17,7 +17,6 @@ use AgentCat\Tests\Support\RecordingCompanion;
 use AgentCat\Tests\Support\RecordingDeferredWork;
 use AgentCat\Tests\Support\RecordingHttpChannel;
 use AgentCat\Tests\Support\RecordingTransport;
-use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
@@ -346,7 +345,7 @@ final class ShutdownFlusherTest extends TestCase
 
     public function testAfterTheFinishCallTheDeferredWorkRunsInTheShutdown(): void
     {
-        $queue = new EventQueue(transport: new RecordingTransport(), outlivesRequest: false);
+        $queue = new EventQueue(transport: new RecordingTransport(), finishesRequests: true);
         $work = new RecordingDeferredWork(function (): void {
             $this->calls[] = 'work';
         });
@@ -354,7 +353,7 @@ final class ShutdownFlusherTest extends TestCase
 
         (new ShutdownFlusher(static fn(): EventQueue => $queue, $this->recorder(), function (): void {
             $this->calls[] = 'finish';
-        }, answerSent: static fn(): bool => false))->onFinalShutdown();
+        }))->onFinalShutdown();
 
         $this->assertSame(['finish', 'work'], $this->calls, 'the client has its response before the work runs');
         $this->assertSame([], $work->drops);
@@ -362,60 +361,30 @@ final class ShutdownFlusherTest extends TestCase
 
     public function testAFinishCallThatThrowsLeavesTheDeferredWorkOut(): void
     {
-        $queue = new EventQueue(transport: new RecordingTransport(), outlivesRequest: false);
+        $queue = new EventQueue(transport: new RecordingTransport(), finishesRequests: true);
         $work = new RecordingDeferredWork();
         $queue->defer('a', $work);
 
         (new ShutdownFlusher(static fn(): EventQueue => $queue, $this->recorder(), static function (): never {
             throw new \RuntimeException('no finish');
-        }, answerSent: static fn(): bool => true))->onFinalShutdown();
+        }))->onFinalShutdown();
 
         $this->assertSame([], $work->runs);
         $this->assertSame(['the client does not have its response yet'], $work->drops);
     }
 
-    /** @return iterable<string, array{(\Closure(): bool)|null, bool}> */
-    public static function answers(): iterable
+    /** PHP cannot know what the web server did with the response: without a finish call, no deferred work runs. */
+    public function testWithoutAFinishCallTheDeferredWorkNeverRuns(): void
     {
-        yield 'the whole answer is out' => [static fn(): bool => true, true];
-        yield 'the client still waits for the script' => [static fn(): bool => false, false];
-        yield 'the default check, on the command line' => [null, false];
-    }
-
-    /** @param (\Closure(): bool)|null $answerSent */
-    #[DataProvider('answers')]
-    public function testWithoutAFinishCallTheDeferredWorkRunsOnlyWhenTheWholeAnswerIsOut(?\Closure $answerSent, bool $runs): void
-    {
-        $queue = new EventQueue(transport: new RecordingTransport(), outlivesRequest: false);
+        $queue = new EventQueue(transport: new RecordingTransport(), finishesRequests: true);
         $work = new RecordingDeferredWork();
         $queue->defer('a', $work);
-        $prepared = false;
-        $end = new RequestEnd('apache2handler', false, static fn(): bool => false, static function (): void {}, static fn(): int => 0, static function (): void {}, static function () use (&$prepared): void {
-            $prepared = true;
-        });
+        $end = new RequestEnd('apache2handler', false, static fn(): bool => false, static function (): void {}, static fn(): int => 0, static function (): void {}, static function (): void {});
 
-        (new ShutdownFlusher(static fn(): EventQueue => $queue, $this->recorder(), null, $end, answerSent: $answerSent instanceof \Closure ? static function () use ($answerSent, &$prepared): bool {
-            self::assertTrue($prepared, 'the answer is checked after the output buffers went out');
+        (new ShutdownFlusher(static fn(): EventQueue => $queue, $this->recorder(), null, $end))->onFinalShutdown();
 
-            return $answerSent();
-        } : null))->onFinalShutdown();
-
-        $this->assertCount($runs ? 1 : 0, $work->runs);
-        $this->assertSame($runs ? [] : ['the client does not have its response yet'], $work->drops);
-    }
-
-    public function testAnEmptyQueueDoesNotAskWhetherTheAnswerIsOut(): void
-    {
-        $queue = new EventQueue(transport: new RecordingTransport(), outlivesRequest: false);
-        $asked = 0;
-
-        (new ShutdownFlusher(static fn(): EventQueue => $queue, $this->recorder(), answerSent: static function () use (&$asked): bool {
-            ++$asked;
-
-            return true;
-        }))->onFinalShutdown();
-
-        $this->assertSame(0, $asked);
+        $this->assertSame([], $work->runs);
+        $this->assertSame(['the client does not have its response yet'], $work->drops);
     }
 
     /**

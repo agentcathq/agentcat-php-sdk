@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AgentCat\Tests\Integration\McpSdk;
 
+use AgentCat\Internal\ServerInfo\ListFailure;
 use AgentCat\Internal\ServerInfo\ServerInfoSource;
 use AgentCat\McpSdk\Internal\BuiltServer;
 use AgentCat\McpSdk\Internal\McpServerInfo;
@@ -46,7 +47,7 @@ final class McpServerInfoTest extends TestCase
         foreach ([ServerInfoSource::TOOLS, ServerInfoSource::RESOURCES, ServerInfoSource::RESOURCE_TEMPLATES, ServerInfoSource::PROMPTS] as $index => $list) {
             try {
                 $info->page($list, $index === 0 ? null : 'c' . $index);
-            } catch (\UnexpectedValueException) {
+            } catch (ListFailure) {
                 // the stub answers every list with resources: the other lists have no list in the answer
             }
         }
@@ -97,17 +98,17 @@ final class McpServerInfoTest extends TestCase
     {
         $info = $this->answering(Error::forInvalidParams('bad cursor', 'agentcat-server-info'));
 
-        $error = Thrown::by(\UnexpectedValueException::class, static fn(): ?array => $info->page(ServerInfoSource::RESOURCES, 'x'));
+        $error = Thrown::by(ListFailure::class, static fn(): ?array => $info->page(ServerInfoSource::RESOURCES, 'x'));
 
-        $this->assertSame('the handler answered with a JSON-RPC error: bad cursor', $error->getMessage());
+        $this->assertSame('the handler answered with a JSON-RPC error', $error->getMessage());
     }
 
     public function testAnAnswerWithoutTheListFailsTheList(): void
     {
-        $other = Thrown::by(\UnexpectedValueException::class, fn(): ?array => $this->answering(new ListPromptsResult([]))->page(ServerInfoSource::RESOURCES, null));
+        $other = Thrown::by(ListFailure::class, fn(): ?array => $this->answering(new ListPromptsResult([]))->page(ServerInfoSource::RESOURCES, null));
         $this->assertSame('the answer of the handler has no list', $other->getMessage());
 
-        $none = Thrown::by(\UnexpectedValueException::class, fn(): ?array => $this->answering(new CallToolResult([]))->page(ServerInfoSource::TOOLS, null));
+        $none = Thrown::by(ListFailure::class, fn(): ?array => $this->answering(new CallToolResult([]))->page(ServerInfoSource::TOOLS, null));
         $this->assertSame('the answer of the handler has no list', $none->getMessage());
     }
 
@@ -115,9 +116,9 @@ final class McpServerInfoTest extends TestCase
     {
         $info = $this->answering(new ListResourcesResult([]));
 
-        $error = Thrown::by(\UnexpectedValueException::class, static fn(): ?array => $info->page('roots', null));
+        $error = Thrown::by(ListFailure::class, static fn(): ?array => $info->page('roots', null));
 
-        $this->assertSame('"roots" is no list of a heartbeat', $error->getMessage());
+        $this->assertSame('the list is no list of a heartbeat', $error->getMessage());
     }
 
     public function testTheTitleAndTheInstructionsComeFromTheConfigurationAndAreEmptyWithoutOne(): void
@@ -128,6 +129,7 @@ final class McpServerInfoTest extends TestCase
         $none = new McpServerInfo(static fn(): null => null, static fn(): null => null, false, $session);
 
         $this->assertSame(['The Title', 'Read me.'], [$with->title(), $with->instructions()]);
+        $this->assertSame([['n', '1'], [null, null]], [$with->server(), $none->server()]);
         $this->assertSame(['', ''], [$bare->title(), $bare->instructions()]);
         $this->assertSame(['', ''], [$none->title(), $none->instructions()]);
     }

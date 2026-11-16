@@ -295,36 +295,6 @@ final class RequestEndTest extends TestCase
         $this->assertSame(PHP_SESSION_ACTIVE, session_status());
     }
 
-    /** @return iterable<string, array{bool, list<string>, int, bool}> */
-    public static function answersSent(): iterable
-    {
-        yield 'headers out with a length, no buffer' => [true, ['Content-Type: application/json', 'Content-Length: 12'], 0, true];
-        yield 'the length in another case' => [true, ['content-length: 12'], 0, true];
-        yield 'the headers are not out' => [false, ['Content-Length: 12'], 0, false];
-        yield 'an output buffer is still open' => [true, ['Content-Length: 12'], 1, false];
-        yield 'no length: the client waits for the end of the script' => [true, ['Content-Type: application/json'], 0, false];
-        yield 'a header that only holds the name' => [true, ['X-Content-Length: 12', 'X-Note: Content-Length: 12'], 0, false];
-        yield 'no header' => [true, [], 0, false];
-    }
-
-    /** @param list<string> $headers */
-    #[DataProvider('answersSent')]
-    public function testTheAnswerIsSentWhenItsHeadersAreOutWithALengthAndNoBufferHoldsItBack(bool $headersSent, array $headers, int $level, bool $sent): void
-    {
-        $this->assertSame($sent, RequestEnd::answerSent(static fn(): bool => $headersSent, static fn(): array => $headers, static fn(): int => $level));
-    }
-
-    public function testAnAnswerThatCannotBeCheckedCountsAsNotSent(): void
-    {
-        $this->assertFalse(RequestEnd::answerSent(static fn(): bool => throw new \Error('headers_sent() is disabled')));
-        $this->assertFalse(RequestEnd::answerSent(static fn(): bool => true, static fn(): array => throw new \Error('headers_list() is disabled'), static fn(): int => 0));
-    }
-
-    public function testOnTheCommandLineNoAnswerIsSent(): void
-    {
-        $this->assertFalse(RequestEnd::answerSent(), 'the CLI sends no headers');
-    }
-
     private function end(string $sapi, bool $finishes, bool $session = true, int $limit = 30): RequestEnd
     {
         return new RequestEnd(

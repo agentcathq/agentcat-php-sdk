@@ -53,7 +53,8 @@ final class ServerInfoTest extends LaravelTestCase
         Log::setLogger($this->logger);
         $this->exporter = new RecordingExporter();
         $this->channel = new RecordingHttpChannel();
-        $this->queue = new EventQueue(transport: new RecordingTransport(), exporters: $this->exporter, channel: $this->channel, outlivesRequest: true);
+        $this->queue = new EventQueue(transport: new RecordingTransport(), exporters: $this->exporter, channel: $this->channel, finishesRequests: false);
+        $this->queue->endRequest(1.0); // a worker whose framework bridge ends each request in a window
         FailingMethod::$calls = 0;
     }
 
@@ -74,7 +75,7 @@ final class ServerInfoTest extends LaravelTestCase
         $answer = $harness->callTool('alpha', []);
         $this->assertSame('ok', $this->text($answer));
         $this->assertHeartbeats(0, 'nothing is sent while the request is answered');
-        $this->queue->flush();
+        $this->queue->endRequest(1.0);
 
         $this->assertHeartbeats(1);
         $body = $this->body(0);
@@ -101,7 +102,7 @@ final class ServerInfoTest extends LaravelTestCase
         $this->oldMemory();
         $harness = $this->harness(PagedServer::class);
         $this->assertObjectHasProperty('nextCursor', $harness->listTools(), 'the server pages its tool list');
-        $this->queue->flush();
+        $this->queue->endRequest(1.0);
         $this->assertHeartbeats(1, 'the list request started the heartbeat');
 
         $names = JsonAssert::column(JsonAssert::at($this->body(0), 'features', 'tools'), 'name');
@@ -117,7 +118,7 @@ final class ServerInfoTest extends LaravelTestCase
         $harness = $this->harness(ToolsOnlyServer::class);
 
         $harness->callTool('alpha', []);
-        $this->queue->flush();
+        $this->queue->endRequest(1.0);
 
         $this->assertSame(['tools'], JsonAssert::keys(JsonAssert::at($this->body(0), 'features')));
         $this->assertSame(['alpha', 'get_more_tools'], JsonAssert::column(JsonAssert::at($this->body(0), 'features', 'tools'), 'name'));
@@ -129,12 +130,12 @@ final class ServerInfoTest extends LaravelTestCase
         $harness = $this->harness(DemoServer::class, methods: ['prompts/list' => FailingMethod::class]);
 
         $harness->callTool('alpha', []);
-        $this->queue->flush();
+        $this->queue->endRequest(1.0);
 
         $features = JsonAssert::at($this->body(0), 'features');
         $this->assertSame(['tools', 'resources', 'resourceTemplates'], JsonAssert::keys($features));
         $this->assertSame(['alpha', 'beta', 'gamma', 'get_more_tools'], JsonAssert::column(JsonAssert::at($features, 'tools'), 'name'));
-        $this->assertStringContainsString('| without prompts (RuntimeException: the handler failed)', implode("\n", $this->logger->messages()));
+        $this->assertStringContainsString('| without prompts (RuntimeException)', implode("\n", $this->logger->messages()));
     }
 
     public function testV5AFailingToolListHandlerSendsNothing(): void
@@ -144,11 +145,11 @@ final class ServerInfoTest extends LaravelTestCase
         $harness = $this->harness(DemoServer::class, before: ['tools/list' => FailingMethod::class]);
 
         $answer = $harness->callTool('alpha', []);
-        $this->queue->flush();
+        $this->queue->endRequest(1.0);
 
         $this->assertSame('ok', $this->text($answer));
         $this->assertHeartbeats(0);
-        $this->assertContains('Skipped the server info heartbeat: the tool list failed - RuntimeException: the handler failed', $this->logger->messages());
+        $this->assertContains('Skipped the server info heartbeat: the tool list failed - RuntimeException', $this->logger->messages(), implode("\n", $this->logger->messages()));
     }
 
     public function testV10AFailingListHandlerOrApiNeverReachesTheToolCall(): void
@@ -161,7 +162,7 @@ final class ServerInfoTest extends LaravelTestCase
 
         $this->assertSame('ok', $this->text($answer));
         $this->assertSame(0, FailingMethod::$calls, 'no list handler runs while the request is answered');
-        $this->assertFalse($this->queue->flush(1.0));
+        $this->assertFalse($this->queue->endRequest(1.0));
         $this->assertSame(1, FailingMethod::$calls);
         $this->assertHeartbeats(1);
         $this->assertSame('ok', $this->text($harness->callTool('gamma', [])), 'the next call is answered while the heartbeat is still on its way');
@@ -173,7 +174,7 @@ final class ServerInfoTest extends LaravelTestCase
         $harness = $this->harness(DemoServer::class, new Options(redactSensitiveInformation: static fn(string $text): string => str_replace(['demo', 'file', 'beta', 'Beta'], '[x]', $text)));
 
         $harness->callTool('alpha', []);
-        $this->queue->flush();
+        $this->queue->endRequest(1.0);
 
         $body = $this->body(0);
         $this->assertSame(['Use the [x] tools.', 'demo-server'], [JsonAssert::at($body, 'instructions'), JsonAssert::at($body, 'server_name')]);
@@ -188,7 +189,8 @@ final class ServerInfoTest extends LaravelTestCase
         $harness = $this->harness(DemoServer::class);
 
         $harness->callTool('alpha', []);
-        $this->queue->flush();
+        gc_collect_cycles(); // the server object of the request is gone when the window after the response runs
+        $this->queue->endRequest(1.0);
 
         $this->assertCount(1, $this->exporter->events);
         $event = $this->exporter->events[0];
@@ -201,16 +203,16 @@ final class ServerInfoTest extends LaravelTestCase
         $harness = $this->harness(DemoServer::class);
 
         $harness->callTool('alpha', []);
-        $this->queue->flush();
+        $this->queue->endRequest(1.0);
         $this->assertHeartbeats(0, 'none after the tool call');
 
         $harness->listTools();
-        $this->queue->flush();
+        $this->queue->endRequest(1.0);
         $this->assertHeartbeats(1, 'one after the list request');
 
         Heartbeat::forget(); // a second new memory
         $answer = $harness->callTool('get_more_tools', ['context' => 'a tool that sums']);
-        $this->queue->flush();
+        $this->queue->endRequest(1.0);
         $this->assertObjectHasProperty('result', $answer);
         $this->assertHeartbeats(2, 'one after the get_more_tools call');
     }
@@ -223,7 +225,7 @@ final class ServerInfoTest extends LaravelTestCase
         foreach (['call', 'list', 'call', 'list', 'call', 'list'] as $request) {
             Heartbeat::forget(); // the memory of the request before is gone
             $answers[] = $request === 'call' ? $this->text($harness->callTool('alpha', [])) : count(JsonAssert::list($harness->listTools()->tools));
-            $this->queue->flush();
+            $this->queue->endRequest(1.0);
         }
 
         $this->assertSame(['ok', 4, 'ok', 4, 'ok', 4], $answers);
@@ -239,7 +241,7 @@ final class ServerInfoTest extends LaravelTestCase
         $harness->callTool('alpha', []);
         $harness->listTools();
         $harness->callTool('gamma', []);
-        $this->queue->flush();
+        $this->queue->endRequest(1.0);
 
         $this->assertHeartbeats(1);
     }

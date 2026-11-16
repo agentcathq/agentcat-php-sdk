@@ -51,7 +51,7 @@ final class SenderTest extends TestCase
         $this->assertSame(self::URL, $request->url);
         $this->assertSame(['Content-Type' => 'application/json', 'Accept' => 'application/json'], $request->headers);
         $this->assertSame($body->encode(), $request->body);
-        $this->assertFalse($request->background);
+        $this->assertTrue($request->background, 'a flush of the customer never waits for it');
         $this->assertEqualsWithDelta(10.0, $request->totalTimeoutSeconds, PHP_FLOAT_EPSILON);
         $this->assertNull($request->connectTimeoutSeconds);
         $this->assertSame([sprintf('Sent server info heartbeat | 3 tools | %d bytes', strlen($body->encode()))], $this->logger->messages());
@@ -60,12 +60,12 @@ final class SenderTest extends TestCase
     public function testTheLineOfASentHeartbeatNamesTheListsThatFailed(): void
     {
         $channel = new RecordingHttpChannel();
-        $body = new ServerInfoBody('proj_a', 'demo-server', '1.2.3', '', '', [ServerInfoSource::TOOLS => []], [ServerInfoSource::PROMPTS => 'RuntimeException: boom', ServerInfoSource::RESOURCES => 'it took more than 5 s']);
+        $body = new ServerInfoBody('proj_a', 'demo-server', '1.2.3', '', '', [ServerInfoSource::TOOLS => []], [ServerInfoSource::PROMPTS => 'RuntimeException', ServerInfoSource::RESOURCES => 'it took more than 5 s']);
 
         Sender::send($channel, self::URL, $body);
         $channel->pump();
 
-        $this->assertSame([sprintf('Sent server info heartbeat | 0 tools | %d bytes | without prompts (RuntimeException: boom), resources (it took more than 5 s)', strlen($body->encode()))], $this->logger->messages());
+        $this->assertSame([sprintf('Sent server info heartbeat | 0 tools | %d bytes | without prompts (RuntimeException), resources (it took more than 5 s)', strlen($body->encode()))], $this->logger->messages());
     }
 
     public function testV13After413TheBodyGoesOnceMoreWithoutTheSchemas(): void
@@ -133,6 +133,28 @@ final class SenderTest extends TestCase
         $this->assertSame([$line], $this->logger->messages());
     }
 
+    public function testTheSenderSaysOnceWhenTheLastAnswerIsIn(): void
+    {
+        $settled = new \ArrayObject();
+        $count = static function () use ($settled): void {
+            $settled->append('settled');
+        };
+        $channel = new RecordingHttpChannel([new HttpResponse(413, '', ''), new HttpResponse(202, '', '')], complete: false);
+
+        Sender::send($channel, self::URL, $this->body(), $count);
+        $this->assertCount(0, $settled, 'the request is on its way');
+        $channel->complete = true;
+        $channel->pump();
+        $this->assertCount(1, $settled, 'after the second answer, not after the 413');
+
+        Sender::send(new RecordingHttpChannel(default: new HttpResponse(500, '', '')), self::URL, $this->body(), $count);
+        $this->assertCount(1, $settled, 'a request that got no answer yet is not settled');
+        $failing = new RecordingHttpChannel(default: HttpResponse::failed('cURL error 7'));
+        Sender::send($failing, self::URL, $this->body(), $count);
+        $failing->pump();
+        $this->assertCount(2, $settled, 'a failure settles it too');
+    }
+
     public function testAResendThatCannotBeQueuedIsLoggedAndStaysInside(): void
     {
         $channel = new class implements HttpChannel {
@@ -169,11 +191,15 @@ final class SenderTest extends TestCase
             public function waitForActivity(float $seconds): void {}
         };
 
-        Sender::send($channel, self::URL, $this->body());
+        $settled = 0;
+        Sender::send($channel, self::URL, $this->body(), static function () use (&$settled): void {
+            ++$settled;
+        });
         $channel->pump();
 
         $this->assertSame(2, $channel->posts);
         $this->assertSame('Server info heartbeat failed: LogicException', $this->logger->messages()[1] ?? null);
+        $this->assertSame(1, $settled);
     }
 
     public function testWithoutSchemasAToolThatIsNoObjectStaysAsItIs(): void

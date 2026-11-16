@@ -61,7 +61,7 @@ final readonly class CallToolInterceptor implements RequestHandlerInterface
             return $this->answer($request, $session);
         } finally {
             $name = $request instanceof CallToolRequest ? $request->name : '';
-            Heartbeat::onToolCall($this->server, $name, fn(): McpServerInfo => $this->delegates->lists($this->list, $session)); // never throws
+            Heartbeat::onToolCall($this->server, $name, fn(): ?string => $this->server->serverInfo()[0], fn(): McpServerInfo => $this->delegates->lists($this->list, $session)); // never throws
         }
     }
 

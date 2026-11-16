@@ -37,7 +37,7 @@ final readonly class TrackedListTools implements Method
         try {
             return $this->answer($request, $context);
         } finally {
-            Heartbeat::onToolList($this->server, fn(): LaravelServerInfo => new LaravelServerInfo(['tools/list' => $this->original] + ($this->methods)(), $context)); // never throws
+            Heartbeat::onToolList($this->server, static fn(): string => $context->implementation->name, fn(): LaravelServerInfo => new LaravelServerInfo(['tools/list' => $this->original] + ($this->methods)(), $context)); // never throws
         }
     }
 

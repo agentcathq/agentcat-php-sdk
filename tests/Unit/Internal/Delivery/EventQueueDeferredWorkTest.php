@@ -18,7 +18,10 @@ use AgentCat\Tests\Support\RecordingHttpChannel;
 use AgentCat\Tests\Support\RecordingTransport;
 use PHPUnit\Framework\TestCase;
 
-/** `EventQueue::defer()`: when the queue runs deferred work, when it drops it, and that the work adds no wait. */
+/**
+ * `EventQueue::defer()`: the queue runs deferred work only in its own windows after the response, drops what a window
+ * cannot run, and the work adds no wait.
+ */
 final class EventQueueDeferredWorkTest extends TestCase
 {
     private RecordingTransport $transport;
@@ -39,12 +42,38 @@ final class EventQueueDeferredWorkTest extends TestCase
         Log::reset();
     }
 
+    public function testAProcessWithoutAWindowAfterTheResponseTakesNoWork(): void
+    {
+        $armed = 0;
+        $queue = new EventQueue(transport: $this->transport, onEnqueue: static function () use (&$armed): void {
+            ++$armed;
+        }, channel: $this->channel, finishesRequests: false);
+        $work = new RecordingDeferredWork();
+        $this->assertFalse($queue->canDefer(), 'a stdio server or a plain worker loop');
+
+        $queue->defer('a', $work);
+
+        $this->assertSame(['this process has no delivery after the response'], $work->drops);
+        $this->assertFalse($queue->hasWork());
+        $this->assertSame(0, $armed);
+        $queue->pump();
+        $queue->flush();
+        $queue->shutdown();
+        $this->assertSame([], $work->runs);
+    }
+
+    public function testTheSapiDecidesWhenNothingIsGiven(): void
+    {
+        $this->assertFalse((new EventQueue(transport: $this->transport, channel: $this->channel))->canDefer(), 'the command line has no finish call');
+    }
+
     public function testDeferredWorkCountsAsWorkAndArmsTheDeliveryTriggers(): void
     {
         $armed = 0;
         $queue = new EventQueue(transport: $this->transport, onEnqueue: static function () use (&$armed): void {
             ++$armed;
-        }, channel: $this->channel, outlivesRequest: false);
+        }, channel: $this->channel, finishesRequests: true);
+        $this->assertTrue($queue->canDefer());
         $this->assertFalse($queue->hasWork());
 
         $queue->defer('a', new RecordingDeferredWork());
@@ -53,23 +82,77 @@ final class EventQueueDeferredWorkTest extends TestCase
         $this->assertSame(1, $armed);
     }
 
-    public function testAProcessThatOutlivesItsRequestsRunsTheWorkOnceInTheNextPump(): void
+    public function testAWorkerCanDeferOnceABridgeEndedARequestInAWindow(): void
     {
-        $queue = $this->queue(outlivesRequest: true);
-        $work = new RecordingDeferredWork();
+        $queue = $this->queue(finishes: false);
+        $queue->endRequest(0.0); // a console command or a per-request SAPI: no window
+        $queue->endRequest(-1.0);
+        $queue->endRequest(NAN);
+        $this->assertFalse($queue->canDefer());
+
+        $this->assertTrue($queue->endRequest(1.0));
+
+        $this->assertTrue($queue->canDefer());
+        $this->assertEqualsWithDelta(0.0, $this->transport->now(), PHP_FLOAT_EPSILON, 'an empty window does not wait');
+    }
+
+    public function testNoPumpAndNoFlushEverRunsTheWork(): void
+    {
+        foreach ([$this->worker(), $this->queue(finishes: true)] as $queue) {
+            $work = new RecordingDeferredWork();
+            $queue->defer('a', $work);
+
+            $queue->pump();
+            $queue->pump();
+            $queue->flush(0.0);
+            $queue->flush(1.0);
+            $this->assertTrue($queue->flush(), 'a flush without a limit does not count the work');
+
+            $this->assertSame([[], []], [$work->runs, $work->drops]);
+            $this->assertTrue($queue->hasWork());
+        }
+        $this->assertEqualsWithDelta(0.0, $this->transport->now(), PHP_FLOAT_EPSILON, 'no flush waited for the work');
+    }
+
+    public function testAFlushNeverWaitsForWhatTheWorkPosted(): void
+    {
+        $this->channel->complete = false; // the API never answers
+        $queue = $this->worker();
+        $queue->defer('a', new RecordingDeferredWork(function (): void {
+            $this->channel->post(new HttpRequest('https://example.test/', [], '{}', true), static function (): void {});
+        }));
+        $queue->endRequest(1.0);
+        $this->assertEqualsWithDelta(1.0, $this->transport->now(), PHP_FLOAT_EPSILON);
+
+        $this->assertTrue($queue->flush());
+        $this->assertTrue($queue->flush(5.0));
+
+        $this->assertEqualsWithDelta(1.0, $this->transport->now(), PHP_FLOAT_EPSILON, 'the flushes returned at once');
+        $this->assertSame(1, $this->channel->pending());
+    }
+
+    public function testTheRequestEndWindowRunsTheWorkOnceWhenTheEventsAreDeliveredAndGivesItTheTimeLeft(): void
+    {
+        $queue = $this->worker();
+        $state = null;
+        $work = new RecordingDeferredWork(function () use (&$state): void {
+            $state = [count($this->transport->deliveries), $this->transport->inFlight()];
+        });
         $queue->defer('a', $work);
-        $this->assertSame([], $work->runs, 'defer() runs nothing');
+        $queue->add($this->event('evt_1'));
 
-        $queue->pump();
-        $queue->pump();
+        $this->assertTrue($queue->endRequest(0.5));
+        $queue->endRequest(0.5);
 
-        $this->assertSame([INF], $work->runs);
+        $this->assertSame([0.5], $work->runs, 'the work gets exactly what is left of the window');
+        $this->assertSame([1, 0], $state, 'the event was delivered before the work ran');
+        $this->assertSame([], $work->drops);
         $this->assertFalse($queue->hasWork());
     }
 
     public function testWorkWithTheKeyOfWaitingWorkReplacesIt(): void
     {
-        $queue = $this->queue(outlivesRequest: true);
+        $queue = $this->worker();
         $first = new RecordingDeferredWork();
         $second = new RecordingDeferredWork();
         $other = new RecordingDeferredWork();
@@ -77,167 +160,129 @@ final class EventQueueDeferredWorkTest extends TestCase
         $queue->defer('b', $other);
         $queue->defer('a', $second);
 
-        $queue->pump();
+        $queue->endRequest(1.0);
 
-        $this->assertSame([[], [INF], [INF]], [$first->runs, $second->runs, $other->runs]);
+        $this->assertSame([[], [1.0], [1.0]], [$first->runs, $second->runs, $other->runs]);
     }
 
-    public function testAPumpStartsTheEventsFirstAndRunsTheWorkWhileTheyAreInFlight(): void
+    public function testAWindowThatEndsWithAnEventInFlightDropsTheWorkAndNoLaterPassRunsIt(): void
     {
-        $this->transport->complete = false;
-        $queue = $this->queue(outlivesRequest: true);
-        $started = null;
-        $work = new RecordingDeferredWork(function () use (&$started): void {
-            $started = count($this->transport->deliveries);
-        });
+        $this->transport->complete = false; // the event is never delivered in the window
+        $queue = $this->worker();
+        $work = new RecordingDeferredWork();
         $queue->defer('a', $work);
         $queue->add($this->event('evt_1'));
 
-        $queue->pump();
+        $this->assertFalse($queue->endRequest(1.0));
 
-        $this->assertSame(1, $started, 'the event was started before the work ran');
+        $this->assertSame([], $work->runs);
+        $this->assertSame(['the request-end window ended before the events were delivered'], $work->drops);
+        $this->assertEqualsWithDelta(1.0, $this->transport->now(), PHP_FLOAT_EPSILON, 'the window is the 1 s of the event send');
         $this->assertSame(1, $this->transport->inFlight());
-    }
 
-    public function testAPumpKeepsTheWorkWhileAnEventStillWaitsForAFreeSlot(): void
-    {
-        $this->transport->complete = false;
-        $queue = $this->queue(outlivesRequest: true);
-        $work = new RecordingDeferredWork();
-        $queue->defer('a', $work);
-        for ($i = 0; $i <= EventQueue::CONCURRENCY; ++$i) {
-            $queue->add($this->event('evt_' . $i));
-        }
-
+        $this->transport->complete = true; // the next request
         $queue->pump();
-        $this->assertSame([], $work->runs);
-
-        $this->transport->complete = true;
-        $queue->pump(); // frees the slots
-        $queue->pump(); // starts the last event
-
-        $this->assertSame([INF], $work->runs);
+        $queue->endRequest(1.0);
+        $this->assertSame([], $work->runs, 'the work of the earlier request is gone');
+        $this->assertFalse($queue->hasWork());
     }
 
-    public function testADeliveryThatWaitsRunsTheWorkOnlyOnceTheEventsAreDeliveredAndGivesItTheTimeLeft(): void
-    {
-        $this->transport->complete = false;
-        $queue = $this->queue(outlivesRequest: true);
-        $inFlight = null;
-        $work = new RecordingDeferredWork(function () use (&$inFlight): void {
-            $inFlight = $this->transport->inFlight();
-        });
-        $queue->defer('a', $work);
-        $queue->add($this->event('evt_1'));
-
-        $this->assertFalse($queue->flush(1.0), 'the event is still in flight when the window ends');
-        $this->assertSame([], $work->runs, 'the work waits for the event');
-        $this->assertEqualsWithDelta(1.0, $this->transport->now(), PHP_FLOAT_EPSILON);
-
-        $this->transport->complete = true;
-        $this->assertTrue($queue->flush(1.0));
-
-        $this->assertSame([1.0], $work->runs);
-        $this->assertSame(0, $inFlight);
-        $this->assertEqualsWithDelta(1.0, $this->transport->now(), PHP_FLOAT_EPSILON, 'the second flush did not wait');
-    }
-
-    public function testAFlushWithoutAWindowRunsNoWork(): void
-    {
-        $queue = $this->queue(outlivesRequest: true);
-        $this->transport->complete = false;
-        $queue->add($this->event('evt_1'));
-        $queue->flush(2.0); // the clock of the transport is at 2 s now
-        $this->transport->complete = true;
-        $queue->pump();
-        $work = new RecordingDeferredWork();
-        $queue->defer('a', $work);
-
-        $queue->flush(0.0);
-        $queue->flush(-1.0);
-        $queue->flush(NAN);
-        $this->assertSame([], $work->runs);
-
-        $queue->flush(0.5);
-        $this->assertSame([0.5], $work->runs, 'the work gets exactly what is left of the window');
-    }
-
-    public function testAFlushWithoutALimitGivesTheWorkNoLimit(): void
-    {
-        $queue = $this->queue(outlivesRequest: true);
-        $work = new RecordingDeferredWork();
-        $queue->defer('a', $work);
-
-        $this->assertTrue($queue->flush());
-
-        $this->assertSame([INF], $work->runs);
-    }
-
-    public function testAFlushWaitsForWhatTheWorkPostsOnlyInsideItsWindow(): void
+    public function testTheWindowWaitsForWhatTheWorkPostedOnlyUntilItsOwnDeadline(): void
     {
         $this->channel->complete = false; // the API never answers
-        $queue = $this->queue(outlivesRequest: true);
+        $queue = $this->worker();
         $queue->defer('a', new RecordingDeferredWork(function (): void {
-            $this->channel->post(new HttpRequest('https://example.test/', [], '{}'), static function (): void {});
+            $this->channel->post(new HttpRequest('https://example.test/', [], '{}', true), static function (): void {});
         }));
 
-        $this->assertFalse($queue->flush(1.0));
+        $this->assertFalse($queue->endRequest(1.0));
 
         $this->assertCount(1, $this->channel->requests);
         $this->assertEqualsWithDelta(1.0, $this->transport->now(), PHP_FLOAT_EPSILON, 'the wait ended at the 1 s of the window, as for an event');
     }
 
-    public function testTheShutdownOfAProcessThatOutlivesItsRequestsDropsTheWork(): void
+    public function testAWindowWithoutWorkDoesNotWaitForBackgroundRequests(): void
     {
-        $queue = $this->queue(outlivesRequest: true);
-        $work = new RecordingDeferredWork();
-        $queue->defer('a', $work);
+        $this->channel->complete = false;
+        $queue = $this->worker();
+        $this->channel->post(new HttpRequest('https://diagnostics.test/', [], '{}', true), static function (): void {});
+
+        $this->assertTrue($queue->endRequest(1.0));
+
+        $this->assertEqualsWithDelta(0.0, $this->transport->now(), PHP_FLOAT_EPSILON, 'as a flush: the diagnostics go on in later passes');
+    }
+
+    public function testTheShutdownOfAWorkerRunsNoWorkAndSaysWhatItGaveUp(): void
+    {
+        $queue = $this->worker();
+        $waiting = new RecordingDeferredWork();
+        $posted = new RecordingDeferredWork();
+        $posted->unfinished = true;
+        $answered = new RecordingDeferredWork();
+        $queue->defer('a', $posted);
+        $queue->defer('b', $answered);
+        $queue->endRequest(1.0);
+        $queue->defer('c', $waiting);
 
         $queue->shutdown();
 
-        $this->assertSame([], $work->runs);
-        $this->assertSame(['the process is ending'], $work->drops);
+        $this->assertSame([[], ['the process is ending']], [$waiting->runs, $waiting->drops]);
+        $this->assertSame(['the delivery time ended before the AgentCat API answered'], $posted->drops, 'what the work started was still on its way');
+        $this->assertSame([], $answered->drops);
         $this->assertEqualsWithDelta(0.0, $this->transport->now(), PHP_FLOAT_EPSILON, 'the shutdown did not wait');
         $this->assertFalse($queue->hasWork());
+        $said = count($posted->drops) + count($waiting->drops);
+        $queue->shutdown();
+        $this->assertSame($said, count($posted->drops) + count($waiting->drops), 'a second shutdown says nothing again');
     }
 
-    public function testAPerRequestSapiRunsNoWorkInAPumpOrAFlush(): void
+    public function testWorkThatIsAnsweredIsForgottenAtTheNextRun(): void
     {
-        $queue = $this->queue(outlivesRequest: false);
-        $work = new RecordingDeferredWork();
-        $queue->defer('a', $work);
+        $queue = $this->worker();
+        $first = new RecordingDeferredWork();
+        $first->unfinished = true;
+        $queue->defer('a', $first);
+        $queue->endRequest(1.0);
+        $first->unfinished = false; // the API answered
+        $queue->defer('a', new RecordingDeferredWork());
+        $queue->endRequest(1.0);
+        $first->unfinished = true;
 
-        $queue->pump();
-        $queue->flush();
-        $queue->flush(1.0);
+        $queue->shutdown();
 
-        $this->assertSame([[], []], [$work->runs, $work->drops]);
-        $this->assertTrue($queue->hasWork());
+        $this->assertSame([], $first->drops);
     }
 
     public function testAPerRequestSapiDropsTheWorkAtShutdownWhenTheClientDoesNotHaveItsResponse(): void
     {
-        $queue = $this->queue(outlivesRequest: false);
+        $queue = $this->queue(finishes: true);
         $work = new RecordingDeferredWork();
         $queue->defer('a', $work);
 
+        $queue->endRequest(0.0); // the bridge's hook under a per-request SAPI: the shutdown function follows
+        $queue->endRequest(1.0); // and a window here is no window after the response of this SAPI's request...
+        $this->assertSame([1.0], $work->runs, '...but a bridge that asks for one gets it');
+
+        $late = new RecordingDeferredWork();
+        $queue->defer('b', $late);
         $queue->shutdown();
 
-        $this->assertSame([], $work->runs);
-        $this->assertSame(['the client does not have its response yet'], $work->drops);
+        $this->assertSame([], $late->runs);
+        $this->assertSame(['the client does not have its response yet'], $late->drops);
     }
 
     public function testAPerRequestSapiRunsTheWorkInTheShutdownAfterTheResponseAndAfterTheEvents(): void
     {
-        $queue = $this->queue(outlivesRequest: false);
+        $queue = $this->queue(finishes: true);
         $delivered = null;
         $work = new RecordingDeferredWork(function () use (&$delivered): void {
             $delivered = [count($this->transport->deliveries), $this->transport->inFlight()];
         });
         $queue->defer('a', $work);
         $queue->add($this->event('evt_1'));
-        $queue->pump(); // a pump before the response runs no work
-        $this->assertSame([], $work->runs);
+        $queue->pump();
+        $queue->endRequest(0.0);
+        $this->assertSame([], $work->runs, 'nothing runs before the response');
 
         $queue->responseSent();
         $queue->finalShutdown();
@@ -247,25 +292,28 @@ final class EventQueueDeferredWorkTest extends TestCase
         $this->assertSame([], $work->drops);
     }
 
-    public function testAPendingRequestOfTheWorkDoesNotMoveTheShutdownDeadline(): void
+    public function testAPendingRequestOfTheWorkDoesNotMoveTheShutdownDeadlineAndIsReportedAsGivenUp(): void
     {
         $this->channel->complete = false; // the API never answers
-        $queue = $this->queue(outlivesRequest: false);
-        $queue->defer('a', new RecordingDeferredWork(function (): void {
-            $this->channel->post(new HttpRequest('https://example.test/', [], '{}'), static function (): void {});
-        }));
+        $queue = $this->queue(finishes: true);
+        $work = new RecordingDeferredWork(function (): void {
+            $this->channel->post(new HttpRequest('https://example.test/', [], '{}', true), static function (): void {});
+        });
+        $work->unfinished = true;
+        $queue->defer('a', $work);
         $queue->responseSent();
 
         $queue->finalShutdown();
 
         $this->assertCount(1, $this->channel->requests);
         $this->assertSame(EventQueue::SHUTDOWN_TIMEOUT_SECONDS, $this->transport->now(), 'the one 5 s deadline of the events');
+        $this->assertSame(['the delivery time ended before the AgentCat API answered'], $work->drops);
     }
 
     public function testEventsThatUseTheWholeShutdownTimeLeaveNoneForTheWork(): void
     {
         $this->transport->complete = false; // the events are never delivered
-        $queue = $this->queue(outlivesRequest: false);
+        $queue = $this->queue(finishes: true);
         $work = new RecordingDeferredWork();
         $queue->defer('a', $work);
         $queue->add($this->event('evt_1'));
@@ -280,7 +328,7 @@ final class EventQueueDeferredWorkTest extends TestCase
 
     public function testWithACompanionTheWorkGetsTheTimeBeforeTheFinishReserve(): void
     {
-        $queue = $this->queue(outlivesRequest: false);
+        $queue = $this->queue(finishes: true);
         $companion = new RecordingCompanion();
         $queue->attach($companion);
         $work = new RecordingDeferredWork();
@@ -293,11 +341,24 @@ final class EventQueueDeferredWorkTest extends TestCase
         $this->assertContains('finish', $companion->calls);
     }
 
+    public function testWithACompanionAndWithoutTheResponseTheShutdownRunsNoWork(): void
+    {
+        $queue = $this->queue(finishes: true);
+        $queue->attach(new RecordingCompanion());
+        $work = new RecordingDeferredWork();
+        $queue->defer('a', $work);
+
+        $queue->finalShutdown();
+
+        $this->assertSame([], $work->runs);
+    }
+
     public function testAQueueThatIsShuttingDownDropsNewWorkAtOnce(): void
     {
-        $queue = $this->queue(outlivesRequest: false);
+        $queue = $this->queue(finishes: true);
         $queue->shutdown();
         $work = new RecordingDeferredWork();
+        $this->assertFalse($queue->canDefer());
 
         $queue->defer('a', $work);
 
@@ -307,15 +368,15 @@ final class EventQueueDeferredWorkTest extends TestCase
 
     public function testWorkThatThrowsStopsNeitherTheOtherWorkNorTheQueue(): void
     {
-        $queue = $this->queue(outlivesRequest: true);
+        $queue = $this->worker();
         $failing = new RecordingDeferredWork(failure: new \RuntimeException('boom'));
         $next = new RecordingDeferredWork();
         $queue->defer('a', $failing);
         $queue->defer('b', $next);
         $queue->add($this->event('evt_1'));
 
-        $queue->pump();
-        $this->assertSame([[INF], [INF]], [$failing->runs, $next->runs]);
+        $queue->endRequest(1.0);
+        $this->assertSame([[1.0], [1.0]], [$failing->runs, $next->runs]);
         $this->assertCount(1, $this->transport->deliveries);
 
         $queue->defer('c', $failing);
@@ -327,7 +388,36 @@ final class EventQueueDeferredWorkTest extends TestCase
         $this->assertCount(2, $failing->drops);
     }
 
-    public function testADeliveryWhoseClockFailsKeepsTheWork(): void
+    public function testWorkWhoseStateCannotBeReadCountsAsFinished(): void
+    {
+        $queue = $this->worker();
+        $work = new class implements \AgentCat\Internal\Delivery\DeferredWork {
+            public int $drops = 0;
+
+            #[\Override]
+            public function run(float $secondsLeft): void {}
+
+            #[\Override]
+            public function unfinished(): bool
+            {
+                throw new \LogicException('no state');
+            }
+
+            #[\Override]
+            public function drop(string $reason): void
+            {
+                ++$this->drops;
+            }
+        };
+        $queue->defer('a', $work);
+        $queue->endRequest(1.0);
+
+        $queue->shutdown();
+
+        $this->assertSame(0, $work->drops);
+    }
+
+    public function testAWindowWhoseClockFailsRunsNoWork(): void
     {
         $transport = new class implements Transport {
             public int $reads = 0;
@@ -365,37 +455,37 @@ final class EventQueueDeferredWorkTest extends TestCase
             #[\Override]
             public function now(): float
             {
-                return ++$this->reads === 1 ? 0.0 : throw new \RuntimeException('no clock');
+                return ++$this->reads <= 2 ? 0.0 : throw new \RuntimeException('no clock');
             }
         };
-        $queue = new EventQueue(transport: $transport, channel: $this->channel, outlivesRequest: true);
+        $queue = new EventQueue(transport: $transport, channel: $this->channel, finishesRequests: false);
+        $queue->endRequest(1.0); // the first read of the clock
         $work = new RecordingDeferredWork();
         $queue->defer('a', $work);
 
-        $this->assertTrue($queue->flush(1.0), 'no event is left: the flush does not count the work');
+        $queue->endRequest(1.0); // the second read; the pass cannot read the time left
 
-        $this->assertSame([[], []], [$work->runs, $work->drops]);
-        $this->assertTrue($queue->hasWork(), 'the work waits for a pass that can read the time');
+        $this->assertSame([], $work->runs);
+        $this->assertSame(['the request-end window ended before the events were delivered'], $work->drops);
     }
 
-    public function testWorkThatDefersMoreWorkLeavesItForTheNextPass(): void
+    public function testWorkThatDefersMoreWorkLeavesItForTheEndOfTheWindowWhichDropsIt(): void
     {
-        $queue = $this->queue(outlivesRequest: true);
+        $queue = $this->worker();
         $later = new RecordingDeferredWork();
         $queue->defer('a', new RecordingDeferredWork(static function () use ($queue, $later): void {
             $queue->defer('a', $later);
         }));
 
-        $queue->pump();
-        $this->assertSame([], $later->runs);
+        $queue->endRequest(1.0);
 
-        $queue->pump();
-        $this->assertSame([INF], $later->runs);
+        $this->assertSame(1, count($later->runs) + count($later->drops), 'it ran in a later pass of the window, or the window dropped it');
+        $this->assertFalse($queue->hasWork());
     }
 
     public function testTheBaseUrlFollowsTheLastConfigure(): void
     {
-        $queue = $this->queue(outlivesRequest: true);
+        $queue = $this->queue(finishes: true);
         $this->assertStringStartsWith('http://127.0.0.1:', $queue->baseUrl(), 'the guard of the test process');
 
         $queue->configure('https://custom.example.test/base/');
@@ -403,9 +493,18 @@ final class EventQueueDeferredWorkTest extends TestCase
         $this->assertSame('https://custom.example.test/base', $queue->baseUrl());
     }
 
-    private function queue(bool $outlivesRequest): EventQueue
+    private function queue(bool $finishes): EventQueue
     {
-        return new EventQueue(transport: $this->transport, channel: $this->channel, outlivesRequest: $outlivesRequest);
+        return new EventQueue(transport: $this->transport, channel: $this->channel, finishesRequests: $finishes);
+    }
+
+    /** A worker whose framework bridge already ended one request in a window. */
+    private function worker(): EventQueue
+    {
+        $queue = $this->queue(finishes: false);
+        $queue->endRequest(1.0);
+
+        return $queue;
     }
 
     private function event(string $id): QueuedEvent

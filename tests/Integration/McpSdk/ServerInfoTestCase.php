@@ -59,7 +59,8 @@ abstract class ServerInfoTestCase extends TestCase
         Log::setLogger($this->logger);
         $this->exporter = new RecordingExporter();
         $this->channel = new RecordingHttpChannel();
-        $this->queue = new EventQueue(transport: new RecordingTransport(), exporters: $this->exporter, channel: $this->channel, outlivesRequest: true);
+        $this->queue = new EventQueue(transport: new RecordingTransport(), exporters: $this->exporter, channel: $this->channel, finishesRequests: false);
+        $this->queue->endRequest(1.0); // a worker whose framework bridge ends each request in a window
     }
 
     #[\Override]
@@ -78,7 +79,7 @@ abstract class ServerInfoTestCase extends TestCase
         $answer = $harness->callTool('alpha', []);
         $this->assertSame('alpha ran', $this->text($answer));
         $this->assertHeartbeats(0, 'nothing is sent while the request is answered');
-        $this->queue->flush();
+        $this->queue->endRequest(1.0);
 
         $this->assertHeartbeats(1);
         $this->assertStringEndsWith('/v1/public/server-info/', $this->heartbeat(0)->url);
@@ -110,7 +111,7 @@ abstract class ServerInfoTestCase extends TestCase
         $this->assertObjectHasProperty('nextCursor', $harness->listTools(), 'the server pages its tool list');
 
         $harness->callTool('t1', []);
-        $this->queue->flush();
+        $this->queue->endRequest(1.0);
 
         $this->assertSame(['t1', 't2', 't3', 't4', 't5', 'get_more_tools'], JsonAssert::column(JsonAssert::at($this->body(0), 'features', 'tools'), 'name'));
     }
@@ -122,7 +123,7 @@ abstract class ServerInfoTestCase extends TestCase
         $harness = $this->harness(Server::builder()->setServerInfo('demo-server', '1.2.3')->setSession()->addTool(static fn(): string => 'ok', 'alpha'));
 
         $harness->callTool('alpha', []);
-        $this->queue->flush();
+        $this->queue->endRequest(1.0);
 
         $features = JsonAssert::at($this->body(0), 'features');
         $this->assertSame(['tools', 'resources', 'resourceTemplates', 'prompts'], JsonAssert::keys($features));
@@ -137,12 +138,12 @@ abstract class ServerInfoTestCase extends TestCase
         $harness = $this->harness($this->demo()->addRequestHandler(new CustomerHandler(ListPromptsRequest::class, static fn(): never => throw new \RuntimeException('no prompts today'))));
 
         $harness->callTool('alpha', []);
-        $this->queue->flush();
+        $this->queue->endRequest(1.0);
 
         $features = JsonAssert::at($this->body(0), 'features');
         $this->assertSame(['tools', 'resources', 'resourceTemplates'], JsonAssert::keys($features));
         $this->assertSame(['alpha', 'beta', 'gamma', 'get_more_tools'], JsonAssert::column(JsonAssert::at($features, 'tools'), 'name'));
-        $this->assertStringContainsString('| without prompts (RuntimeException: no prompts today)', implode("\n", $this->logger->messages()));
+        $this->assertStringContainsString('| without prompts (RuntimeException)', implode("\n", $this->logger->messages()));
     }
 
     public function testV5AFailingToolListHandlerSendsNothing(): void
@@ -151,11 +152,11 @@ abstract class ServerInfoTestCase extends TestCase
         $harness = $this->harness($this->demo()->addRequestHandler(new CustomerHandler(ListToolsRequest::class, static fn(): never => throw new \RuntimeException('no tools today'))));
 
         $answer = $harness->callTool('alpha', []);
-        $this->queue->flush();
+        $this->queue->endRequest(1.0);
 
         $this->assertSame('alpha ran', $this->text($answer));
         $this->assertHeartbeats(0);
-        $this->assertContains('Skipped the server info heartbeat: the tool list failed - RuntimeException: no tools today', $this->logger->messages());
+        $this->assertContains('Skipped the server info heartbeat: the tool list failed - RuntimeException', $this->logger->messages());
     }
 
     public function testV6AListHandlerThatGivesTheSameCursorEachTimeFailsItsList(): void
@@ -166,7 +167,7 @@ abstract class ServerInfoTestCase extends TestCase
         $started = microtime(true);
 
         $harness->callTool('alpha', []);
-        $this->queue->flush();
+        $this->queue->endRequest(1.0);
 
         $this->assertLessThan(5.0, microtime(true) - $started);
         $this->assertSame(2, $handler->calls, 'the second page gave the cursor of the first again');
@@ -188,7 +189,7 @@ abstract class ServerInfoTestCase extends TestCase
         $this->assertSame(0, $lists->calls, 'no list handler runs while the request is answered');
         $this->assertHeartbeats(0);
 
-        $this->assertFalse($this->queue->flush(1.0));
+        $this->assertFalse($this->queue->endRequest(1.0));
         $this->assertSame(1, $lists->calls);
         $this->assertHeartbeats(1);
         $this->assertSame('gamma ran', $this->text($harness->callTool('gamma', [])), 'the next call is answered while the heartbeat is still on its way');
@@ -203,7 +204,7 @@ abstract class ServerInfoTestCase extends TestCase
         $harness = $this->harness($builder, new Options(redactSensitiveInformation: static fn(string $text): string => str_replace('secret', '[x]', $text)));
 
         $harness->callTool('secret_tool', []);
-        $this->queue->flush();
+        $this->queue->endRequest(1.0);
 
         $body = $this->body(0);
         $this->assertSame(['the [x] plan', 'A [x] title', 'secret-server'], [JsonAssert::at($body, 'instructions'), JsonAssert::at($body, 'server_title'), JsonAssert::at($body, 'server_name')]);
@@ -219,11 +220,11 @@ abstract class ServerInfoTestCase extends TestCase
         $harness = $this->harness($this->demo(), new Options(redactSensitiveInformation: static fn(string $text): string => throw new \DomainException('redactor down')));
 
         $answer = $harness->callTool('get_more_tools', ['context' => 'a tool that sums']);
-        $this->queue->flush();
+        $this->queue->endRequest(1.0);
 
         $this->assertObjectHasProperty('result', $answer);
         $this->assertHeartbeats(0);
-        $this->assertContains('Skipped the server info heartbeat: redactSensitiveInformation failed - DomainException: redactor down', $this->logger->messages());
+        $this->assertContains('Skipped the server info heartbeat: redactSensitiveInformation failed - DomainException', $this->logger->messages());
     }
 
     public function testV15TheHeartbeatNamesTheServerAsTheEventOfTheCallDoes(): void
@@ -232,7 +233,7 @@ abstract class ServerInfoTestCase extends TestCase
         $harness = $this->harness($this->demo());
 
         $harness->callTool('alpha', []);
-        $this->queue->flush();
+        $this->queue->endRequest(1.0);
 
         $this->assertCount(1, $this->exporter->events);
         $event = $this->exporter->events[0];
@@ -245,18 +246,18 @@ abstract class ServerInfoTestCase extends TestCase
         $harness = $this->harness($this->demo()); // the handshake and the memory are new
 
         $harness->callTool('alpha', []);
-        $this->queue->flush();
+        $this->queue->endRequest(1.0);
         $this->assertHeartbeats(0, 'none after the tool call');
 
         $harness->listTools();
-        $this->queue->flush();
+        $this->queue->endRequest(1.0);
         // After build() the library answers tools/list alone: AgentCat has no check there.
         $this->assertHeartbeats(static::entry()->afterBuild() ? 0 : 1);
 
         Heartbeat::forget(); // a second new memory
         $this->channel->requests = [];
         $answer = $harness->callTool('get_more_tools', ['context' => 'a tool that sums']);
-        $this->queue->flush();
+        $this->queue->endRequest(1.0);
         $this->assertObjectHasProperty('result', $answer);
         $this->assertHeartbeats(1, 'one after the get_more_tools call');
     }
@@ -270,12 +271,118 @@ abstract class ServerInfoTestCase extends TestCase
             $answers[] = $request === 'call'
                 ? $this->text($harness->callTool('alpha', []))
                 : count(JsonAssert::list($harness->listTools()->tools));
-            $this->queue->flush();
+            $this->queue->endRequest(1.0);
         }
 
         $this->assertSame(['alpha ran', 4, 'alpha ran', 4, 'alpha ran', 4], $answers);
         // After build() the library answers tools/list alone: AgentCat has no check there.
         $this->assertHeartbeats(static::entry()->afterBuild() ? 0 : 3);
+    }
+
+    /** A stdio server and a plain worker loop: each hook pumps, and nothing ends a request in a window. */
+    public function testAProcessWithoutARequestEndWindowRunsNoListHandlerInAnyPump(): void
+    {
+        $this->queue = new EventQueue(transport: new RecordingTransport(), exporters: $this->exporter, channel: $this->channel, finishesRequests: false);
+        $lists = new CustomerHandler(ListResourcesRequest::class, static fn(): ListResourcesResult => new ListResourcesResult([]));
+        $harness = $this->harness(self::demo()->addRequestHandler($lists));
+
+        for ($request = 0; $request < 3; ++$request) {
+            $harness->listTools();
+            $harness->callTool('get_more_tools', ['context' => 'a tool that sums']);
+            $harness->callTool('alpha', []);
+            $this->now += Guard::INTERVAL_SECONDS;
+        }
+        $this->queue->flush();
+        $this->queue->shutdown();
+
+        $this->assertSame(0, $lists->calls);
+        $this->assertHeartbeats(0);
+        $this->assertSame([], array_values(array_filter($this->logger->messages(), static fn(string $line): bool => str_contains($line, 'heartbeat'))), 'decided once: no line for each request');
+    }
+
+    public function testAFlushOfTheCustomerInsideAToolOrBeforeTheResponseRunsNoListHandler(): void
+    {
+        $this->oldMemory();
+        $transport = new RecordingTransport();
+        $this->queue = new EventQueue(transport: $transport, exporters: $this->exporter, channel: $this->channel, finishesRequests: false);
+        $this->queue->endRequest(1.0);
+        $lists = new CustomerHandler(ListResourcesRequest::class, static fn(): ListResourcesResult => new ListResourcesResult([]));
+        $queue = $this->queue;
+        $builder = self::demo()->addRequestHandler($lists)->addTool(static function () use ($queue): string {
+            $queue->flush();
+
+            return 'flushed';
+        }, 'flushing');
+        $harness = $this->harness($builder);
+        $harness->callTool('get_more_tools', ['context' => 'a tool that sums']); // the heartbeat of this request is pending now
+
+        $this->assertSame('flushed', self::text($harness->callTool('flushing', [])), 'a flush inside a tool');
+        $this->assertTrue($this->queue->flush(), 'a flush between the handler and the response');
+        $this->assertTrue($this->queue->flush(1.0));
+
+        $this->assertSame(0, $lists->calls);
+        $this->assertHeartbeats(0);
+        $this->assertEqualsWithDelta(0.0, $transport->now(), PHP_FLOAT_EPSILON, 'no flush waited: the time is what it is without a heartbeat');
+    }
+
+    public function testAJsonRpcBatchRunsNoListHandlerBeforeItsResponse(): void
+    {
+        $this->oldMemory();
+        $lists = new CustomerHandler(ListResourcesRequest::class, static fn(): ListResourcesResult => new ListResourcesResult([]));
+        $harness = $this->harness(self::demo()->addRequestHandler($lists));
+
+        $answer = $harness->batch([
+            ['tools/call', HttpHarness::callParams('get_more_tools', ['context' => 'a tool that sums'], null)],
+            ['tools/list', []],
+            ['tools/call', HttpHarness::callParams('alpha', [], null)],
+        ]);
+
+        $this->assertNotSame('', $answer);
+        $this->assertSame(0, $lists->calls, 'the response of the batch is ready, and no list handler ran for the heartbeat');
+        $this->assertHeartbeats(0);
+    }
+
+    public function testAWorkerWhoseWindowEndsWithAnEventInFlightDropsTheHeartbeatAndTheNextRequestRunsNoListHandler(): void
+    {
+        $this->oldMemory();
+        $transport = new RecordingTransport(complete: false); // the event of the call is not delivered inside the window
+        $this->queue = new EventQueue(transport: $transport, exporters: $this->exporter, channel: $this->channel, finishesRequests: false);
+        $this->queue->endRequest(1.0);
+        $lists = new CustomerHandler(ListResourcesRequest::class, static fn(): ListResourcesResult => new ListResourcesResult([]));
+        $harness = $this->harness(self::demo()->addRequestHandler($lists));
+
+        $harness->callTool('alpha', []);
+        $this->assertFalse($this->queue->endRequest(1.0));
+        $this->assertContains('Skipped the server info heartbeat: the request-end window ended before the events were delivered', $this->logger->messages());
+
+        $transport->complete = true;
+        $this->assertSame('gamma ran', self::text($harness->callTool('gamma', [])), 'the next request');
+        $this->queue->endRequest(1.0);
+
+        $this->assertSame(0, $lists->calls);
+        $this->assertHeartbeats(0);
+    }
+
+    public function testNoLogLineHoldsTheMessageOfAListHandlerOrOfTheRedactionFunction(): void
+    {
+        $this->oldMemory();
+        $diagnostics = [];
+        Log::setDiagnosticsSink(static function (string $line) use (&$diagnostics): void {
+            $diagnostics[] = $line;
+        });
+        $prompts = new CustomerHandler(ListPromptsRequest::class, static fn(): never => throw new \RuntimeException('the secret of the list handler'));
+        $harness = $this->harness(self::demo()->addRequestHandler($prompts), new Options(redactSensitiveInformation: static fn(string $text): string => throw new \DomainException('the secret of the redactor: ' . $text)));
+
+        $harness->callTool('alpha', []);
+        $this->queue->endRequest(1.0);
+
+        $this->assertSame(1, $prompts->calls);
+        $this->assertHeartbeats(0);
+        $this->assertContains('Skipped the server info heartbeat: redactSensitiveInformation failed - DomainException', $this->logger->messages());
+        $heartbeat = static fn(string $line): bool => str_contains($line, 'server info heartbeat');
+        $this->assertStringNotContainsString('secret', implode("\n", array_filter($this->logger->messages(), $heartbeat)));
+        $this->assertNotSame([], array_filter($diagnostics, $heartbeat));
+        $this->assertStringNotContainsString('secret', implode("\n", array_filter($diagnostics, $heartbeat)));
     }
 
     public function testAListHandlerGetsTheSessionOfTheRequestThatStartedTheHeartbeat(): void
@@ -302,7 +409,7 @@ abstract class ServerInfoTestCase extends TestCase
         $harness = $this->harness($this->demo()->addRequestHandler($handler));
 
         $harness->callTool('alpha', []);
-        $this->queue->flush();
+        $this->queue->endRequest(1.0);
 
         $this->assertSame([$harness->sessionId()], $handler->sessions);
     }

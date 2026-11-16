@@ -23,6 +23,8 @@ final class FakeServerInfo implements ServerInfoSource
         private readonly string $title = 'Demo Title',
         private readonly string $instructions = 'Use the demo tools.',
         private readonly bool $advertised = false,
+        public ?string $name = 'demo-server',
+        public ?string $version = '1.2.3',
     ) {
         $this->lists ??= self::demo();
     }
@@ -64,6 +66,12 @@ final class FakeServerInfo implements ServerInfoSource
             'outputSchema' => (object) ['type' => 'object', 'properties' => (object) ['sum' => (object) ['type' => 'integer']]],
             'annotations' => (object) ['readOnlyHint' => true],
         ];
+    }
+
+    #[\Override]
+    public function server(): array
+    {
+        return [$this->name, $this->version];
     }
 
     #[\Override]

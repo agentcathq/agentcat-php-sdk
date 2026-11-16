@@ -14,9 +14,9 @@ use AgentCat\Internal\Logging\Log;
  * `ShutdownHandler` pattern). When the queue has work (events, exporter requests or diagnostics lines), the final
  * pass first ends the request (`RequestEnd`: the session, the time limit and, without a finish call, the output
  * buffers) and sends the HTTP response to the client when the SAPI can (`fastcgi_finish_request()` and friends), then
- * shuts the queue down within its drain budget. Once the client has its response, it tells the queue so
- * (`EventQueue::responseSent()`): after a finish call that did not throw, or, on a SAPI without one, when the whole
- * answer is out already (`RequestEnd::answerSent()`). Where a host disables `register_shutdown_function()`
+ * shuts the queue down within its drain budget. After a finish call that did not throw, the client has its response,
+ * and it tells the queue so (`EventQueue::responseSent()`). A SAPI without a finish call never tells it: PHP cannot
+ * know there what the web server did with the response. Where a host disables `register_shutdown_function()`
  * (`disable_functions`), nothing is registered and one line says so: the events still waiting when the script ends are
  * lost.
  *
@@ -29,9 +29,6 @@ final class ShutdownFlusher
     /** @var (\Closure(\Closure(): void): void)|null null where a host disabled `register_shutdown_function()` */
     private readonly ?\Closure $register;
 
-    /** @var \Closure(): bool */
-    private readonly \Closure $answerSent;
-
     private bool $registered = false;
 
     /**
@@ -40,8 +37,6 @@ final class ShutdownFlusher
      * @param (\Closure(): void)|null                 $finishRequest sends the response to the client (`FinishRequest::detect()`)
      * @param RequestEnd|null                         $requestEnd    runs before the finish call when the queue has work
      * @param (\Closure(string): bool)|null           $functionExists tests only: tells whether `register_shutdown_function()` exists; default `function_exists()`
-     * @param (\Closure(): bool)|null                 $answerSent    without a finish call: whether the client has the whole answer
-     *                                                               after `$requestEnd` ran; default `RequestEnd::answerSent()`
      */
     public function __construct(
         private readonly \Closure $queue,
@@ -49,9 +44,7 @@ final class ShutdownFlusher
         private readonly ?\Closure $finishRequest = null,
         private readonly ?RequestEnd $requestEnd = null,
         ?\Closure $functionExists = null,
-        ?\Closure $answerSent = null,
     ) {
-        $this->answerSent = $answerSent ?? static fn(): bool => RequestEnd::answerSent();
         $this->register = $register ?? (($functionExists ?? function_exists(...))('register_shutdown_function') ? register_shutdown_function(...) : null);
     }
 
@@ -100,8 +93,6 @@ final class ShutdownFlusher
                     } catch (\Throwable) {
                         // keep going: delivery matters more than the finish call
                     }
-                } elseif (($this->answerSent)()) {
-                    $queue->responseSent();
                 }
             }
             $queue->finalShutdown();

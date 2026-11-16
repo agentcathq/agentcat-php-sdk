@@ -35,7 +35,8 @@ final class ServerInfoTest extends SymfonyTestCase
         ServerInfoRecorder::remove();
         Heartbeat::setClock(fn(): float => $this->now);
         $this->channel = new RecordingHttpChannel();
-        EventQueue::setGlobal(new EventQueue(transport: $this->transport = new RecordingTransport(), channel: $this->channel, outlivesRequest: true));
+        EventQueue::setGlobal(new EventQueue(transport: $this->transport = new RecordingTransport(), channel: $this->channel, finishesRequests: false));
+        EventQueue::global()->endRequest(1.0); // a Symfony Runtime worker: an earlier request ended in the bundle's window
     }
 
     #[\Override]
@@ -55,7 +56,7 @@ final class ServerInfoTest extends SymfonyTestCase
         $answer = $http->callTool('echo', ['msg' => 'hi']);
         $this->assertObjectHasProperty('result', $answer);
         $this->assertHeartbeats(0, 'nothing is sent while the request is answered');
-        EventQueue::global()->flush(1.0);
+        EventQueue::global()->endRequest(1.0);
 
         $this->assertSame([self::API . '/v1/public/server-info/'], $this->channel->urls());
         $body = json_decode($this->heartbeat(0)->body, false, flags: JSON_THROW_ON_ERROR);
