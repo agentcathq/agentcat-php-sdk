@@ -72,7 +72,6 @@ final class PendingHeartbeat implements DeferredWork
     #[\Override]
     public function drop(string $reason): void
     {
-        $this->onItsWay = false;
         Log::write(self::SKIPPED . $reason);
     }
 
@@ -110,7 +109,6 @@ final class PendingHeartbeat implements DeferredWork
             }
         }
         $check();
-        $body->encode(); // a body that JSON cannot carry stops here
 
         return $body;
     }

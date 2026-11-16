@@ -385,6 +385,29 @@ abstract class ServerInfoTestCase extends TestCase
         $this->assertStringNotContainsString('secret', implode("\n", array_filter($diagnostics, $heartbeat)));
     }
 
+    /** V8 with real servers: the guard's key holds the server name, so two names of one version both send. */
+    public function testV8TwoServersOfOneVersionAndTwoNamesBothSend(): void
+    {
+        $this->oldMemory();
+        $server = static fn(string $name): Builder => Server::builder()->setServerInfo($name, '1.0.0')->setSession()->addTool(static fn(): string => 'ok', 'alpha');
+        $one = $this->harness($server('one-server'));
+        $two = $this->harness($server('two-server'));
+
+        $one->callTool('alpha', []);
+        $two->callTool('alpha', []);
+        $one->callTool('alpha', []);
+        $this->queue->endRequest(1.0);
+        $this->assertHeartbeats(2);
+
+        Heartbeat::forget();
+        $this->channel->requests = [];
+        $one->listTools();
+        $two->listTools();
+        $this->queue->endRequest(1.0);
+        // After build() the library answers tools/list alone: AgentCat has no check there.
+        $this->assertHeartbeats(static::entry()->afterBuild() ? 0 : 2);
+    }
+
     public function testAListHandlerGetsTheSessionOfTheRequestThatStartedTheHeartbeat(): void
     {
         $this->oldMemory();

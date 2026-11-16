@@ -35,6 +35,7 @@ final class TestSetupTest extends TestCase
         ServerInfoRecorder::install();
         $channel = new RecordingHttpChannel();
         $queue = new EventQueue(transport: new RecordingTransport(), channel: $channel);
+        $queue->endRequest(1.0); // a worker whose bridge ends each request in a window: the real heartbeat would start here
         $server = new TrackedServer(self::PROJECT, new Options(), static fn(): array => ['demo-server', '1.2.3'], new Publisher($queue));
 
         Heartbeat::onToolList($server, static fn(): string => 'demo-server', static fn(): FakeServerInfo => new FakeServerInfo());
@@ -42,7 +43,7 @@ final class TestSetupTest extends TestCase
 
         $this->assertSame([['project' => self::PROJECT, 'always' => true], ['project' => self::PROJECT, 'always' => false]], ServerInfoRecorder::$checks);
         $this->assertFalse($queue->hasWork(), 'the recorder defers nothing');
-        $this->assertTrue($queue->flush());
+        $queue->endRequest(1.0);
         $this->assertSame([], $channel->requests);
     }
 

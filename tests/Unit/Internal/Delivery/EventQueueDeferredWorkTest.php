@@ -150,6 +150,41 @@ final class EventQueueDeferredWorkTest extends TestCase
         $this->assertFalse($queue->hasWork());
     }
 
+    public function testEventsThatAreDeliveredOnlyAtTheEndOfTheWindowLeaveNoTimeForTheWork(): void
+    {
+        $this->transport->complete = false;
+        $channel = new RecordingHttpChannel(complete: false, onWait: function (): void {
+            $this->transport->complete = $this->transport->now() >= 1.0; // the events are delivered when the window is over
+        });
+        $queue = new EventQueue(transport: $this->transport, channel: $channel, finishesRequests: false);
+        $queue->endRequest(1.0);
+        $channel->post(new HttpRequest('https://exporter.test/', [], '{}'), static function (): void {}); // makes the queue wait in slices
+        $work = new RecordingDeferredWork();
+        $queue->defer('a', $work);
+        $queue->add($this->event('evt_1'));
+
+        $this->assertFalse($queue->endRequest(1.0));
+
+        $this->assertSame(0, $this->transport->inFlight(), 'the event was delivered in the last pass');
+        $this->assertSame([], $work->runs, 'with 0 s left, the work does not start');
+        $this->assertSame(['the request-end window ended before the events were delivered'], $work->drops);
+    }
+
+    public function testTheTimeLeftIsCountedFromTheClockOfTheWindow(): void
+    {
+        $this->transport->complete = false;
+        $queue = $this->worker();
+        $queue->add($this->event('evt_1'));
+        $queue->endRequest(2.0); // the clock of the transport is at 2 s now
+        $this->transport->complete = true;
+        $work = new RecordingDeferredWork();
+        $queue->defer('a', $work);
+
+        $queue->endRequest(0.5);
+
+        $this->assertSame([0.5], $work->runs);
+    }
+
     public function testWorkWithTheKeyOfWaitingWorkReplacesIt(): void
     {
         $queue = $this->worker();

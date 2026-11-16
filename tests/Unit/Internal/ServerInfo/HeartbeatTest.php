@@ -424,8 +424,10 @@ final class HeartbeatTest extends TestCase
         $this->toolCall($this->server(), source: new FakeServerInfo($lists));
         $this->queue->endRequest(1.0);
 
+        $this->queue->shutdown();
+
         $this->assertHeartbeats(0);
-        $this->assertSame(['Skipped the server info heartbeat: JsonException'], $this->logger->messages());
+        $this->assertSame(['Skipped the server info heartbeat: JsonException'], $this->logger->messages(), 'and nothing of it is on its way at the shutdown');
     }
 
     /** A stdio server and a worker loop without a framework bridge have no window after the response. */
