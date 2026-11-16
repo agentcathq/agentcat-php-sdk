@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace AgentCat\Tests\Support\Symfony\Streaming;
 
+use AgentCat\Tests\Support\Symfony\McpTool;
 use AgentCat\Tests\Support\ToolCalls;
-use Mcp\Capability\Attribute\McpTool;
 use Mcp\Server\ClientGateway;
 
 /**

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace AgentCat\Tests\Support\Symfony\FullPage;
 
+use AgentCat\Tests\Support\Symfony\McpTool;
 use AgentCat\Tests\Support\ToolCalls;
-use Mcp\Capability\Attribute\McpTool;
 
 /**
  * `own` of `TestKernel::PAGED`, like `Tools\OwnTool`: declares its own required `session_id` and answers `ok`. The
