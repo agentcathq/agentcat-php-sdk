@@ -9,6 +9,7 @@ use AgentCat\Internal\Support\StrictErrors;
 use Mcp\Capability\Registry\ReferenceHandlerInterface;
 use Mcp\Schema\Implementation;
 use Mcp\Server\Builder;
+use Mcp\Server\Configuration;
 use Mcp\Server\Handler\Request\RequestHandlerInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
@@ -82,6 +83,19 @@ final class BuilderAccess
     public static function serverInfo(Builder $builder): ?Implementation
     {
         $read = \Closure::bind(static fn(Builder $b): ?Implementation => $b->parts === null ? null : $b->parts['configuration']->serverInfo, null, Builder::class);
+
+        return $read($builder);
+    }
+
+    /**
+     * @return Configuration|null the configuration that build() gave the server's `initialize` handler, or null before build()
+     *
+     * @phpstan-impure
+     */
+    #[TouchesPrivateMember(class: Builder::class, member: 'parts', type: '?array')]
+    public static function configuration(Builder $builder): ?Configuration
+    {
+        $read = \Closure::bind(static fn(Builder $b): ?Configuration => $b->parts === null ? null : $b->parts['configuration'], null, Builder::class);
 
         return $read($builder);
     }

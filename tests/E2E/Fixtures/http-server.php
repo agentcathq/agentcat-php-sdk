@@ -62,6 +62,8 @@ foreach ($response->getHeaders() as $name => $values) {
         header($name . ': ' . $value, false);
     }
 }
-header('Content-Length: ' . strlen($body)); // the client can finish reading before the shutdown delivery runs
+if (($_SERVER['HTTP_X_E2E_NO_LENGTH'] ?? null) !== '1') {
+    header('Content-Length: ' . strlen($body)); // the client can finish reading before the shutdown delivery runs
+}
 echo $body;
 flush();

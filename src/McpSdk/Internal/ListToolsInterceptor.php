@@ -7,6 +7,7 @@ namespace AgentCat\McpSdk\Internal;
 use AgentCat\Internal\Engine\Publisher;
 use AgentCat\Internal\Engine\ToolListing;
 use AgentCat\Internal\Engine\TrackedServer;
+use AgentCat\Internal\ServerInfo\Heartbeat;
 use Mcp\Schema\JsonRpc\Error;
 use Mcp\Schema\JsonRpc\Request;
 use Mcp\Schema\JsonRpc\Response;
@@ -17,6 +18,7 @@ use Mcp\Server\Session\SessionInterface;
 /**
  * Answers `tools/list` first (TS listWrap): the next handler lists, then AgentCat injects its parameters into the page
  * and appends get_more_tools to the last one (D66). Errors, exceptions and other answers pass unchanged (ac-02-10).
+ * Once the request is answered, the server info heartbeat gets its check (`Heartbeat`).
  *
  * @implements RequestHandlerInterface<mixed>
  *
@@ -42,6 +44,17 @@ final readonly class ListToolsInterceptor implements RequestHandlerInterface
     public function handle(Request $request, SessionInterface $session): Response|Error
     {
         $this->publisher->pump(); // stdio servers deliver between requests
+
+        try {
+            return $this->answer($request, $session);
+        } finally {
+            Heartbeat::onToolList($this->server, fn(): McpServerInfo => $this->delegates->lists($this, $session)); // never throws
+        }
+    }
+
+    /** @return Response<mixed>|Error */
+    private function answer(Request $request, SessionInterface $session): Response|Error
+    {
         $delegate = $this->delegates->after($this, $request);
         if (!$delegate instanceof RequestHandlerInterface) {
             return Delegates::notFound($request);

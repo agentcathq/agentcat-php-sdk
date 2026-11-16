@@ -61,6 +61,16 @@ AgentCat works as a lightweight middleware inside your MCP server. When you call
 
 Injected parameters are stripped from arguments before your tool handler runs, so your code never sees them. For tools that declare an output schema, issued IDs are also mirrored into `structuredContent` (as `mcp_session`), so clients that only read structured results still receive them.
 
+## Server info
+
+AgentCat also sends what an agent sees on your server: its name, version, title and instructions, and its full lists of tools, resources, resource templates and prompts. The tool list is the one a client gets, with AgentCat's parameters and `get_more_tools`. AgentCat uses it to tell you what your server offers to agents.
+
+- **When.** AgentCat calls your server's own list handlers and sends the result about once an hour for each PHP process and server name. It does this only for a server that gets `tools/list` or `tools/call` requests, after the client has its response, where AgentCat sends the events. No timer runs.
+- **Runtimes without memory between requests.** Under PHP-FPM, mod_php and other runtimes that start each request with a new memory, AgentCat cannot remember the last time. There it sends after each `tools/list` request and after each `get_more_tools` call, and after no other tool call. On a SAPI that sends the response only when the script ends, it sends only when the response carries a `Content-Length`, so the client never waits for it.
+- **Redaction.** Your `redactSensitiveInformation` function runs on every text of it: the title, the instructions and every description. The names stay as they are: the server name and version, and the `name`, `uri` and `uriTemplate` of each item. If the function fails, AgentCat sends nothing.
+- **No file.** AgentCat writes no file and uses no cache for this. Its only state is a few timestamps in the memory of the process.
+- **Never in the way.** A list handler that fails or is slow, or an AgentCat API that does not answer, never changes or delays a response of your server. It is on with tracing and a project ID, and no option turns it off.
+
 ## Getting Started
 
 To get started with AgentCat, first create an account and obtain your project ID by signing up at [agentcat.com](https://agentcat.com). For detailed setup instructions visit our [documentation](https://docs.agentcat.com).

@@ -8,6 +8,7 @@ use AgentCat\Internal\Engine\CallInterceptor;
 use AgentCat\Internal\Engine\Publisher;
 use AgentCat\Internal\Engine\ThrowableStash;
 use AgentCat\Internal\Engine\TrackedServer;
+use AgentCat\Internal\ServerInfo\Heartbeat;
 use Mcp\Schema\JsonRpc\Request;
 use Mcp\Schema\JsonRpc\Response;
 use Mcp\Schema\Request\CallToolRequest;
@@ -22,12 +23,14 @@ use Mcp\Server\Session\SessionInterface;
  * runs the same interception as a Builder tracked before build(), with `$runner` in place of the library's handler:
  * a copy of it over the tools as they were registered. Its answer goes back to the library's handler: the result,
  * which that handler sends unchanged, or the tool's exception, rethrown, which that handler logs and answers as it
- * would without AgentCat.
+ * would without AgentCat. Once the tool is answered, the server info heartbeat gets its check (`Heartbeat`): a server
+ * tracked after build() has no other place for it, as the library answers its `tools/list` requests alone.
  *
  * @internal
  */
 final readonly class RegistryCall
 {
+    /** @param \Closure(SessionInterface): McpServerInfo $lists the server's lists for the server info heartbeat, in the session of a request */
     public function __construct(
         private TrackedServer $server,
         private CallInterceptor $interceptor,
@@ -36,6 +39,7 @@ final readonly class RegistryCall
         private ListToolsHandler $lister,
         private ThrowableStash $stash,
         private RequestReader $reader,
+        private \Closure $lists,
     ) {}
 
     /**
@@ -58,6 +62,17 @@ final readonly class RegistryCall
         if (!$request instanceof CallToolRequest) {
             throw new \UnexpectedValueException(sprintf('AgentCat SDK compatibility error: mcp/sdk ran a tool for a %s request.', $request::getMethod()));
         }
+
+        try {
+            return $this->answer($request, $session);
+        } finally {
+            Heartbeat::onToolCall($this->server, $request->name, fn(): McpServerInfo => ($this->lists)($session)); // never throws
+        }
+    }
+
+    /** @throws \Throwable the tool's exception */
+    private function answer(CallToolRequest $request, SessionInterface $session): mixed
+    {
         $lister = $this->lister;
         $seam = new McpCallSeam($request, $session, $this->runner, static fn(): ListToolsHandler => $lister, $this->stash, $this->reader);
         $answer = $this->interceptor->intercept($this->server, $seam);

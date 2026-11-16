@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The server info heartbeat: about once an hour for each process, and after each `tools/list` request under PHP-FPM, AgentCat calls the server's own list handlers and sends the server's name, version, title, instructions and its lists of tools, resources, resource templates and prompts to AgentCat, after the response and with `redactSensitiveInformation` applied to the text.
+
 ## [1.1.0] - 2026-10-23
 
 ### Added

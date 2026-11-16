@@ -11,8 +11,10 @@ use AgentCat\McpSdk\Internal\Access\CallToolHandlerAccess;
 use Mcp\Schema\JsonRpc\Error;
 use Mcp\Schema\JsonRpc\Request;
 use Mcp\Server\Builder;
+use Mcp\Server\Configuration;
 use Mcp\Server\Handler\Request\CallToolHandler;
 use Mcp\Server\Handler\Request\RequestHandlerInterface;
+use Mcp\Server\Session\SessionInterface;
 
 /**
  * The handlers that answer after AgentCat's: the library's own, or a customer's, added before or after track(). They
@@ -86,6 +88,23 @@ final class Delegates
         Drift::report($this->builder);
 
         return null;
+    }
+
+    /**
+     * The server's lists for the server info heartbeat, in the session of a request: each list request goes to the
+     * handler that answers it after `$self`, so the tool list is the server's own, before AgentCat's additions. Reads
+     * nothing until the heartbeat runs.
+     */
+    public function lists(object $self, SessionInterface $session): McpServerInfo
+    {
+        $builder = $this->builder;
+
+        return new McpServerInfo(
+            fn(Request $request): ?RequestHandlerInterface => $this->after($self, $request),
+            static fn(): ?Configuration => BuilderAccess::configuration($builder),
+            false,
+            $session,
+        );
     }
 
     /** The library's own answer when no handler supports a request. */

@@ -14,8 +14,10 @@ use AgentCat\Internal\Pipeline\QueuedEvent;
 use AgentCat\Internal\Transport\HttpRequest;
 use AgentCat\Tests\Support\MemoryLogger;
 use AgentCat\Tests\Support\RecordingCompanion;
+use AgentCat\Tests\Support\RecordingDeferredWork;
 use AgentCat\Tests\Support\RecordingHttpChannel;
 use AgentCat\Tests\Support\RecordingTransport;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
@@ -340,6 +342,80 @@ final class ShutdownFlusherTest extends TestCase
 
         $this->assertSame(['limit 6', 'output with 0 deliveries'], $this->calls);
         $this->assertCount(1, $this->transport->deliveries);
+    }
+
+    public function testAfterTheFinishCallTheDeferredWorkRunsInTheShutdown(): void
+    {
+        $queue = new EventQueue(transport: new RecordingTransport(), outlivesRequest: false);
+        $work = new RecordingDeferredWork(function (): void {
+            $this->calls[] = 'work';
+        });
+        $queue->defer('a', $work);
+
+        (new ShutdownFlusher(static fn(): EventQueue => $queue, $this->recorder(), function (): void {
+            $this->calls[] = 'finish';
+        }, answerSent: static fn(): bool => false))->onFinalShutdown();
+
+        $this->assertSame(['finish', 'work'], $this->calls, 'the client has its response before the work runs');
+        $this->assertSame([], $work->drops);
+    }
+
+    public function testAFinishCallThatThrowsLeavesTheDeferredWorkOut(): void
+    {
+        $queue = new EventQueue(transport: new RecordingTransport(), outlivesRequest: false);
+        $work = new RecordingDeferredWork();
+        $queue->defer('a', $work);
+
+        (new ShutdownFlusher(static fn(): EventQueue => $queue, $this->recorder(), static function (): never {
+            throw new \RuntimeException('no finish');
+        }, answerSent: static fn(): bool => true))->onFinalShutdown();
+
+        $this->assertSame([], $work->runs);
+        $this->assertSame(['the client does not have its response yet'], $work->drops);
+    }
+
+    /** @return iterable<string, array{(\Closure(): bool)|null, bool}> */
+    public static function answers(): iterable
+    {
+        yield 'the whole answer is out' => [static fn(): bool => true, true];
+        yield 'the client still waits for the script' => [static fn(): bool => false, false];
+        yield 'nothing can tell' => [null, false];
+    }
+
+    /** @param (\Closure(): bool)|null $answerSent */
+    #[DataProvider('answers')]
+    public function testWithoutAFinishCallTheDeferredWorkRunsOnlyWhenTheWholeAnswerIsOut(?\Closure $answerSent, bool $runs): void
+    {
+        $queue = new EventQueue(transport: new RecordingTransport(), outlivesRequest: false);
+        $work = new RecordingDeferredWork();
+        $queue->defer('a', $work);
+        $prepared = false;
+        $end = new RequestEnd('apache2handler', false, static fn(): bool => false, static function (): void {}, static fn(): int => 0, static function (): void {}, static function () use (&$prepared): void {
+            $prepared = true;
+        });
+
+        (new ShutdownFlusher(static fn(): EventQueue => $queue, $this->recorder(), null, $end, answerSent: $answerSent instanceof \Closure ? static function () use ($answerSent, &$prepared): bool {
+            self::assertTrue($prepared, 'the answer is checked after the output buffers went out');
+
+            return $answerSent();
+        } : null))->onFinalShutdown();
+
+        $this->assertCount($runs ? 1 : 0, $work->runs);
+        $this->assertSame($runs ? [] : ['the client does not have its response yet'], $work->drops);
+    }
+
+    public function testAnEmptyQueueDoesNotAskWhetherTheAnswerIsOut(): void
+    {
+        $queue = new EventQueue(transport: new RecordingTransport(), outlivesRequest: false);
+        $asked = 0;
+
+        (new ShutdownFlusher(static fn(): EventQueue => $queue, $this->recorder(), answerSent: static function () use (&$asked): bool {
+            ++$asked;
+
+            return true;
+        }))->onFinalShutdown();
+
+        $this->assertSame(0, $asked);
     }
 
     /**

@@ -34,6 +34,13 @@ use AgentCat\Internal\Wire\WireMapper;
  * (`attach()`): every pass ticks each companion (except the pass after `finish()`), then pumps the channel. `flush()`
  * waits for the exporter requests inside its timeout, `shutdown()` for the background ones (diagnostics) too.
  *
+ * Deferred work (`defer()`) runs once, after the events, and only where the client of its request already has the
+ * response. In a process that outlives its requests, that is a later pass: a `pump()` whose events are all started, or a
+ * `flush()` or `shutdown()` with time left whose events are all delivered; the `shutdown()` of such a process runs none,
+ * so nothing new starts when the process ends. Under a per-request SAPI, it is the shutdown delivery alone, once the
+ * last shutdown pass says that the response is out (`responseSent()`). The work gets the time left of the pass, so it
+ * adds no wait: what it sends moves on with the side channel, inside the same deadlines.
+ *
  * @internal
  */
 final class EventQueue
@@ -66,6 +73,8 @@ final class EventQueue
     /** @var \Closure(Event): string */
     private readonly \Closure $encode;
 
+    private string $baseUrl;
+
     private string $endpoint;
 
     private bool $accepting = true;
@@ -81,11 +90,21 @@ final class EventQueue
     /** @var list<QueueCompanion> */
     private array $companions = [];
 
+    /** @var array<string, DeferredWork> the work that waits for the events and the response, by its key */
+    private array $deferred = [];
+
+    /** Whether the process outlives its requests: a later pass then comes after the response of an earlier request. */
+    private readonly bool $outlivesRequest;
+
+    /** True once the last shutdown pass of a per-request SAPI gave the client its response. */
+    private bool $responseSent = false;
+
     /**
      * @param (\Closure(): void)|null        $onEnqueue the delivery-trigger registrar, called on every `add()` and `arm()`
      * @param (\Closure(Event): string)|null $encode    builds the HTTP body; default `WireEncoder::encode(...)`
      * @param HttpChannel                    $channel   the side channel of the exporter and diagnostics requests
      * @param SignalDrain|null               $signalDrain the SIGTERM and SIGINT drain that `disableSignalHandlers()` switches off
+     * @param bool|null                      $outlivesRequest whether the process outlives its requests; null asks the SAPI (`FinishRequest::outlivesRequest()`)
      */
     public function __construct(
         private readonly EventProcessor $processor = new EventProcessor(),
@@ -96,11 +115,14 @@ final class EventQueue
         ?\Closure $encode = null,
         private readonly HttpChannel $channel = new CurlHttpChannel(),
         private readonly ?SignalDrain $signalDrain = null,
+        ?bool $outlivesRequest = null,
     ) {
         $this->waiting = new \SplQueue();
         $this->ready = new \SplQueue();
         $this->encode = $encode ?? WireEncoder::encode(...);
-        $this->endpoint = ApiBaseUrl::endpoint(ApiBaseUrl::resolve()); // environment or default, until configure()
+        $this->baseUrl = ApiBaseUrl::resolve(); // environment or default, until configure()
+        $this->endpoint = ApiBaseUrl::endpoint($this->baseUrl);
+        $this->outlivesRequest = $outlivesRequest ?? FinishRequest::outlivesRequest(PHP_SAPI, $_SERVER);
     }
 
     /**
@@ -111,7 +133,7 @@ final class EventQueue
     {
         if (!self::$global instanceof self) {
             $finish = FinishRequest::detect();
-            $flusher = new ShutdownFlusher(static fn(): self => self::global(), null, $finish, RequestEnd::detect($finish instanceof \Closure));
+            $flusher = new ShutdownFlusher(static fn(): self => self::global(), null, $finish, RequestEnd::detect($finish instanceof \Closure), answerSent: static fn(): bool => RequestEnd::answerSent());
             $signals = new SignalDrain(static fn(): self => self::global());
             self::$global = new self(onEnqueue: static function () use ($flusher, $signals): void {
                 $flusher->ensureRegistered();
@@ -146,7 +168,14 @@ final class EventQueue
     /** Option > `AGENTCAT_API_URL` > `MCPCAT_API_URL` > default. The last call wins (TypeScript `configure`). */
     public function configure(?string $apiBaseUrlOption): void
     {
-        $this->endpoint = ApiBaseUrl::endpoint(ApiBaseUrl::resolve($apiBaseUrlOption));
+        $this->baseUrl = ApiBaseUrl::resolve($apiBaseUrlOption);
+        $this->endpoint = ApiBaseUrl::endpoint($this->baseUrl);
+    }
+
+    /** The API base URL of this moment, without a trailing `/` (the last `configure()` wins). */
+    public function baseUrl(): string
+    {
+        return $this->baseUrl;
     }
 
     public function setExporterSink(ExporterSink $exporters): void
@@ -170,6 +199,30 @@ final class EventQueue
         $this->companions[] = $companion;
     }
 
+    /**
+     * Keeps `$work` until a pass can run it (see the class text), and arms the delivery triggers. Work with the key of
+     * waiting work replaces it. A queue that is shutting down drops the work at once. Never throws.
+     */
+    public function defer(string $key, DeferredWork $work): void
+    {
+        if (!$this->accepting) {
+            $this->drop($work, 'the queue is shutting down');
+
+            return;
+        }
+        $this->deferred[$key] = $work;
+        $this->arm();
+    }
+
+    /**
+     * The last shutdown pass of a per-request SAPI calls it once the client has its response: the shutdown delivery
+     * may then run the deferred work.
+     */
+    public function responseSent(): void
+    {
+        $this->responseSent = true;
+    }
+
     /** The delivery triggers (shutdown function, signal drain) without an event: diagnostics lines need them too. */
     public function arm(): void
     {
@@ -184,11 +237,11 @@ final class EventQueue
         }
     }
 
-    /** Anything left to send: an event, a side request, or a companion's buffer. True when a check throws. */
+    /** Anything left to send or run: an event, a side request, deferred work, or a companion's buffer. True when a check throws. */
     public function hasWork(): bool
     {
         try {
-            if ($this->queued() > 0 || $this->transport->inFlight() > 0 || $this->channel->pending() > 0) {
+            if ($this->queued() > 0 || $this->transport->inFlight() > 0 || $this->channel->pending() > 0 || $this->deferred !== []) {
                 return true;
             }
             foreach ($this->companions as $companion) {
@@ -271,6 +324,9 @@ final class EventQueue
     public function shutdown(): void
     {
         $this->accepting = false;
+        if ($this->outlivesRequest) {
+            $this->dropDeferred('the process is ending');
+        }
         $deadline = fn(): float => $this->shutdownDeadline ??= $this->transport->now() + $this->budget($this->shutdownTimeoutSeconds);
         if (!$this->shutdownDeadlinePassed()) {
             if ($this->companions === []) {
@@ -282,6 +338,7 @@ final class EventQueue
         if ($this->queued() > 0) {
             Log::write(sprintf('Shutting down with %d events still in queue', $this->queued()));
         }
+        $this->dropDeferred($this->responseSent ? 'the delivery time ended before the events were delivered' : 'the client does not have its response yet');
     }
 
     /**
@@ -371,7 +428,7 @@ final class EventQueue
         try {
             $until = $deadline();
             while (true) {
-                $this->pumpOnce($tick);
+                $this->pumpOnce($tick, $until);
                 if ($prepare) {
                     $this->prepareWaiting();
                 }
@@ -423,8 +480,13 @@ final class EventQueue
      * encode failure, dropped by a hook) leaves the slots free, so a hook that keeps queueing such events cannot hold
      * the pass. A signal drain during a hook (`finalShutdown()`) delivers the whole queue: the pass stops when the
      * queue is empty.
+     *
+     * Between the events and the companions, the pass runs the deferred work when it may (`runDeferred()`), so the side
+     * channel starts what the work posted in the same pass.
+     *
+     * @param float|null $until the deadline of a delivery that waits (`deliverUntil()`); null for a `pump()`
      */
-    private function pumpOnce(bool $tick = true): void
+    private function pumpOnce(bool $tick = true, ?float $until = null): void
     {
         try {
             for ($left = $this->queued(); $left > 0 && $this->queued() > 0 && $this->transport->inFlight() < self::CONCURRENCY; --$left) {
@@ -437,6 +499,7 @@ final class EventQueue
         } catch (\Throwable $e) {
             RepeatedLines::write(self::GAVE_UP . ErrorText::of($e));
         }
+        $this->runDeferred($until);
         if ($tick) {
             foreach ($this->companions as $companion) {
                 try {
@@ -451,6 +514,54 @@ final class EventQueue
             $this->channel->pump(); // CurlHttpChannel never throws; a test double's callback might
         } catch (\Throwable) {
             // the side channel never stops the queue
+        }
+    }
+
+    /**
+     * Runs the deferred work, once, when the client of its request has the response and the events are out of the way:
+     * in a `pump()`, every event is started; in a delivery that waits, every event is delivered and time is left. Each
+     * piece of work gets the seconds left of the delivery (INF in a `pump()`). Never throws.
+     */
+    private function runDeferred(?float $until): void
+    {
+        if ($this->deferred === [] || !$this->outlivesRequest && !$this->responseSent) {
+            return;
+        }
+
+        try {
+            $left = $until === null ? INF : $until - $this->transport->now();
+            if ($this->queued() > 0 || ($until !== null && $this->transport->inFlight() > 0) || $left <= 0.0) {
+                return;
+            }
+        } catch (\Throwable) {
+            return; // the delivery loop logs the transport's failure
+        }
+        $deferred = $this->deferred;
+        $this->deferred = [];
+        foreach ($deferred as $work) {
+            try {
+                $work->run($until === null ? INF : max(0.0, $until - $this->transport->now()));
+            } catch (\Throwable) {
+                // deferred work never stops the queue
+            }
+        }
+    }
+
+    private function dropDeferred(string $reason): void
+    {
+        $deferred = $this->deferred;
+        $this->deferred = [];
+        foreach ($deferred as $work) {
+            $this->drop($work, $reason);
+        }
+    }
+
+    private function drop(DeferredWork $work, string $reason): void
+    {
+        try {
+            $work->drop($reason);
+        } catch (\Throwable) {
+            // deferred work never stops the queue
         }
     }
 

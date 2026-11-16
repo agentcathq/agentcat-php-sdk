@@ -32,6 +32,8 @@ final class TrackedServer
      * @param (\Closure(): ?HttpContext)|null $httpContext the HTTP request of a call, from the framework; null reads the
      *                                                    SAPI globals. The laravel/mcp adapter reads the server's own
      *                                                    transport instead
+     * @param bool $reportsServerInfo whether the server info heartbeat runs for the server; false for a client that
+     *                                sends nothing (`AgentCat::fake()`)
      */
     public function __construct(
         public readonly string $projectId,
@@ -39,6 +41,7 @@ final class TrackedServer
         private readonly \Closure $serverInfo,
         private readonly Publisher $publisher,
         public readonly ?\Closure $httpContext = null,
+        public readonly bool $reportsServerInfo = true,
     ) {
         $this->injection = new InjectionState();
     }
