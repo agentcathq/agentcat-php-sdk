@@ -41,7 +41,7 @@ final class ErrorShield
     public function end(): void
     {
         $this->active = false;
-        $top = set_error_handler(static fn(): bool => false);
+        $top = set_error_handler(null); // reads the handler on top; the restore takes the null back off
         restore_error_handler();
         if ($top === $this->handler) {
             restore_error_handler();
