@@ -20,7 +20,7 @@ final class FakeServerInfo implements ServerInfoSource
      */
     public function __construct(
         private ?array $lists = null,
-        private readonly string $title = 'Demo Title',
+        private readonly string|\Throwable $title = 'Demo Title',
         private readonly string $instructions = 'Use the demo tools.',
         private readonly bool $advertised = false,
         public ?string $name = 'demo-server',
@@ -77,7 +77,7 @@ final class FakeServerInfo implements ServerInfoSource
     #[\Override]
     public function title(): string
     {
-        return $this->title;
+        return $this->title instanceof \Throwable ? throw $this->title : $this->title;
     }
 
     #[\Override]

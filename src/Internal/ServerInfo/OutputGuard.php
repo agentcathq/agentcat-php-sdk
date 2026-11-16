@@ -24,11 +24,13 @@ final class OutputGuard
 
     private bool $buffered = false;
 
-    private function __construct(private readonly int $level) {}
+    /** @param \Closure(): bool $remove */
+    private function __construct(private readonly int $level, private readonly \Closure $remove) {}
 
-    public static function start(): self
+    /** @param (\Closure(): bool)|null $remove tests only: removes the buffer on top, or fails to; default `ob_end_clean()` */
+    public static function start(?\Closure $remove = null): self
     {
-        $guard = new self(ob_get_level());
+        $guard = new self(ob_get_level(), $remove ?? ob_end_clean(...));
         $guard->buffered = ob_start($guard->filter(...), 1);
 
         return $guard;
@@ -40,7 +42,7 @@ final class OutputGuard
             return;
         }
         for ($open = ob_get_level() - $this->level; $open > 0 && ob_get_level() > $this->level; --$open) {
-            ob_end_clean();
+            ($this->remove)();
         }
         foreach (array_slice(ob_get_status(true), $this->level + 1) as $above) {
             $used = is_array($above) ? $above['buffer_used'] ?? null : null;

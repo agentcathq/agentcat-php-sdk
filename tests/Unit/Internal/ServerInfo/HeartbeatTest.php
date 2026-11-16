@@ -614,6 +614,31 @@ final class HeartbeatTest extends TestCase
         $this->assertNull($request->get());
     }
 
+    public function testAnErrorOutsideTheListsAndTheRedactionSendsNothingAndIsLoggedByItsClass(): void
+    {
+        $this->oldMemory();
+
+        $this->toolCall($this->server(), source: new FakeServerInfo(title: new \LogicException('the secret title cannot be read')));
+        $this->queue->endRequest(1.0);
+
+        $this->assertHeartbeats(0);
+        $this->assertSame(['Skipped the server info heartbeat: LogicException'], $this->logger->messages());
+    }
+
+    public function testAPendingHeartbeatRunsOnce(): void
+    {
+        $source = new FakeServerInfo();
+        $pending = new PendingHeartbeat($this->server(), $source, fn(): float => $this->now);
+
+        $this->assertInstanceOf(\AgentCat\Internal\ServerInfo\SentHeartbeat::class, $pending->run(1.0));
+        $asked = count($source->asked);
+        $this->assertNull($pending->run(1.0), 'it let go of the lists at its first run');
+
+        $this->assertCount($asked, $source->asked);
+        $this->queue->endRequest(1.0);
+        $this->assertHeartbeats(1);
+    }
+
     public function testAnAnonymousClassOfTheCustomersCodeIsNamedByAFixedWord(): void
     {
         $this->oldMemory();
