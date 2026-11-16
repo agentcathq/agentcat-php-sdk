@@ -8,8 +8,8 @@ use PHPUnit\Framework\Assert;
 
 /**
  * The contract check of the #[TouchesPrivateMember] entries against the installed library, shared by the member
- * tests of every adapter. The test reads the attributes itself, so their code runs inside the test (coverage and
- * mutation testing see it; a data provider runs before either starts).
+ * tests of every adapter. The test reads the attributes itself, so their code runs inside the test (coverage sees
+ * it; a data provider runs before coverage starts).
  */
 final class MemberShape
 {

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 // Runs the command given as arguments (the mock collector's `php -S`) until stdin reaches EOF, then stops it and
 // deletes $AGENTCAT_COLLECTOR_DIR. MockCollector::stop() closes stdin, and so does the death of the test process,
-// even by SIGKILL (an Infection timeout), so no collector outlives its test run. When the server exits first
+// even by SIGKILL, so no collector outlives its test run. When the server exits first
 // (port taken), this exits too. With $AGENTCAT_WATCHDOG_TIMEOUT (seconds), it also stops the command after that
 // long, even when stdin stays open.
 //

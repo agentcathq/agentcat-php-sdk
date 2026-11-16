@@ -5,10 +5,9 @@ declare(strict_types=1);
 require __DIR__ . '/../vendor/autoload.php';
 
 // No test may write to the real home directory (the SDK default log lives in $HOME/agentcat.log).
-// Point HOME at a per-process dir for the whole run, including mutants run by Infection. It lives in the
-// git-ignored .cache/ of the repo, so a process that never reaches the cleanup below (Infection kills
-// timed-out mutants) leaves nothing in /tmp. Other processes' dirs are not swept: parallel Infection
-// processes share the parent dir.
+// Point HOME at a per-process dir for the whole run. It lives in the git-ignored .cache/ of the repo, so a
+// process that never reaches the cleanup below (a killed test run) leaves nothing in /tmp. Other processes'
+// dirs are not swept: parallel test processes share the parent dir.
 $agentcatRepo = dirname(__DIR__);
 $agentcatTestHome = $agentcatRepo . '/.cache/test-home/' . bin2hex(random_bytes(6));
 mkdir($agentcatTestHome, 0o700, true);

@@ -325,8 +325,8 @@ final class EventProcessorTest extends TestCase
     /**
      * 16 000 strings of 200 units reach the last resort. Its cost was quadratic in the number of strings: 6.6 s on
      * the 4-core dev machine. It is linear now: 0.4 s, 0.5 s with pcov coverage. The 1.5 s bound is 3x the linear
-     * time under coverage and 4x below the quadratic time, so a loaded machine (Infection runs one process per core)
-     * stays under it, and a return to the quadratic cost does not.
+     * time under coverage and 4x below the quadratic time, so a loaded machine stays under it, and a return to the
+     * quadratic cost does not.
      */
     #[Group('ac-05-T9')]
     #[MaximumDuration(1500)]
