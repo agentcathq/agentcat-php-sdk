@@ -8,6 +8,8 @@ use AgentCat\Internal\Logging\Log;
 use AgentCat\Internal\ServerInfo\Sender;
 use AgentCat\Internal\ServerInfo\ServerInfoBody;
 use AgentCat\Internal\ServerInfo\ServerInfoSource;
+use AgentCat\Internal\Transport\HttpChannel;
+use AgentCat\Internal\Transport\HttpRequest;
 use AgentCat\Internal\Transport\HttpResponse;
 use AgentCat\Tests\Support\FakeServerInfo;
 use AgentCat\Tests\Support\JsonAssert;
@@ -129,6 +131,61 @@ final class SenderTest extends TestCase
 
         $this->assertCount(1, $channel->requests);
         $this->assertSame([$line], $this->logger->messages());
+    }
+
+    public function testAResendThatCannotBeQueuedIsLoggedAndStaysInside(): void
+    {
+        $channel = new class implements HttpChannel {
+            public int $posts = 0;
+
+            /** @var list<\Closure(HttpResponse): void> */
+            private array $waiting = [];
+
+            #[\Override]
+            public function post(HttpRequest $request, \Closure $onDone): void
+            {
+                if (++$this->posts === 2) {
+                    throw new \LogicException('the channel is gone');
+                }
+                $this->waiting[] = $onDone;
+            }
+
+            #[\Override]
+            public function pump(): void
+            {
+                foreach ($this->waiting as $onDone) {
+                    $onDone(new HttpResponse(413, '', ''));
+                }
+                $this->waiting = [];
+            }
+
+            #[\Override]
+            public function pending(bool $includeBackground = true): int
+            {
+                return count($this->waiting);
+            }
+
+            #[\Override]
+            public function waitForActivity(float $seconds): void {}
+        };
+
+        Sender::send($channel, self::URL, $this->body());
+        $channel->pump();
+
+        $this->assertSame(2, $channel->posts);
+        $this->assertSame('Server info heartbeat failed: LogicException', $this->logger->messages()[1] ?? null);
+    }
+
+    public function testWithoutSchemasAToolThatIsNoObjectStaysAsItIs(): void
+    {
+        $body = new ServerInfoBody('proj_a', 'demo-server', null, '', '', [ServerInfoSource::TOOLS => ['odd', FakeServerInfo::beta()], ServerInfoSource::PROMPTS => []]);
+
+        $small = $body->withoutSchemas();
+
+        $this->assertSame('odd', $small->features[ServerInfoSource::TOOLS][0] ?? null);
+        $this->assertSame(['name', 'title', 'description', 'annotations'], JsonAssert::keys($small->features[ServerInfoSource::TOOLS][1] ?? null));
+        $this->assertSame([ServerInfoSource::TOOLS, ServerInfoSource::PROMPTS], array_keys($small->features));
+        $this->assertSame([ServerInfoSource::TOOLS], array_keys((new ServerInfoBody('proj_a', 'demo-server', null, '', '', []))->withoutSchemas()->features), 'a body always has its tool list');
     }
 
     public function testABodyThatJsonCannotCarryIsNotSent(): void

@@ -400,6 +400,20 @@ final class HeartbeatTest extends TestCase
         $this->assertHeartbeats(1, 'one at 60 s');
     }
 
+    public function testAnErrorOfTheBuildThatIsNoListFailureSendsNothingAndIsLogged(): void
+    {
+        $this->oldMemory();
+        $lists = FakeServerInfo::demo();
+        $lists[ServerInfoSource::PROMPTS] = ['' => [[(object) ['name' => NAN]], null]]; // JSON cannot carry it
+
+        $this->toolCall($this->server(), source: new FakeServerInfo($lists));
+        $this->queue->pump();
+
+        $this->assertHeartbeats(0);
+        $this->assertStringStartsWith('Skipped the server info heartbeat: JsonException: ', implode("\n", $this->logger->messages()));
+        $this->assertCount(1, $this->logger->messages());
+    }
+
     public function testAServerWhoseNameIsUnknownSendsNothing(): void
     {
         $this->oldMemory();
