@@ -11,7 +11,13 @@ use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Attributes\Name;
 use Laravel\Mcp\Server\Tool;
 
-/** `stream`: a generator that yields a progress notification, waits 50 ms, yields another, waits 50 ms, then `done`. */
+/**
+ * `stream`: a generator that yields a progress notification, waits 50 ms, yields another, waits 50 ms, then `done`.
+ *
+ * laravel/mcp after 1.2.0 sends a tool's `notifications/progress` only for a request with `_meta.progressToken`, and
+ * puts the token in the notification; the releases up to 1.2.0 send it for every request. So a test that expects the
+ * progress sends a token.
+ */
 #[Name('stream')]
 #[Description('Stream')]
 final class StreamingTool extends Tool
