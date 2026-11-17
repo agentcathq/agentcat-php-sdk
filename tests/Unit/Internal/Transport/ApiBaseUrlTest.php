@@ -130,4 +130,10 @@ final class ApiBaseUrlTest extends TestCase
         );
         $this->assertSame('http://127.0.0.1:8080/c/abc/v1/public/events/', ApiBaseUrl::endpoint('http://127.0.0.1:8080/c/abc'));
     }
+
+    public function testTheServerInfoEndpointKeepsItsTrailingSlashAndAddsNoSecondOne(): void
+    {
+        $this->assertSame('https://api.example.test/v1/public/server-info/', ApiBaseUrl::serverInfoEndpoint('https://api.example.test'));
+        $this->assertSame('https://api.example.test/base/v1/public/server-info/', ApiBaseUrl::serverInfoEndpoint('https://api.example.test/base//'));
+    }
 }

@@ -144,12 +144,18 @@ final class LaravelMcpAdapter
         $initialize = self::entry($methods, 'initialize');
         $container = Container::getInstance();
         $handshake = new HandshakeClient(); // one per server: the client of a legacy handshake, for its tool calls
+        $reference = \WeakReference::create($server); // the tracked methods must not keep a finished request's server alive
+        $current = static function () use ($reference): array {
+            $server = $reference->get();
+
+            return $server instanceof Server ? ServerAccess::methods($server) : [];
+        };
         if ($list !== null) {
-            self::point($server, $container, 'tools/list', new TrackedListTools($state, $list, $publisher));
+            self::point($server, $container, 'tools/list', new TrackedListTools($state, $list, $publisher, $current));
         }
         if ($call !== null) {
             $reader = new LaravelRequestReader(self::httpContext($server), $handshake);
-            self::point($server, $container, 'tools/call', new TrackedCallTool($state, $call, $list, $interceptor, $publisher, new ThrowableStash(), $reader));
+            self::point($server, $container, 'tools/call', new TrackedCallTool($state, $call, $list, $interceptor, $publisher, new ThrowableStash(), $reader, $current));
         }
         if ($initialize !== null) {
             self::point($server, $container, 'initialize', new TrackedInitialize($initialize, $handshake));

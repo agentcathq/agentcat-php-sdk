@@ -241,6 +241,55 @@ final class FpmTest extends RuntimeTestCase
     }
 
     /**
+     * The server info heartbeat under PHP-FPM, where each request has a new memory: a tool list request sends one, a
+     * tool call sends none, and the client has its answer before AgentCat calls a list handler. The first list request
+     * has a `resources/list` handler that takes 3 s.
+     */
+    #[MaximumDuration(60000)]
+    public function testTheServerInfoHeartbeatFollowsEachToolListRequestAfterItsAnswer(): void
+    {
+        $scenario = self::$collector->scenario();
+        $fpm = $this->fpm();
+        $script = self::repo() . self::HTTP_SERVER;
+        $list = json_encode(['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/list', 'params' => HttpHarness::modernParams([], ['name' => 'fpm-client', 'version' => '1.0.0'])], JSON_THROW_ON_ERROR);
+        $listHeaders = ['Accept' => 'application/json, text/event-stream', ...HttpHarness::modernHeaders('tools/list', null), 'X-E2E-Collector' => $scenario];
+        $listAnsweredAt = null;
+        foreach ([0, 1, 2] as $round) {
+            $call = $fpm->request($script, 'POST', '/mcp', $this->headers('echo', ['X-E2E-Collector' => $scenario]), $this->modernCall('echo', ['msg' => 'hi', 'session_id' => 'start']));
+            $this->assertSame(200, $call['status'], $call['body']);
+            $this->assertSame('echo: hi', JsonAssert::at($this->answerResult($call), 'content', 1, 'text'));
+            $this->waitForRequests($scenario, $round + 1, self::COLLECTOR_DEADLINE_SECONDS); // the shutdown delivery of the call is over
+            $this->assertCount($round, self::$collector->serverInfo($scenario), 'a tool call sends no heartbeat');
+
+            $started = microtime(true);
+            $answer = $fpm->request($script, 'POST', '/mcp', $round === 0 ? [...$listHeaders, 'X-E2E-Slow-Lists' => '1'] : $listHeaders, $list);
+            $this->assertSame(200, $answer['status'], $answer['body']);
+            $this->assertCount(4, JsonAssert::list(JsonAssert::at($this->answerResult($answer), 'tools')));
+            $this->assertLessThan(self::ANSWER_SECONDS, $answer['endedAt'] - $started, 'FPM held the list request for the heartbeat');
+            $listAnsweredAt ??= $answer['endedAt'];
+            $deadline = microtime(true) + self::COLLECTOR_DEADLINE_SECONDS;
+            while (count(self::$collector->serverInfo($scenario)) <= $round && microtime(true) < $deadline) {
+                usleep(50_000);
+            }
+            $this->assertCount($round + 1, self::$collector->serverInfo($scenario), 'a tool list request sends one heartbeat' . "\n" . $this->outFile('agentcat.log'));
+        }
+
+        $startedAt = file_get_contents($this->out() . '/slow-list'); // written in the container when the list handler started
+        $this->assertIsNumeric($startedAt);
+        $this->assertGreaterThan($listAnsweredAt, (float) $startedAt, 'the client had its answer before the list handler started');
+        $first = self::$collector->serverInfo($scenario)[0] ?? null;
+        $this->assertInstanceOf(\stdClass::class, $first);
+        $this->assertGreaterThan($listAnsweredAt + self::AFTER_THE_HOOK_SECONDS, $this->time($first, 'start'), 'the heartbeat left after the 3 s of the list handler');
+        $body = Json::decode(MockCollector::body($first));
+        $this->assertSame(['e2e-http-server', '3.1.4'], [JsonAssert::at($body, 'server_name'), JsonAssert::at($body, 'server_version')]);
+        $this->assertSame(['echo', 'strict', 'boom', 'get_more_tools'], JsonAssert::column(JsonAssert::at($body, 'features', 'tools'), 'name'));
+        $this->assertSame([], JsonAssert::at($body, 'features', 'resources'));
+        $this->assertCount(3, self::$collector->requests($scenario), 'the events of the three calls, and no heartbeat among them');
+        $this->assertInstanceOf(DockerRuntime::class, $this->runtime);
+        $this->assertNoPhpErrors($this->runtime);
+    }
+
+    /**
      * PHP-FPM on 127.0.0.1 with `$workers` workers (two by default: one can drain while the other answers), which keep
      * the container's environment (`RuntimeTestCase::env()` with `$collector` as the AgentCat API) and get `HOME=/out`,
      * as FPM gives its workers `/var/www` otherwise. `$disableFunctions` becomes the pool's `disable_functions`.

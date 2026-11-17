@@ -70,13 +70,15 @@ final class MockCollector
      * @param list<array{status: int, delayMs?: int, body?: string, location?: string}> $steps   responses to requests 0, 1, 2, …;
      *                                                                                  `location` is sent as the Location header
      * @param array{status: int, delayMs?: int, body?: string, location?: string}       $default the response once the steps run out
+     * @param list<array{status: int, delayMs?: int, body?: string}>                    $serverInfo responses to the server info
+     *                                                                                  heartbeats 0, 1, 2, …; 202 once they run out
      */
-    public function scenario(array $steps = [], array $default = ['status' => 202, 'body' => '{"status":"accepted"}']): string
+    public function scenario(array $steps = [], array $default = ['status' => 202, 'body' => '{"status":"accepted"}'], array $serverInfo = []): string
     {
         $id = bin2hex(random_bytes(8));
         file_put_contents(
             $this->dir . '/' . $id . '.json',
-            json_encode(['steps' => $steps, 'default' => $default], JSON_THROW_ON_ERROR),
+            json_encode(['steps' => $steps, 'default' => $default, 'serverInfo' => $serverInfo], JSON_THROW_ON_ERROR),
         );
 
         return 'http://127.0.0.1:' . $this->port . '/c/' . $id;
@@ -91,10 +93,33 @@ final class MockCollector
      */
     public function requests(string $baseUrl): array
     {
+        return $this->read($baseUrl, '.log');
+    }
+
+    /**
+     * The server info heartbeats a scenario received so far, in arrival order. They are no events: `requests()` never
+     * returns them, and they use none of the scenario's steps.
+     *
+     * @return list<\stdClass> each with `n`, `method`, `path`, `headers`, `body`, `start` and `end`
+     *
+     * @phpstan-impure the collector writes the log while the test runs
+     */
+    public function serverInfo(string $baseUrl): array
+    {
+        return $this->read($baseUrl, '.server-info.log');
+    }
+
+    /**
+     * @return list<\stdClass>
+     *
+     * @phpstan-impure
+     */
+    private function read(string $baseUrl, string $log): array
+    {
         if (preg_match('#/c/([a-z0-9]+)\z#', $baseUrl, $match) !== 1) {
             throw new \InvalidArgumentException('Not a scenario URL: ' . $baseUrl);
         }
-        $path = $this->dir . '/' . $match[1] . '.log';
+        $path = $this->dir . '/' . $match[1] . $log;
         if (!is_file($path)) {
             return [];
         }

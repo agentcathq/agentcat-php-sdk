@@ -14,7 +14,9 @@ use AgentCat\Internal\Logging\Log;
  * `ShutdownHandler` pattern). When the queue has work (events, exporter requests or diagnostics lines), the final
  * pass first ends the request (`RequestEnd`: the session, the time limit and, without a finish call, the output
  * buffers) and sends the HTTP response to the client when the SAPI can (`fastcgi_finish_request()` and friends), then
- * shuts the queue down within its drain budget. Where a host disables `register_shutdown_function()`
+ * shuts the queue down within its drain budget. After a finish call that did not throw, the client has its response,
+ * and it tells the queue so (`EventQueue::responseSent()`). A SAPI without a finish call never tells it: PHP cannot
+ * know there what the web server did with the response. Where a host disables `register_shutdown_function()`
  * (`disable_functions`), nothing is registered and one line says so: the events still waiting when the script ends are
  * lost.
  *
@@ -87,6 +89,7 @@ final class ShutdownFlusher
                 if ($this->finishRequest instanceof \Closure) {
                     try {
                         ($this->finishRequest)(); // the client gets its response before the events are sent
+                        $queue->responseSent();
                     } catch (\Throwable) {
                         // keep going: delivery matters more than the finish call
                     }

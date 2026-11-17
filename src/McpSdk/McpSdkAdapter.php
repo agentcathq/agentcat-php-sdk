@@ -192,7 +192,7 @@ final class McpSdkAdapter
     {
         if ($builder instanceof Server || BuiltServer::applies($builder)) {
             [$registry, $library] = BuiltServer::parts($builder);
-            BuiltServer::install($registry, $library, $server, $publisher, $interceptor);
+            BuiltServer::install($builder, $registry, $library, $server, $publisher, $interceptor);
 
             return;
         }

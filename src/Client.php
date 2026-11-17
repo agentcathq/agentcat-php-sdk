@@ -154,7 +154,7 @@ final readonly class Client
             } elseif ($projectId !== '' && preg_match(self::PROJECT_ID_PATTERN, $projectId) !== 1) {
                 Log::write(sprintf('WARN: Project ID "%s" does not match proj_ followed by 27 letters or digits; the AgentCat API drops its events', $projectId));
             }
-            $state = new TrackedServer($projectId, $options, $library->serverInfo($server), $this->publisher, $this->httpContext);
+            $state = new TrackedServer($projectId, $options, $library->serverInfo($server), $this->publisher, $this->httpContext, $this->telemetry);
             $library->install($server, $state, $this->publisher, $this->interceptor);
             TrackedServers::add($server, $state);
             Log::write(sprintf(
@@ -284,6 +284,18 @@ final readonly class Client
     public function flush(?float $timeoutSeconds = null): bool
     {
         return $this->publisher->queue()->flush($timeoutSeconds);
+    }
+
+    /**
+     * Internal: the request-end window of a framework bridge. It is `flush($seconds)`, and in a worker it is also the
+     * one place after the response where AgentCat runs the work that it kept for the end of the request
+     * (`EventQueue::endRequest()`).
+     *
+     * @internal
+     */
+    public function endRequest(float $seconds): bool
+    {
+        return $this->publisher->queue()->endRequest($seconds);
     }
 
     /**
