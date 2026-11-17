@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-17
+
 ### Added
 
 - The server info heartbeat: after a `tools/list` request under PHP-FPM, and about once an hour in a Laravel Octane or Symfony Runtime worker, AgentCat calls the server's own list handlers after the response and sends the server's name, version, title, instructions and its lists of tools, resources, resource templates and prompts to AgentCat, with `redactSensitiveInformation` applied to the text. A stdio server and a SAPI that sends the response only when the script ends send none.
@@ -51,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Under PHP-FPM and the other runtimes that serve each request in a fresh process, your own `tools/list` handler (one that you add to the server, or a `laravel/mcp` class that answers `tools/list`) then runs once for each page that AgentCat reads during a `tools/call`, so its queries, metrics and log lines repeat that many times.
   A call to the last-page tool of a 300-tool `laravel/mcp` server takes 57.6 ms (2.7 ms before); a call to a page-1 tool costs the same as before.
 
-[Unreleased]: https://github.com/agentcathq/agentcat-php-sdk/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/agentcathq/agentcat-php-sdk/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/agentcathq/agentcat-php-sdk/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/agentcathq/agentcat-php-sdk/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/agentcathq/agentcat-php-sdk/releases/tag/v1.0.0
