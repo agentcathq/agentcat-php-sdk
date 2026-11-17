@@ -14,6 +14,10 @@ use AgentCat\Tests\Support\Release;
 
 require_once __DIR__ . '/../Support/Release.php';
 
-[$code, $text] = Release::main(array_slice($argv, 1), dirname(__DIR__, 2));
+// $_SERVER, not $argv: PHPStan on PHP 8.5 cannot prove that the global $argv exists.
+$serverArgv = $_SERVER['argv'] ?? [];
+$arguments = array_values(array_filter(array_slice(is_array($serverArgv) ? $serverArgv : [], 1), is_string(...)));
+
+[$code, $text] = Release::main($arguments, dirname(__DIR__, 2));
 fwrite($code === 0 ? STDOUT : STDERR, $text . "\n");
 exit($code);
