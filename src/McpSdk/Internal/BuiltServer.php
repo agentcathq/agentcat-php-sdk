@@ -19,12 +19,16 @@ use Mcp\Capability\Registry;
 use Mcp\Capability\Registry\ReferenceHandler;
 use Mcp\Capability\Registry\ToolReference;
 use Mcp\Schema\Implementation;
+use Mcp\Schema\JsonRpc\Request;
 use Mcp\Schema\Tool;
 use Mcp\Server;
 use Mcp\Server\Builder;
+use Mcp\Server\Configuration;
 use Mcp\Server\Handler\Request\CallToolHandler;
 use Mcp\Server\Handler\Request\InitializeHandler;
 use Mcp\Server\Handler\Request\ListToolsHandler;
+use Mcp\Server\Handler\Request\RequestHandlerInterface;
+use Mcp\Server\Session\SessionInterface;
 use Psr\Log\NullLogger;
 
 /**
@@ -83,13 +87,45 @@ final class BuiltServer
     /** The name and version of a built server, from its first `initialize` handler. */
     public static function serverInfo(Server $server): ?Implementation
     {
+        return self::configuration($server)?->serverInfo;
+    }
+
+    /** The configuration of a server after build(): the one build() made, which its first `initialize` handler holds. */
+    public static function configuration(Builder|Server $server): ?Configuration
+    {
+        if ($server instanceof Builder) {
+            return BuilderAccess::configuration($server);
+        }
         foreach (ServerAccess::requestHandlers(ServerAccess::protocol($server)) as $handler) {
             if ($handler instanceof InitializeHandler) {
-                return $handler->configuration?->serverInfo;
+                return $handler->configuration;
             }
         }
 
         return null;
+    }
+
+    /**
+     * The lists of a server tracked after build(), for the server info heartbeat, in the session of a request: the first
+     * of the server's request handlers that supports a list request answers it, as in the library. Its tool list comes
+     * from the registry, which already holds AgentCat's additions. Reads nothing until the heartbeat runs.
+     */
+    public static function lists(Builder|Server $server, SessionInterface $session): McpServerInfo
+    {
+        return new McpServerInfo(
+            static function (Request $request) use ($server): ?RequestHandlerInterface {
+                foreach ($server instanceof Server ? ServerAccess::requestHandlers(ServerAccess::protocol($server)) : BuilderAccess::requestHandlers($server) ?? [] as $handler) {
+                    if ($handler instanceof RequestHandlerInterface && $handler->supports($request)) {
+                        return $handler;
+                    }
+                }
+
+                return null;
+            },
+            static fn(): ?Configuration => self::configuration($server),
+            true,
+            $session,
+        );
     }
 
     /** The tracking state of a Builder or server tracked after build(): its registry holds it. */
@@ -105,7 +141,7 @@ final class BuiltServer
      *
      * @throws \Throwable when a member cannot be read or a tool cannot be advertised
      */
-    public static function install(Registry $registry, CallToolHandler $library, TrackedServer $server, Publisher $publisher, CallInterceptor $interceptor): void
+    public static function install(Builder|Server $built, Registry $registry, CallToolHandler $library, TrackedServer $server, Publisher $publisher, CallInterceptor $interceptor): void
     {
         $registry->load();
         $tools = [];
@@ -130,6 +166,7 @@ final class BuiltServer
             new ListToolsHandler($original),
             $stash,
             new RequestReader($server->httpContext),
+            static fn(SessionInterface $session): McpServerInfo => self::lists($built, $session),
         ))->handler();
         $advertised = [];
         foreach (ToolListing::apply($server, $trees, true) ?? [] as $tree) {

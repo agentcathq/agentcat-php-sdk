@@ -34,6 +34,14 @@ use AgentCat\Internal\Wire\WireMapper;
  * (`attach()`): every pass ticks each companion (except the pass after `finish()`), then pumps the channel. `flush()`
  * waits for the exporter requests inside its timeout, `shutdown()` for the background ones (diagnostics) too.
  *
+ * Deferred work (`defer()`) runs customer code, so it runs once, after the events, and only in a window of the SDK's
+ * own that comes after the response of the request that deferred it: the shutdown delivery of a per-request SAPI, once
+ * the last shutdown pass made the finish call (`responseSent()`), or the request-end window of a framework bridge in a
+ * worker (`endRequest()`). A `pump()` and a `flush()` never run it. What its window cannot run is dropped at the end of
+ * that window, so no work waits for a later request, and a queue without such a window takes none (`canDefer()`). The
+ * work gets the time left of the window, so it adds no wait. What it posts on the side channel moves on in later
+ * passes, as an event transfer does.
+ *
  * @internal
  */
 final class EventQueue
@@ -66,6 +74,8 @@ final class EventQueue
     /** @var \Closure(Event): string */
     private readonly \Closure $encode;
 
+    private string $baseUrl;
+
     private string $endpoint;
 
     private bool $accepting = true;
@@ -81,11 +91,27 @@ final class EventQueue
     /** @var list<QueueCompanion> */
     private array $companions = [];
 
+    /** @var array<string, DeferredWork> the work that waits for the events and the response, by its key */
+    private array $deferred = [];
+
+    /** @var list<Outstanding> what deferred work left on its way, each kept only until it is settled */
+    private array $outstanding = [];
+
+    /** Whether the SAPI runs one request per script and has a finish call: the shutdown delivery then comes after the response. */
+    private readonly bool $finishesRequests;
+
+    /** True once a framework bridge ended a request with a window (`endRequest()`): a worker with a request-end hook. */
+    private bool $endsRequests = false;
+
+    /** True once the last shutdown pass of a per-request SAPI gave the client its response. */
+    private bool $responseSent = false;
+
     /**
      * @param (\Closure(): void)|null        $onEnqueue the delivery-trigger registrar, called on every `add()` and `arm()`
      * @param (\Closure(Event): string)|null $encode    builds the HTTP body; default `WireEncoder::encode(...)`
      * @param HttpChannel                    $channel   the side channel of the exporter and diagnostics requests
      * @param SignalDrain|null               $signalDrain the SIGTERM and SIGINT drain that `disableSignalHandlers()` switches off
+     * @param bool|null                      $finishesRequests whether the SAPI has a finish call; null asks it (`FinishRequest::functionFor()`)
      */
     public function __construct(
         private readonly EventProcessor $processor = new EventProcessor(),
@@ -96,11 +122,14 @@ final class EventQueue
         ?\Closure $encode = null,
         private readonly HttpChannel $channel = new CurlHttpChannel(),
         private readonly ?SignalDrain $signalDrain = null,
+        ?bool $finishesRequests = null,
     ) {
         $this->waiting = new \SplQueue();
         $this->ready = new \SplQueue();
         $this->encode = $encode ?? WireEncoder::encode(...);
-        $this->endpoint = ApiBaseUrl::endpoint(ApiBaseUrl::resolve()); // environment or default, until configure()
+        $this->baseUrl = ApiBaseUrl::resolve(); // environment or default, until configure()
+        $this->endpoint = ApiBaseUrl::endpoint($this->baseUrl);
+        $this->finishesRequests = $finishesRequests ?? FinishRequest::functionFor(PHP_SAPI, $_SERVER, static fn(string $name): bool => function_exists($name)) !== null;
     }
 
     /**
@@ -146,7 +175,14 @@ final class EventQueue
     /** Option > `AGENTCAT_API_URL` > `MCPCAT_API_URL` > default. The last call wins (TypeScript `configure`). */
     public function configure(?string $apiBaseUrlOption): void
     {
-        $this->endpoint = ApiBaseUrl::endpoint(ApiBaseUrl::resolve($apiBaseUrlOption));
+        $this->baseUrl = ApiBaseUrl::resolve($apiBaseUrlOption);
+        $this->endpoint = ApiBaseUrl::endpoint($this->baseUrl);
+    }
+
+    /** The API base URL of this moment, without a trailing `/` (the last `configure()` wins). */
+    public function baseUrl(): string
+    {
+        return $this->baseUrl;
     }
 
     public function setExporterSink(ExporterSink $exporters): void
@@ -170,6 +206,63 @@ final class EventQueue
         $this->companions[] = $companion;
     }
 
+    /**
+     * Whether the queue has a window after the response in which it can run deferred work: the shutdown delivery of a
+     * per-request SAPI with a finish call, or the request-end window of a framework bridge, once one request ended in
+     * it. False in every other process (a stdio server, a worker loop without a bridge, a SAPI that sends the response
+     * only when the script ends) and once the queue shuts down.
+     */
+    public function canDefer(): bool
+    {
+        return $this->accepting && ($this->finishesRequests || $this->endsRequests);
+    }
+
+    /**
+     * Keeps `$work` for the window after the response of this request (see the class text), and arms the delivery
+     * triggers. Work with the key of waiting work replaces it. A queue that cannot defer drops the work at once. Never
+     * throws.
+     */
+    public function defer(string $key, DeferredWork $work): void
+    {
+        if (!$this->canDefer()) {
+            $this->drop($work, $this->accepting ? 'this process has no delivery after the response' : 'the queue is shutting down');
+
+            return;
+        }
+        $this->deferred[$key] = $work;
+        $this->arm();
+    }
+
+    /**
+     * The last shutdown pass of a per-request SAPI calls it after the finish call: the client has its response, and
+     * the shutdown delivery may run the deferred work.
+     */
+    public function responseSent(): void
+    {
+        $this->responseSent = true;
+    }
+
+    /**
+     * The request-end window of a framework bridge (Laravel `terminating`, Symfony `kernel.terminate`): a `flush()` of
+     * `$seconds` that, in a worker, also runs the deferred work of the request once its events are delivered, and
+     * then waits for what the work posted until the same deadline. What the window did not run is dropped: nothing
+     * waits for the next request. Without a window (0 s: a per-request SAPI or a console command) it is the `flush()`
+     * alone, and the shutdown delivery follows.
+     *
+     * @return bool as `flush()`
+     */
+    public function endRequest(float $seconds): bool
+    {
+        if ($this->budget($seconds) <= 0.0) {
+            return $this->flush($seconds);
+        }
+        $this->endsRequests = true;
+        $done = $this->deliverUntil(fn(): float => $this->transport->now() + $seconds, background: false, prepare: true, window: true);
+        $this->dropDeferred('the request-end window ended before the events were delivered');
+
+        return $done;
+    }
+
     /** The delivery triggers (shutdown function, signal drain) without an event: diagnostics lines need them too. */
     public function arm(): void
     {
@@ -184,11 +277,11 @@ final class EventQueue
         }
     }
 
-    /** Anything left to send: an event, a side request, or a companion's buffer. True when a check throws. */
+    /** Anything left to send or run: an event, a side request, deferred work, or a companion's buffer. True when a check throws. */
     public function hasWork(): bool
     {
         try {
-            if ($this->queued() > 0 || $this->transport->inFlight() > 0 || $this->channel->pending() > 0) {
+            if ($this->queued() > 0 || $this->transport->inFlight() > 0 || $this->channel->pending() > 0 || $this->deferred !== []) {
                 return true;
             }
             foreach ($this->companions as $companion) {
@@ -271,16 +364,30 @@ final class EventQueue
     public function shutdown(): void
     {
         $this->accepting = false;
+        $window = $this->finishesRequests && $this->responseSent;
+        if (!$this->finishesRequests) {
+            $this->dropDeferred('the process is ending');
+        }
         $deadline = fn(): float => $this->shutdownDeadline ??= $this->transport->now() + $this->budget($this->shutdownTimeoutSeconds);
         if (!$this->shutdownDeadlinePassed()) {
             if ($this->companions === []) {
-                $this->deliverUntil($deadline);
+                $this->deliverUntil($deadline, window: $window);
             } else {
-                $this->deliverWithCompanions($deadline);
+                $this->deliverWithCompanions($deadline, $window);
             }
         }
         if ($this->queued() > 0) {
             Log::write(sprintf('Shutting down with %d events still in queue', $this->queued()));
+        }
+        $this->dropDeferred($this->responseSent ? 'the delivery time ended before the events were delivered' : 'the client does not have its response yet');
+        $outstanding = $this->unsettled();
+        $this->outstanding = [];
+        foreach ($outstanding as $left) {
+            try {
+                $left->abandon('the delivery time ended before the AgentCat API answered');
+            } catch (\Throwable) {
+                // deferred work never stops the queue
+            }
         }
     }
 
@@ -334,14 +441,14 @@ final class EventQueue
      *
      * @param \Closure(): float $deadline fixes the shared deadline at its first call
      */
-    private function deliverWithCompanions(\Closure $deadline): void
+    private function deliverWithCompanions(\Closure $deadline, bool $window): void
     {
-        $this->deliverUntil(fn(): float => $deadline() - $this->finishReserve());
+        $this->deliverUntil(fn(): float => $deadline() - $this->finishReserve(), window: $window);
         // Only after a delivery that ran: a re-entrant call finds the guard still taken by the frame it runs in, and
         // an unreadable clock left the deadline unset.
         if (!$this->busy && $this->shutdownDeadline !== null && !$this->shutdownDeadlinePassed()) {
             $this->finishCompanions();
-            $this->deliverUntil($deadline, tick: false);
+            $this->deliverUntil($deadline, tick: false, window: $window);
         }
     }
 
@@ -359,8 +466,9 @@ final class EventQueue
      * @param bool              $tick       false after `finish()`: the passes tick no companion
      * @param bool              $background whether it waits for the background requests (diagnostics): `shutdown()` does
      * @param bool              $prepare    whether each pass ends with the pipeline of the waiting events: a `flush()` with a window
+     * @param bool              $window     whether the delivery is a window after the response, which runs the deferred work
      */
-    private function deliverUntil(\Closure $deadline, bool $tick = true, bool $background = true, bool $prepare = false): bool
+    private function deliverUntil(\Closure $deadline, bool $tick = true, bool $background = true, bool $prepare = false, bool $window = false): bool
     {
         if ($this->busy) {
             return false;
@@ -371,7 +479,9 @@ final class EventQueue
         try {
             $until = $deadline();
             while (true) {
-                $this->pumpOnce($tick);
+                if ($this->pumpOnce($tick, $window ? $until : null)) {
+                    $background = true; // the window also waits for what its deferred work posted
+                }
                 if ($prepare) {
                     $this->prepareWaiting();
                 }
@@ -423,8 +533,16 @@ final class EventQueue
      * encode failure, dropped by a hook) leaves the slots free, so a hook that keeps queueing such events cannot hold
      * the pass. A signal drain during a hook (`finalShutdown()`) delivers the whole queue: the pass stops when the
      * queue is empty.
+     *
+     * Between the events and the companions, a pass of a window after the response runs the deferred work when the
+     * events are delivered (`runDeferred()`), so the side channel starts what the work posted in the same pass.
+     *
+     * @param float|null $window the deadline of a window after the response; null for every other pass, which runs no
+     *                           deferred work
+     *
+     * @return bool whether the pass ran deferred work
      */
-    private function pumpOnce(bool $tick = true): void
+    private function pumpOnce(bool $tick = true, ?float $window = null): bool
     {
         try {
             for ($left = $this->queued(); $left > 0 && $this->queued() > 0 && $this->transport->inFlight() < self::CONCURRENCY; --$left) {
@@ -437,6 +555,7 @@ final class EventQueue
         } catch (\Throwable $e) {
             RepeatedLines::write(self::GAVE_UP . ErrorText::of($e));
         }
+        $ran = $window !== null && $this->runDeferred($window);
         if ($tick) {
             foreach ($this->companions as $companion) {
                 try {
@@ -451,6 +570,83 @@ final class EventQueue
             $this->channel->pump(); // CurlHttpChannel never throws; a test double's callback might
         } catch (\Throwable) {
             // the side channel never stops the queue
+        }
+        if ($this->outstanding !== []) {
+            $this->outstanding = $this->unsettled(); // what the channel just answered is forgotten at once
+        }
+
+        return $ran;
+    }
+
+    /**
+     * Runs the deferred work, once, when every event is delivered and the window has time left. Each piece of work
+     * gets the seconds left of the window. The queue lets go of work that ran; it keeps only what the work left on its way
+     * (`Outstanding`), until that is settled, so the shutdown
+     * can say that it gave it up. Never throws.
+     *
+     * @return bool whether work ran
+     */
+    private function runDeferred(float $until): bool
+    {
+        if ($this->deferred === []) {
+            return false;
+        }
+
+        try {
+            if ($this->queued() > 0 || $this->transport->inFlight() > 0 || $until - $this->transport->now() <= 0.0) {
+                return false;
+            }
+        } catch (\Throwable) {
+            return false; // the delivery loop logs the transport's failure
+        }
+        $deferred = $this->deferred;
+        $this->deferred = [];
+        foreach ($deferred as $work) {
+            try {
+                $left = $work->run(max(0.0, $until - $this->transport->now()));
+                if ($left instanceof Outstanding) {
+                    $this->outstanding[] = $left;
+                }
+            } catch (\Throwable) {
+                // deferred work never stops the queue
+            }
+        }
+
+        return true;
+    }
+
+    /** @return list<Outstanding> what is still on its way; one whose state cannot be read counts as settled */
+    private function unsettled(): array
+    {
+        $unsettled = [];
+        foreach ($this->outstanding as $left) {
+            try {
+                if (!$left->settled()) {
+                    $unsettled[] = $left;
+                }
+            } catch (\Throwable) {
+                // deferred work never stops the queue
+            }
+        }
+
+        return $unsettled;
+    }
+
+    private function dropDeferred(string $reason): void
+    {
+        $deferred = $this->deferred;
+        $this->deferred = [];
+        foreach ($deferred as $work) {
+            $this->drop($work, $reason);
+        }
+    }
+
+    private function drop(DeferredWork $work, string $reason): void
+    {
+        try {
+            $work->drop($reason);
+        } catch (\Throwable) {
+            // deferred work never stops the queue
         }
     }
 

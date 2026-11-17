@@ -31,6 +31,54 @@ final class JsonAssert
         return $value;
     }
 
+    /**
+     * A decoded JSON list.
+     *
+     * @return list<mixed>
+     */
+    public static function list(mixed $value): array
+    {
+        Assert::assertIsList($value);
+
+        return $value;
+    }
+
+    /**
+     * The member `$key` of each object of a decoded JSON list; null where an item has none.
+     *
+     * @return list<mixed>
+     */
+    public static function column(mixed $list, string $key): array
+    {
+        return array_map(static fn(mixed $item): mixed => $item instanceof \stdClass ? $item->{$key} ?? null : null, self::list($list));
+    }
+
+    /** A decoded JSON object. */
+    public static function object(mixed $value): \stdClass
+    {
+        Assert::assertInstanceOf(\stdClass::class, $value);
+
+        return $value;
+    }
+
+    /** The member `$key` of a decoded JSON object, or null when it has none. */
+    public static function optional(mixed $object, string $key): mixed
+    {
+        return self::object($object)->{$key} ?? null;
+    }
+
+    /**
+     * The member names of a decoded JSON object, in order.
+     *
+     * @return list<string>
+     */
+    public static function keys(mixed $object): array
+    {
+        Assert::assertInstanceOf(\stdClass::class, $object);
+
+        return array_map(strval(...), array_keys(get_object_vars($object)));
+    }
+
     private static function canonical(string $json): string
     {
         return Json::encodeJs(self::sorted(Json::decode($json))) ?? 'unencodable';

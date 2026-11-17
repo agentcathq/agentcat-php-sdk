@@ -60,6 +60,7 @@ final class BuilderMembersTest extends TestCase
         $builder = Server::builder();
         $this->assertNull(BuilderAccess::requestHandlers($builder));
         $this->assertNull(BuilderAccess::serverInfo($builder));
+        $this->assertNull(BuilderAccess::configuration($builder));
         $this->assertFalse(BuilderAccess::isBuilt($builder));
         $this->assertNull(BuilderAccess::referenceHandler($builder));
         $this->assertNull(BuilderAccess::container($builder));
@@ -68,7 +69,7 @@ final class BuilderMembersTest extends TestCase
         $logger = new NullLogger();
         $container = new Container();
         $referenceHandler = new ReferenceHandler($container);
-        $builder->setServerInfo('contract', '1.2.3')->setLogger($logger)->setContainer($container)->setReferenceHandler($referenceHandler);
+        $builder->setServerInfo('contract', '1.2.3', title: 'Contract Title')->setInstructions('Read the contract.')->setLogger($logger)->setContainer($container)->setReferenceHandler($referenceHandler);
         $this->assertSame($logger, BuilderAccess::logger($builder));
         $this->assertSame($container, BuilderAccess::container($builder));
         $this->assertSame($referenceHandler, BuilderAccess::referenceHandler($builder));
@@ -81,6 +82,12 @@ final class BuilderMembersTest extends TestCase
         $this->assertNotSame([], array_filter($handlers, static fn(mixed $handler): bool => $handler instanceof CallToolHandler));
         $this->assertSame('contract', BuilderAccess::serverInfo($builder)?->name);
         $this->assertSame('1.2.3', BuilderAccess::serverInfo($builder)?->version);
+        // What the server info heartbeat reads: public members of the configuration that build() made.
+        $configuration = BuilderAccess::configuration($builder);
+        $this->assertInstanceOf(Configuration::class, $configuration);
+        $this->assertSame(BuilderAccess::serverInfo($builder), $configuration->serverInfo);
+        $this->assertSame('Contract Title', $configuration->serverInfo->title);
+        $this->assertSame('Read the contract.', $configuration->instructions);
     }
 
     public function testProbePassesOnTheInstalledVersion(): void

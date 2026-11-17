@@ -25,6 +25,9 @@ use AgentCat\Tests\Support\LaravelMcp\HeaderIdentityServer;
 use AgentCat\Tests\Support\LaravelMcp\LaravelHarness;
 use AgentCat\Tests\Support\LaravelMcp\LaravelTrackingFixture;
 use AgentCat\Tests\Support\MemoryLogger;
+use AgentCat\Tests\Support\RecordingHttpChannel;
+use AgentCat\Tests\Support\RecordingTransport;
+use AgentCat\Tests\Support\ServerInfoRecorder;
 use Ergebnis\PHPUnit\SlowTestDetector\Attribute\MaximumDuration;
 use Illuminate\Container\Container;
 use Illuminate\Foundation\Application;
@@ -299,6 +302,33 @@ final class DeliveryTest extends BridgeTestCase
         $bodies = array_map(static fn(Delivery $d): mixed => Json::decode($d->body), $this->transport->deliveries);
         $this->assertSame($users, array_map(static fn(mixed $body): mixed => JsonAssert::at($body, 'parameters', 'request', 'params', 'arguments', 'msg'), $bodies));
         $this->assertSame($users, array_map(static fn(mixed $body): mixed => JsonAssert::at($body, 'identify_actor_given_id'), $bodies));
+    }
+
+    /**
+     * In a worker, the terminating callback is the window of the server info heartbeat: it runs after the response, in
+     * the request that started it. The first request of a worker sends none: its window is the first sign that the
+     * process has one.
+     */
+    public function testInAWorkerTheTerminatingCallbackRunsTheHeartbeatOfTheRequest(): void
+    {
+        ServerInfoRecorder::remove();
+        $channel = new RecordingHttpChannel();
+        EventQueue::setGlobal(new EventQueue(transport: $this->transport = new RecordingTransport(), channel: $channel));
+
+        try {
+            $note = $this->toolCall('get_more_tools', ['context' => 'a tool that sums']);
+            $this->postJson('/mcp/test', $note, $this->modernHeaders('get_more_tools'))->assertOk();
+            $this->assertSame('', implode(' ', $channel->urls()), 'the first request of the worker');
+
+            $this->postJson('/mcp/test', $note, $this->modernHeaders('get_more_tools'))->assertOk();
+            $this->postJson('/mcp/test', $note, $this->modernHeaders('get_more_tools'))->assertOk();
+        } finally {
+            ServerInfoRecorder::install();
+        }
+
+        $this->assertStringEndsWith('/v1/public/server-info/', implode(' ', $channel->urls()));
+        $this->assertCount(1, $channel->requests, 'one for the process, and the guard holds the third request');
+        $this->assertCount(3, $this->transport->deliveries);
     }
 
     /** An AgentCat API that does not answer holds each request for the cap, not for the 5 s budget. */

@@ -14,6 +14,7 @@ use AgentCat\Internal\Pipeline\QueuedEvent;
 use AgentCat\Internal\Transport\HttpRequest;
 use AgentCat\Tests\Support\MemoryLogger;
 use AgentCat\Tests\Support\RecordingCompanion;
+use AgentCat\Tests\Support\RecordingDeferredWork;
 use AgentCat\Tests\Support\RecordingHttpChannel;
 use AgentCat\Tests\Support\RecordingTransport;
 use PHPUnit\Framework\Attributes\Group;
@@ -340,6 +341,50 @@ final class ShutdownFlusherTest extends TestCase
 
         $this->assertSame(['limit 6', 'output with 0 deliveries'], $this->calls);
         $this->assertCount(1, $this->transport->deliveries);
+    }
+
+    public function testAfterTheFinishCallTheDeferredWorkRunsInTheShutdown(): void
+    {
+        $queue = new EventQueue(transport: new RecordingTransport(), finishesRequests: true);
+        $work = new RecordingDeferredWork(function (): void {
+            $this->calls[] = 'work';
+        });
+        $queue->defer('a', $work);
+
+        (new ShutdownFlusher(static fn(): EventQueue => $queue, $this->recorder(), function (): void {
+            $this->calls[] = 'finish';
+        }))->onFinalShutdown();
+
+        $this->assertSame(['finish', 'work'], $this->calls, 'the client has its response before the work runs');
+        $this->assertSame([], $work->drops);
+    }
+
+    public function testAFinishCallThatThrowsLeavesTheDeferredWorkOut(): void
+    {
+        $queue = new EventQueue(transport: new RecordingTransport(), finishesRequests: true);
+        $work = new RecordingDeferredWork();
+        $queue->defer('a', $work);
+
+        (new ShutdownFlusher(static fn(): EventQueue => $queue, $this->recorder(), static function (): never {
+            throw new \RuntimeException('no finish');
+        }))->onFinalShutdown();
+
+        $this->assertSame([], $work->runs);
+        $this->assertSame(['the client does not have its response yet'], $work->drops);
+    }
+
+    /** PHP cannot know what the web server did with the response: without a finish call, no deferred work runs. */
+    public function testWithoutAFinishCallTheDeferredWorkNeverRuns(): void
+    {
+        $queue = new EventQueue(transport: new RecordingTransport(), finishesRequests: true);
+        $work = new RecordingDeferredWork();
+        $queue->defer('a', $work);
+        $end = new RequestEnd('apache2handler', false, static fn(): bool => false, static function (): void {}, static fn(): int => 0, static function (): void {}, static function (): void {});
+
+        (new ShutdownFlusher(static fn(): EventQueue => $queue, $this->recorder(), null, $end))->onFinalShutdown();
+
+        $this->assertSame([], $work->runs);
+        $this->assertSame(['the client does not have its response yet'], $work->drops);
     }
 
     /**

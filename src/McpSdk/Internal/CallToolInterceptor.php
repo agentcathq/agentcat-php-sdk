@@ -8,6 +8,7 @@ use AgentCat\Internal\Engine\CallInterceptor;
 use AgentCat\Internal\Engine\Publisher;
 use AgentCat\Internal\Engine\ThrowableStash;
 use AgentCat\Internal\Engine\TrackedServer;
+use AgentCat\Internal\ServerInfo\Heartbeat;
 use Mcp\Schema\JsonRpc\Error;
 use Mcp\Schema\JsonRpc\Request;
 use Mcp\Schema\JsonRpc\Response;
@@ -18,7 +19,8 @@ use Mcp\Server\Session\SessionInterface;
 
 /**
  * Answers `tools/call` first (TS callWrap): `CallInterceptor` resolves the handles, strips them, lets the next
- * handler run the tool, decorates the answer and queues one event.
+ * handler run the tool, decorates the answer and queues one event. Once the request is answered, the server info
+ * heartbeat gets its check (`Heartbeat`).
  *
  * @implements RequestHandlerInterface<mixed>
  *
@@ -54,6 +56,18 @@ final readonly class CallToolInterceptor implements RequestHandlerInterface
     public function handle(Request $request, SessionInterface $session): Response|Error
     {
         $this->publisher->pump(); // stdio servers deliver between requests
+
+        try {
+            return $this->answer($request, $session);
+        } finally {
+            $name = $request instanceof CallToolRequest ? $request->name : '';
+            Heartbeat::onToolCall($this->server, $name, fn(): ?string => $this->server->serverInfo()[0], fn(): McpServerInfo => $this->delegates->lists($this->list, $session)); // never throws
+        }
+    }
+
+    /** @return Response<mixed>|Error */
+    private function answer(Request $request, SessionInterface $session): Response|Error
+    {
         $delegate = $this->delegates->runner($this, $request, $this->stash);
         if (!$request instanceof CallToolRequest || !$delegate instanceof RequestHandlerInterface) {
             return Delegates::notFound($request);

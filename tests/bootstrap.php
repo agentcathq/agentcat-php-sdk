@@ -25,6 +25,8 @@ $_SERVER['AGENTCAT_DIAGNOSTICS_ENDPOINT'] = $_ENV['AGENTCAT_DIAGNOSTICS_ENDPOINT
 // The event API fails closed too: MCPCAT_API_URL, the last name the SDK reads, is a closed local port, so an event of a
 // test that names no collector of its own goes nowhere but 127.0.0.1. A test's own option or variable comes first.
 AgentCat\Tests\Support\EventApiGuard::set();
+// No test starts a server info heartbeat unless it puts the real one back: a recorder takes each check and does nothing.
+AgentCat\Tests\Support\ServerInfoRecorder::install();
 
 register_shutdown_function(static function () use ($agentcatTestHome): void {
     $names = scandir($agentcatTestHome);
