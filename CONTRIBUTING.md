@@ -184,6 +184,33 @@ agentcat-php-sdk/
 
 The AgentCat team handles versioning and releases. Your contributions will be included in the next appropriate release based on semantic versioning principles: everything that is not marked `@internal` is public API, and the backward-compatibility check compares each PR with the latest 1.x release.
 
+Each pull request with a user-facing change adds its entry under `## [Unreleased]` in `CHANGELOG.md`, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format. A release takes its notes from these entries.
+
+## Release a version
+
+The release workflow (`.github/workflows/release.yml`) does the release in two steps, with a pull request between them. The Java and Rust SDKs release the same way.
+
+The SDK has no version file: `composer.json` has no `version`, and Packagist reads each version from its `vX.Y.Z` tag. So the tag is the publication, and the workflow needs no Packagist credential.
+
+1. In GitHub, open **Actions > Release > Run workflow** on `main`. Keep `patch`, or type `minor`, `major` or an exact version such as `1.2.0`. The words count from the newest `vX.Y.Z` tag.
+2. The workflow opens the pull request "Release vX.Y.Z". It turns `[Unreleased]` into the dated section of the version in `CHANGELOG.md`, and starts CI on the pull request. An `[Unreleased]` section with no entry, a tag `vX.Y.Z` that exists, or a version that Packagist already lists stops the workflow.
+3. Read the pull request, and merge it when CI passes.
+4. The merge starts the workflow again. It waits for CI on the merge commit, and then creates the tag `vX.Y.Z` on that commit. The GitHub hook of Packagist reads the tag, and the workflow waits until Packagist lists the version. Then it creates the GitHub release of the tag, with the CHANGELOG section as the notes.
+
+If a step fails, fix the cause and re-run the failed jobs of that run. The tag comes before the Packagist check and the GitHub release, so each step skips the work that is done: a tag on the merge commit, a version that Packagist lists, a GitHub release that exists. A tag of the version on another commit stops the workflow: the workflow never moves or deletes a tag.
+
+When Packagist does not list the version in 30 minutes, the workflow fails. Check the Packagist webhook of the repository (**Settings > Webhooks**, `https://packagist.org/api/github`) and its recent deliveries, or press **Update** on the [package page](https://packagist.org/packages/agentcat/sdk) as a maintainer. Then re-run the failed jobs.
+
+Do not push a `vX.Y.Z` tag by hand. Packagist publishes every tag that it reads, and a tag that moves later changes a version that people installed. Only the release workflow tags a release. Pre-releases (`v1.2.0-rc.1`) stay a manual task: the workflow releases only `X.Y.Z` versions, and its version words do not count pre-release tags.
+
+To run a step of the workflow by hand, use `php tests/bin/release.php prepare <patch | minor | major | X.Y.Z> <YYYY-MM-DD>`, `status` or `notes <X.Y.Z>`. The script needs PHP alone, not `composer install`. `tests/Unit/ReleaseTest.php` tests these steps in the normal suite.
+
+### One-time setup
+
+- In the repository settings, turn on **Actions > General > Allow GitHub Actions to create and approve pull requests**, so that the workflow can open the release pull request.
+- Create a `release` environment, limited to the `main` branch.
+- Keep the Packagist webhook of the repository: **Settings > Webhooks**, with the payload URL `https://packagist.org/api/github` and the `push` event. The package page on Packagist says "This package is auto-updated." while the hook works.
+
 ## Recognition
 
 All contributors are recognized in our repository. Your contributions help make AgentCat better for everyone building MCP servers!
