@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `AgentCat::track()` works with `mcp/sdk` 0.10, which moved `Mcp\Server` to `Mcp\Server\Server` and moved other classes that AgentCat uses to new namespaces.
+  AgentCat also reads the request params and the tool arguments that `mcp/sdk` 0.10 passes as objects: a strict input schema of a tool no longer rejects the `session_id`, `agent_id` and `context` arguments that AgentCat injects, and a tool result without `structuredContent` keeps it absent.
+
 ## [1.1.0] - 2026-10-23
 
 ### Added
