@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The server info heartbeat: after a `tools/list` request under PHP-FPM, and about once an hour in a Laravel Octane or Symfony Runtime worker, AgentCat calls the server's own list handlers after the response and sends the server's name, version, title, instructions and its lists of tools, resources, resource templates and prompts to AgentCat, with `redactSensitiveInformation` applied to the text. A stdio server and a SAPI that sends the response only when the script ends send none.
 
+### Fixed
+
+- `AgentCat::track()` works with `mcp/sdk` 0.10, which moved `Mcp\Server` to `Mcp\Server\Server` and moved other classes that AgentCat uses to new namespaces.
+  AgentCat also reads the request params and the tool arguments that `mcp/sdk` 0.10 passes as objects: a strict input schema of a tool no longer rejects the `session_id`, `agent_id` and `context` arguments that AgentCat injects, and a tool result without `structuredContent` keeps it absent.
+
 ## [1.1.0] - 2026-10-23
 
 ### Added

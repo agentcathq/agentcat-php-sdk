@@ -335,7 +335,9 @@ final class FpmTest extends RuntimeTestCase
      */
     private function modernCall(string $tool, array $arguments): string
     {
-        $params = HttpHarness::modernParams(['name' => $tool, 'arguments' => (object) $arguments], ['name' => 'fpm-client', 'version' => '1.0.0']);
+        // The streamed tool sends its progress only for a request with a progress token.
+        $meta = $tool === 'stream' ? ['progressToken' => 'p1'] : [];
+        $params = HttpHarness::modernParams(['name' => $tool, 'arguments' => (object) $arguments, '_meta' => $meta], ['name' => 'fpm-client', 'version' => '1.0.0']);
 
         return json_encode(['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/call', 'params' => $params], JSON_THROW_ON_ERROR);
     }

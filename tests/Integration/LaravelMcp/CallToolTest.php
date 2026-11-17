@@ -576,7 +576,7 @@ final class CallToolTest extends LaravelTestCase
         $fixture = new LaravelTrackingFixture();
         $stdio = new LaravelStdioHarness(StreamingServer::class, $fixture->tracker());
 
-        $stdio->send(['jsonrpc' => '2.0', 'id' => 7, 'method' => 'tools/call', 'params' => ['name' => 'stream', 'arguments' => ['session_id' => 'start'], '_meta' => LaravelHarness::meta([], null)]]);
+        $stdio->send(['jsonrpc' => '2.0', 'id' => 7, 'method' => 'tools/call', 'params' => ['name' => 'stream', 'arguments' => ['session_id' => 'start'], '_meta' => LaravelHarness::meta(['progressToken' => 'p1'], null)]]);
 
         $lines = $stdio->lines();
         $this->assertCount(3, $lines); // two progress notifications, then the result
@@ -633,7 +633,7 @@ final class CallToolTest extends LaravelTestCase
         $server = $this->app?->make(StreamingServer::class, ['transport' => new LineTransport()]);
         $this->assertInstanceOf(StreamingServer::class, $server);
         $fixture->track($server);
-        $stream = $server->answer(new JsonRpcRequest(3, 'tools/call', ['name' => 'stream', 'arguments' => ['session_id' => 'start']]));
+        $stream = $server->answer(new JsonRpcRequest(3, 'tools/call', ['name' => 'stream', 'arguments' => ['session_id' => 'start'], '_meta' => ['progressToken' => 'p1']]));
         $this->assertInstanceOf(\Generator::class, $stream);
         $this->assertInstanceOf(JsonRpcResponse::class, $stream->current()); // the first progress notification
 
@@ -651,7 +651,7 @@ final class CallToolTest extends LaravelTestCase
         $fixture = new LaravelTrackingFixture();
         $stdio = new LaravelStdioHarness(StreamingServer::class, $fixture->tracker());
 
-        $stdio->send(['jsonrpc' => '2.0', 'id' => 8, 'method' => 'tools/call', 'params' => ['name' => 'stream-fails', 'arguments' => ['session_id' => 'start'], '_meta' => LaravelHarness::meta([], null)]]);
+        $stdio->send(['jsonrpc' => '2.0', 'id' => 8, 'method' => 'tools/call', 'params' => ['name' => 'stream-fails', 'arguments' => ['session_id' => 'start'], '_meta' => LaravelHarness::meta(['progressToken' => 'p1'], null)]]);
 
         $event = $fixture->event();
         $this->assertTrue($event->isError);
@@ -758,7 +758,7 @@ final class CallToolTest extends LaravelTestCase
      */
     private function httpStream(?\Closure $track, string $tool): string
     {
-        $body = json_encode(['jsonrpc' => '2.0', 'id' => 7, 'method' => 'tools/call', 'params' => ['name' => $tool, 'arguments' => ['session_id' => self::SESSION], '_meta' => LaravelHarness::meta([], ['name' => 'c', 'version' => '1'])]], JSON_THROW_ON_ERROR);
+        $body = json_encode(['jsonrpc' => '2.0', 'id' => 7, 'method' => 'tools/call', 'params' => ['name' => $tool, 'arguments' => ['session_id' => self::SESSION], '_meta' => LaravelHarness::meta(['progressToken' => 'p1'], ['name' => 'c', 'version' => '1'])]], JSON_THROW_ON_ERROR);
         $transport = new HttpTransport(Request::create('/mcp/s', 'POST', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_HOST' => 'localhost', 'HTTP_X_ONE' => 'a'], content: $body));
         $server = $this->app?->make(StreamingServer::class, ['transport' => $transport]);
         $this->assertInstanceOf(StreamingServer::class, $server);

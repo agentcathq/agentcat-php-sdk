@@ -298,7 +298,9 @@ final class LaravelEndToEndTest extends TestCase
         $this->assertInstanceOf(BuiltInServer::class, $server);
         $client = new McpHttpClient($server->baseUrl() . $path);
         $arguments = $tool === 'echo' ? ['msg' => 'hi', 'session_id' => 'start', 'context' => 'e2e'] : ['session_id' => 'start'];
-        $params = HttpHarness::modernParams(['name' => $tool, 'arguments' => (object) $arguments], ['name' => 'e2e-client', 'version' => '1.0.0']);
+        // The streamed tool sends its progress only for a request with a progress token.
+        $meta = $tool === 'stream' ? ['progressToken' => 'p1'] : [];
+        $params = HttpHarness::modernParams(['name' => $tool, 'arguments' => (object) $arguments, '_meta' => $meta], ['name' => 'e2e-client', 'version' => '1.0.0']);
 
         return $client->post(['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/call', 'params' => $params], [...HttpHarness::modernHeaders('tools/call', $tool), ...$headers]);
     }
