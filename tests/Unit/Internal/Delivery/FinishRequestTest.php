@@ -14,7 +14,7 @@ final class FinishRequestTest extends TestCase
     /** `$_SERVER['SERVER_SOFTWARE']` of `php -S` (recorded from PHP 8.3.6). */
     private const string BUILT_IN_SERVER = 'PHP/8.3.6 (Development Server)';
 
-    /** @var list<int> `ignore_user_abort()` as seen by each probe call */
+    /** @var list<bool> `ignore_user_abort()` as seen by each probe call */
     private static array $probeCalls = [];
 
     #[\Override]
@@ -181,7 +181,7 @@ final class FinishRequestTest extends TestCase
 
             $finish();
 
-            $this->assertSame([1], self::$probeCalls);
+            $this->assertSame([true], self::$probeCalls);
         } finally {
             ignore_user_abort((bool) $previous);
         }
@@ -206,7 +206,7 @@ final class FinishRequestTest extends TestCase
             $finish();
             $finish();
 
-            $this->assertSame([0, 0], self::$probeCalls);
+            $this->assertSame([false, false], self::$probeCalls);
             $this->assertSame(['ignore_user_abort'], $asked->getArrayCopy(), 'checked once, when the closure is made');
         } finally {
             ignore_user_abort((bool) $previous);
@@ -227,6 +227,6 @@ final class FinishRequestTest extends TestCase
 
     public static function probe(): void
     {
-        self::$probeCalls[] = ignore_user_abort();
+        self::$probeCalls[] = (bool) ignore_user_abort();
     }
 }
