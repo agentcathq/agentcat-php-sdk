@@ -24,7 +24,7 @@ final class RequestEndTest extends TestCase
     /** @var array<string, string> the ini settings a test changed, with their values before it */
     private array $savedIni = [];
 
-    private ?int $savedIgnoreUserAbort = null;
+    private ?bool $savedIgnoreUserAbort = null;
 
     #[\Override]
     protected function tearDown(): void
@@ -36,7 +36,7 @@ final class RequestEndTest extends TestCase
             ini_set($name, $value);
         }
         if ($this->savedIgnoreUserAbort !== null) {
-            ignore_user_abort((bool) $this->savedIgnoreUserAbort);
+            ignore_user_abort($this->savedIgnoreUserAbort);
         }
         FileTree::remove($this->sessionDir);
     }
@@ -224,7 +224,7 @@ final class RequestEndTest extends TestCase
         $this->assertCount(1, $files);
         $this->assertStringContainsString('seen|s:3:"yes"', (string) file_get_contents($files[0]));
         $this->assertSame('6', ini_get('max_execution_time'));
-        $this->assertSame(1, ignore_user_abort(), 'the client may leave once it has the body');
+        $this->assertTrue((bool) ignore_user_abort(), 'the client may leave once it has the body');
     }
 
     /**
@@ -243,15 +243,15 @@ final class RequestEndTest extends TestCase
         $this->assertSame(['held', ''], $this->closeBuffers($level));
         $this->assertSame(PHP_SESSION_ACTIVE, session_status());
         $this->assertSame('30', ini_get('max_execution_time'));
-        $this->assertSame(0, ignore_user_abort());
+        $this->assertFalse((bool) ignore_user_abort());
     }
 
-    /** @return iterable<string, array{list<string>, bool, list<string>, int}> */
+    /** @return iterable<string, array{list<string>, bool, list<string>, bool}> */
     public static function abortSettings(): iterable
     {
-        yield 'ignore_user_abort() disabled: ini_set() switches the setting on' => [['ignore_user_abort'], false, ['held'], 1];
-        yield 'both disabled: the buffers stay' => [['ignore_user_abort', 'ini_set'], false, ['held', ''], 0];
-        yield 'both disabled, the setting already on' => [['ignore_user_abort', 'ini_set'], true, ['held'], 1];
+        yield 'ignore_user_abort() disabled: ini_set() switches the setting on' => [['ignore_user_abort'], false, ['held'], true];
+        yield 'both disabled: the buffers stay' => [['ignore_user_abort', 'ini_set'], false, ['held', ''], false];
+        yield 'both disabled, the setting already on' => [['ignore_user_abort', 'ini_set'], true, ['held'], true];
     }
 
     /**
@@ -263,7 +263,7 @@ final class RequestEndTest extends TestCase
      * @param list<string> $buffers
      */
     #[DataProvider('abortSettings')]
-    public function testTheBuffersAreSentOnlyWhenPhpIgnoresAnAbortedClient(array $missing, bool $before, array $buffers, int $after): void
+    public function testTheBuffersAreSentOnlyWhenPhpIgnoresAnAbortedClient(array $missing, bool $before, array $buffers, bool $after): void
     {
         $this->startSession();
         $this->setIni('max_execution_time', '30');
@@ -273,7 +273,7 @@ final class RequestEndTest extends TestCase
         RequestEnd::detect(false, 'cli-server', static fn(string $function): bool => !in_array($function, $missing, true))->prepare(5.0);
 
         $this->assertSame($buffers, $this->closeBuffers($level));
-        $this->assertSame($after, ignore_user_abort());
+        $this->assertSame($after, (bool) ignore_user_abort());
         $this->assertSame(PHP_SESSION_NONE, session_status());
         $this->assertSame('6', ini_get('max_execution_time'));
     }
@@ -367,6 +367,6 @@ final class RequestEndTest extends TestCase
 
     private function saveIgnoreUserAbort(bool $value): void
     {
-        $this->savedIgnoreUserAbort = ignore_user_abort($value);
+        $this->savedIgnoreUserAbort = (bool) ignore_user_abort($value);
     }
 }
