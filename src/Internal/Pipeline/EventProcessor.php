@@ -66,6 +66,7 @@ final class EventProcessor
 
                 return null;
             }
+            $this->maskSensitiveKeys($event);
             try {
                 $this->adopt($event, Truncator::truncate($event));
             } catch (\Throwable $e) {
@@ -83,6 +84,21 @@ final class EventProcessor
 
             return null;
         }
+    }
+
+    /** Masks the values of sensitive keys in each field; a field the mask fails on is dropped (set to null). */
+    private function maskSensitiveKeys(Event $event): void
+    {
+        $fields = ['parameters' => $event->parameters, 'response' => $event->response, 'error' => $event->error];
+        foreach ($fields as $name => $value) {
+            try {
+                $fields[$name] = SensitiveKeys::maskSensitiveKeys($value);
+            } catch (\Throwable $e) {
+                $fields[$name] = null;
+                Log::write('Failed to mask sensitive keys in ' . $name . ': ' . ErrorText::of($e));
+            }
+        }
+        EventFields::assign($event, $fields);
     }
 
     /** TS `Object.assign(event, stageResult)`: keep the instance, take every field. */

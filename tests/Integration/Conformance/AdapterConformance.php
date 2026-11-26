@@ -6,6 +6,7 @@ namespace AgentCat\Tests\Integration\Conformance;
 
 use AgentCat\Event;
 use AgentCat\Internal\Constants;
+use AgentCat\Internal\Pipeline\SensitiveKeys;
 use AgentCat\Internal\Tools\GetMoreTools;
 use AgentCat\Options;
 use AgentCat\Tests\Support\JsonAssert;
@@ -256,7 +257,8 @@ trait AdapterConformance
 
     /**
      * The HTTP request as the client sent it (D06, D34): the URL with its own query order and trailing slash, and the
-     * headers it sent, `Authorization` included, but none that a library makes up from them.
+     * headers it sent, `Authorization` included, but none that a library makes up from them. The laravel/mcp leg reads
+     * the sent event, which masks the `Authorization` value; the other legs read the recorded tree.
      *
      * @param array<string, string> $server
      */
@@ -268,7 +270,7 @@ trait AdapterConformance
 
         $this->assertSame('http://example.test/mcp/?b=2&a=1', JsonAssert::at($info, 'url'));
         $this->assertSame(['host', 'authorization', 'content-type'], $this->memberNames(JsonAssert::at($info, 'headers')));
-        $this->assertSame($server['HTTP_AUTHORIZATION'] ?? null, JsonAssert::at($info, 'headers', 'authorization'));
+        $this->assertContains(JsonAssert::at($info, 'headers', 'authorization'), [$server['HTTP_AUTHORIZATION'] ?? null, SensitiveKeys::MASK]);
     }
 
     /** A reused object ID belongs to a dead server, so the new server's state replaces it. */

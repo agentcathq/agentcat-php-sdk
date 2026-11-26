@@ -64,6 +64,32 @@ final class DeliveryTest extends SymfonyTestCase
         $this->assertCount(1, $this->transport->deliveries);
     }
 
+    /** The sent event masks the credential headers; the request that the application holds keeps them. */
+    #[MaximumDuration(1000)]
+    public function testTheSentEventMasksSensitiveHeaders(): void
+    {
+        $kernel = $this->kernel(agentcat: $this->on(self::PROJECT));
+        $http = $this->http($kernel);
+        $http->listTools();
+        $request = $http->callRequest('echo', ['msg' => 'hi', 'session_id' => 'start'], null, [
+            'Authorization' => 'Bearer abc',
+            'Cookie' => 'sid=1',
+            'X-Api-Key' => 'k',
+            'User-Agent' => 'claude-code/2.0',
+            'X-Anthropic-Client' => 'claude-code',
+        ]);
+
+        $kernel->terminate($request, $kernel->handle($request));
+
+        $this->assertCount(1, $this->transport->deliveries);
+        $headers = JsonAssert::at(Json::decode($this->transport->deliveries[0]->body), 'parameters', 'extra', 'requestInfo', 'headers');
+        $this->assertSame(['[redacted]', '[redacted]', '[redacted]'], [JsonAssert::at($headers, 'authorization'), JsonAssert::at($headers, 'cookie'), JsonAssert::at($headers, 'x-api-key')]);
+        $this->assertSame(['claude-code/2.0', 'claude-code'], [JsonAssert::at($headers, 'user-agent'), JsonAssert::at($headers, 'x-anthropic-client')]);
+        $this->assertSame($request->headers->get('mcp-session-id'), JsonAssert::at($headers, 'mcp-session-id'));
+        $this->assertNotNull($request->headers->get('mcp-session-id'));
+        $this->assertSame(['Bearer abc', 'sid=1', 'k'], [$request->headers->get('authorization'), $request->headers->get('cookie'), $request->headers->get('x-api-key')]);
+    }
+
     /** Priority -2048: after Symfony's own `kernel.terminate` listeners and the application's. */
     #[MaximumDuration(1000)]
     public function testTheListenerRunsLast(): void

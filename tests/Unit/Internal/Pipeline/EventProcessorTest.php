@@ -250,6 +250,34 @@ final class EventProcessorTest extends TestCase
         $this->assertSame(['Failed to truncate event: Error: not serializable'], $this->logger->messages());
     }
 
+    /** @return iterable<string, array{string}> */
+    public static function maskedFieldProvider(): iterable
+    {
+        yield 'response' => ['response'];
+        yield 'error' => ['error'];
+    }
+
+    /** A field the sensitive key mask throws on is dropped with one line, and the event is still sent. */
+    #[DataProvider('maskedFieldProvider')]
+    public function testAFieldTheMaskFailsOnIsDroppedWithOneLine(string $field): void
+    {
+        $event = new Event(projectId: 'proj_1');
+        EventFields::assign($event, [$field => ['api_key' => 'k', 'o' => new class implements \JsonSerializable {
+            #[\Override]
+            public function jsonSerialize(): never
+            {
+                throw new \Error('not serializable');
+            }
+        }]]);
+
+        $out = (new EventProcessor())->process(new QueuedEvent($event));
+
+        $this->assertInstanceOf(Event::class, $out);
+        $this->assertNull(EventFields::toArray($out)[$field] ?? null);
+        $this->assertStringNotContainsString('api_key', WireEncoder::encode($out));
+        $this->assertSame(['Failed to mask sensitive keys in ' . $field . ': Error: not serializable'], $this->logger->messages());
+    }
+
     /** @return iterable<string, array{array<string, mixed>, list<string|int>, (\Closure(string): string)|null}> fields, wire path of the object, redactor */
     public static function arrayCastProvider(): iterable
     {
@@ -294,32 +322,46 @@ final class EventProcessorTest extends TestCase
         $this->assertEquals(Json::decode('{"name":"n"}'), JsonAssert::at(Json::decode($body), ...$path));
     }
 
-    /** @return iterable<string, array{string, string}> field, and the one line the stage that meets it first writes */
+    /** @return iterable<string, array{string, string|null}> field, and the one line the stage that meets it first writes */
     public static function endlessFieldProvider(): iterable
     {
         // The sanitizer walks parameters before the truncator and has its own 512 cap.
         yield 'parameters' => ['parameters', 'Failed to sanitize event: RangeException: Maximum call stack size exceeded'];
-        yield 'response' => ['response', 'Failed to truncate event: RangeException: Maximum call stack size exceeded'];
+        // The sensitive key mask walks response and error before the truncator and masks what is deeper than its cap.
+        yield 'response' => ['response', null];
         yield 'identifyActorData' => ['identifyActorData', 'Failed to truncate event: RangeException: Maximum call stack size exceeded'];
-        yield 'error' => ['error', 'Failed to truncate event: RangeException: Maximum call stack size exceeded'];
+        yield 'error' => ['error', null];
     }
 
     #[DataProvider('endlessFieldProvider')]
-    public function testEndlessJsonSerializableDropsTheEventWithOneLine(string $field, string $line): void
+    public function testEndlessJsonSerializableDropsTheEventWithOneLine(string $field, ?string $line): void
     {
         $event = new Event();
         EventFields::assign($event, [$field => ['o' => new EndlessSerializable()]]);
 
-        $this->assertNull((new EventProcessor())->process(new QueuedEvent($event)));
+        $out = (new EventProcessor())->process(new QueuedEvent($event));
+
+        if ($line === null) {
+            $this->assertInstanceOf(Event::class, $out);
+            $this->assertEquals(Json::decode('{"o":"[redacted]"}'), EventFields::toArray($out)[$field] ?? null);
+            $this->assertSame([], $this->logger->messages());
+
+            return;
+        }
+        $this->assertNull($out);
         $this->assertSame([$line], $this->logger->messages());
     }
 
-    public function testLongJsonSerializableChainDropsTheEventWithOneLine(): void
+    /** The sensitive key mask meets the chain before the truncator, and masks what is deeper than its cap. */
+    public function testLongJsonSerializableChainIsMaskedPastTheCap(): void
     {
         $event = new Event(response: ['o' => WrappedValue::chain(40_000)]);
 
-        $this->assertNull((new EventProcessor())->process(new QueuedEvent($event)));
-        $this->assertSame(['Failed to truncate event: RangeException: Maximum call stack size exceeded'], $this->logger->messages());
+        $out = (new EventProcessor())->process(new QueuedEvent($event));
+
+        $this->assertInstanceOf(Event::class, $out);
+        $this->assertEquals(Json::decode('{"o":"[redacted]"}'), $out->response);
+        $this->assertSame([], $this->logger->messages());
     }
 
     /**
