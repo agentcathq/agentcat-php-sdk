@@ -88,7 +88,8 @@ final readonly class HttpContext
     }
 
     /**
-     * The projection TypeScript v1 calls `requestInfo` (D34): `{headers, url?}`. `method` stays internal.
+     * The projection TypeScript v1 calls `requestInfo` (D34): `{headers, url?}`. `method` stays internal. The event
+     * pipeline replaces the values of credential headers such as `authorization` with `[redacted]` (`SensitiveKeys`).
      */
     public function toRequestInfo(): \stdClass
     {

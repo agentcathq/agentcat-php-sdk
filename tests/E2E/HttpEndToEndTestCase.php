@@ -268,7 +268,7 @@ abstract class HttpEndToEndTestCase extends TestCase
     /**
      * The event carries the headers as the SAPI gave them. Repeated Accept lines differ by PHP version: `php -S` on
      * PHP 8.3 keeps the first line, on PHP 8.4 and 8.5 it joins them with `, `. The fixture records the value the SAPI
-     * gave PHP, and the event must carry exactly that.
+     * gave PHP, and the event must carry exactly that. The `Cookie` header is masked.
      */
     #[MaximumDuration(10000)]
     public function testOddHeadersReachTheEventAsStrings(): void
@@ -288,7 +288,7 @@ abstract class HttpEndToEndTestCase extends TestCase
         $headers = JsonAssert::at($this->event(), 'parameters', 'extra', 'requestInfo', 'headers');
         $this->assertSame("caf\u{FFFD}", JsonAssert::at($headers, 'x-odd'));
         $this->assertSame(9_000, strlen($cookie));
-        $this->assertSame($cookie, JsonAssert::at($headers, 'cookie'));
+        $this->assertSame('[redacted]', JsonAssert::at($headers, 'cookie'));
         $accept = file_get_contents(self::$dir . '/markers/accept');
         $this->assertIsString($accept);
         $this->assertStringStartsWith('application/json', $accept);

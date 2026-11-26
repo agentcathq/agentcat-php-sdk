@@ -112,8 +112,8 @@ abstract class RequestContextTestCase extends TestCase
         $this->assertSame(['sessionId', 'requestId'], $this->keys($this->extra($plain)));
         $this->assertIsInt(JsonAssert::at($plain->parameters, 'extra', 'requestId'));
         $this->assertSame(['sessionId', 'requestId', '_meta'], $this->keys($this->extra($meta)));
-        $this->assertSame('{"progressToken":"p1"}', $this->json(JsonAssert::at($meta->parameters, 'extra', '_meta')));
-        $this->assertSame('p1', JsonAssert::at($meta->parameters, 'request', 'params', '_meta', 'progressToken'));
+        $this->assertSame('{"progressToken":"[redacted]"}', $this->json(JsonAssert::at($meta->parameters, 'extra', '_meta')));
+        $this->assertSame('[redacted]', JsonAssert::at($meta->parameters, 'request', 'params', '_meta', 'progressToken'));
         $this->assertSame(['requestId', '_meta'], $this->keys($this->extra($modern)));
     }
 
