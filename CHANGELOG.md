@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-11-26
+
 ### Security
 
 - The SDK now masks sensitive values in every event before the event leaves your server. It tests each key in `parameters`, `response` and `error`, at any depth. When the key names a secret, the SDK keeps the key and replaces the value with `[redacted]`. A key names a secret when it is a known credential header (`authorization`, `cookie`, `x-api-key` and others) or has a word such as `token`, `secret`, `password`, `signature` or `api-key`, in any spelling (`X-Api-Key`, `HTTP_X_API_KEY`, `xApiKey`). Before, the SDK sent the HTTP headers of each MCP request as received, in `parameters.extra.requestInfo.headers`. Tool arguments and results under such key names lose their values too, for example `pageToken` and `auth_type`. `null`, `true` and `false` stay. No option turns the mask off (#44).
@@ -57,7 +59,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Under PHP-FPM and the other runtimes that serve each request in a fresh process, your own `tools/list` handler (one that you add to the server, or a `laravel/mcp` class that answers `tools/list`) then runs once for each page that AgentCat reads during a `tools/call`, so its queries, metrics and log lines repeat that many times.
   A call to the last-page tool of a 300-tool `laravel/mcp` server takes 57.6 ms (2.7 ms before); a call to a page-1 tool costs the same as before.
 
-[Unreleased]: https://github.com/agentcathq/agentcat-php-sdk/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/agentcathq/agentcat-php-sdk/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/agentcathq/agentcat-php-sdk/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/agentcathq/agentcat-php-sdk/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/agentcathq/agentcat-php-sdk/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/agentcathq/agentcat-php-sdk/releases/tag/v1.0.0
