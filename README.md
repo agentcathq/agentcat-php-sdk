@@ -165,6 +165,8 @@ In Laravel, the `identify` key of `config/agentcat.php` names an invokable class
 
 AgentCat redacts all data sent to its servers and encrypts at rest, but for additional security, it offers a hook to do your own redaction on all text data returned back to our servers.
 
+The SDK always masks the values of sensitive keys, such as the `authorization`, `cookie` and `x-api-key` request headers and any key named like a token, secret or password, before an event leaves your server.
+
 ```php
 use AgentCat\AgentCat;
 use AgentCat\Options;

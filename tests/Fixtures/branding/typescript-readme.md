@@ -1,4 +1,4 @@
-<!-- agentcat-typescript-sdk 170e1f4 README.md, verbatim below this line -->
+<!-- agentcat-typescript-sdk 148941d README.md, verbatim below this line -->
 <div align="center">
   <img alt="AgentCat — see exactly how agents experience your product" src="docs/static/og-image.png" width="80%">
 </div>
@@ -143,6 +143,8 @@ agentcat.track(mcpServer, "proj_0000000", {
 ### Redacting sensitive data
 
 AgentCat redacts all data sent to its servers and encrypts at rest, but for additional security, it offers a hook to do your own redaction on all text data returned back to our servers.
+
+The SDK always masks the values of sensitive keys, such as the `authorization`, `cookie` and `x-api-key` request headers and any key named like a token, secret or password, before an event leaves your server.
 
 ```ts
 agentcat.track(mcpServer, "proj_0000000", {
